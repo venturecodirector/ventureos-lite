@@ -1,0 +1,328 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { AuditView } from "@/modules/audit/types";
+import {
+  startAudit,
+  getAudit,
+  createLeadFromAudit,
+  exportAuditPdf,
+  publishShare,
+} from "@/modules/audit/actions";
+
+const POLL_MS = 1500;
+const POLL_TIMEOUT_MS = 45_000;
+
+function VerdictChip({ verdict }: { verdict: string }) {
+  const map: Record<string, string> = {
+    STRONG: "bg-[rgba(245,184,65,0.12)] text-warn",
+    POSSIBLE: "bg-accent-soft text-accent-ink",
+    SKIP: "bg-panel-2 text-muted",
+  };
+  const label =
+    verdict === "STRONG" ? "Strong prospect" : verdict === "POSSIBLE" ? "Possible" : "Skip";
+  return (
+    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${map[verdict] ?? map.SKIP}`}>
+      {label}
+    </span>
+  );
+}
+
+export function AuditRunner({ initialUrl }: { initialUrl: string }) {
+  const [url, setUrl] = useState(initialUrl);
+  const [withPitch, setWithPitch] = useState(false);
+  const [auditId, setAuditId] = useState<string | null>(null);
+  const [view, setView] = useState<AuditView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [added, setAdded] = useState<"added" | "duplicate" | null>(null);
+  const [pdf, setPdf] = useState<"idle" | "generating" | string>("idle");
+  const [share, setShare] = useState<{ url: string; expiresAt: string } | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Poll the audit record for progressive results.
+  useEffect(() => {
+    if (!auditId) return;
+    let active = true;
+    const started = Date.now();
+    const tick = async () => {
+      const v = await getAudit(auditId);
+      if (!active) return;
+      if (v) setView(v);
+      if (v && (v.status === "done" || v.status === "error")) return;
+      if (Date.now() - started > POLL_TIMEOUT_MS) return;
+      timer.current = setTimeout(tick, POLL_MS);
+    };
+    timer.current = setTimeout(tick, 300);
+    return () => {
+      active = false;
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [auditId]);
+
+  // Reflect an already-rendered PDF (e.g. a cached audit).
+  useEffect(() => {
+    if (view?.pdfPath && pdf === "idle") setPdf(view.pdfPath);
+  }, [view?.pdfPath, pdf]);
+
+  async function run() {
+    if (!url.trim()) return;
+    setError(null);
+    setView(null);
+    setAdded(null);
+    setPdf("idle");
+    setShare(null);
+    setBusy(true);
+    try {
+      const { auditId: id } = await startAudit({ url, withPitch });
+      setAuditId(id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function exportPdf() {
+    if (!view) return;
+    setPdf("generating");
+    await exportAuditPdf(view.id);
+    const started = Date.now();
+    while (Date.now() - started < 30_000) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const v = await getAudit(view.id);
+      if (v?.pdfPath) {
+        setPdf(v.pdfPath);
+        return;
+      }
+    }
+    setPdf("idle"); // timed out — let the user retry
+  }
+
+  async function publish() {
+    if (!view) return;
+    setSharing(true);
+    try {
+      setShare(await publishShare(view.id));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  const running = auditId && (!view || view.status === "queued" || view.status === "running");
+
+  return (
+    <div className="max-w-[1400px]">
+      {error && (
+        <div className="mb-3 rounded-[10px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.1)] px-3.5 py-2.5 text-[12.5px] text-[#FFB3C2]">
+          {error}
+        </div>
+      )}
+
+      <div className="mb-4 rounded-card border border-line bg-panel p-[18px]">
+        <div className="flex flex-wrap gap-2.5">
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="Website URL"
+            className="min-w-[220px] flex-1 rounded-[10px] border border-line bg-[rgba(0,5,29,0.5)] px-3 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
+          />
+          <button
+            onClick={run}
+            disabled={busy || !!running}
+            className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
+          >
+            {running ? "Auditing…" : "Run audit"}
+          </button>
+        </div>
+        <label className="mt-2.5 flex items-center gap-2 text-[11.5px] text-muted">
+          <input
+            type="checkbox"
+            checked={withPitch}
+            onChange={(e) => setWithPitch(e.target.checked)}
+            style={{ accentColor: "#7427C6" }}
+          />
+          Add Claude pitch angle · 1 Haiku call (off by default)
+          <span className="ml-auto">
+            Checks run locally + PageSpeed API ·{" "}
+            <b className="text-[#C9CEE3]">
+              {withPitch ? "1 Claude call" : "0 Claude calls"}
+            </b>
+          </span>
+        </label>
+      </div>
+
+      {share && (
+        <div className="mb-4 rounded-card border border-accent-soft bg-accent-soft px-4 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-ink">
+            Public share link · unlisted · expires {share.expiresAt.slice(0, 10)}
+          </div>
+          <div className="mt-1.5 flex items-center gap-2">
+            <input
+              readOnly
+              value={share.url}
+              className="flex-1 rounded-[8px] border border-line bg-[rgba(0,5,29,0.5)] px-2.5 py-1.5 text-[12px] text-ink"
+            />
+            <a
+              href={share.url}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2"
+            >
+              Open
+            </a>
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted">
+            Opens are tracked to the lead timeline.
+          </p>
+        </div>
+      )}
+
+      {view && (
+        <div className="grid grid-cols-1 items-start gap-[18px] lg:grid-cols-[220px_1fr]">
+          {/* score panel */}
+          <div className="rounded-card border border-line bg-panel p-[18px] text-center">
+            <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+              Opportunity score
+            </div>
+            <div className="bg-grad bg-clip-text font-display text-[64px] font-extrabold leading-none tracking-[-0.03em] text-transparent">
+              {view.status === "queued" ? "…" : view.score}
+            </div>
+            <div className="my-3">
+              <VerdictChip verdict={view.verdict} />
+            </div>
+            <p className="text-[11.5px] leading-relaxed text-muted">
+              High score = weak site, strong sales opportunity. Thresholds set in
+              Settings, not by AI.
+            </p>
+            {view.status === "done" && (
+              <>
+                <button
+                  onClick={async () => {
+                    const res = await createLeadFromAudit(view.id);
+                    setAdded(res.ok ? "added" : "duplicate");
+                  }}
+                  disabled={added !== null}
+                  className="mt-3.5 w-full rounded-[10px] border-[1.5px] border-transparent bg-canvas px-3 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
+                >
+                  {added === "added"
+                    ? "Lead created ✓"
+                    : added === "duplicate"
+                      ? "Already a lead"
+                      : "Create lead with signals"}
+                </button>
+                {pdf === "generating" ? (
+                  <button
+                    disabled
+                    className="mt-2 w-full rounded-[10px] border border-line bg-panel px-3 py-2 text-[13px] text-muted"
+                  >
+                    Generating PDF…
+                  </button>
+                ) : pdf !== "idle" ? (
+                  <a
+                    href={`/api/files/${pdf}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 block w-full rounded-[10px] border border-line bg-panel px-3 py-2 text-center text-[13px] font-semibold text-ink hover:bg-panel-2"
+                  >
+                    Download branded PDF
+                  </a>
+                ) : (
+                  <button
+                    onClick={exportPdf}
+                    className="mt-2 w-full rounded-[10px] border border-line bg-panel px-3 py-2 text-[13px] font-semibold text-ink hover:bg-panel-2"
+                  >
+                    Export branded PDF
+                  </button>
+                )}
+                <button
+                  onClick={publish}
+                  disabled={sharing}
+                  className="mt-2 w-full rounded-[10px] border border-line bg-panel px-3 py-2 text-[13px] font-semibold text-ink hover:bg-panel-2 disabled:opacity-60"
+                >
+                  {sharing ? "Publishing…" : "Publish share link"}
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* details */}
+          <div>
+            <div className="rounded-card border border-line bg-panel p-[18px]">
+              <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+                {view.url} ·{" "}
+                {running ? "auditing…" : view.status === "error" ? "failed" : "cached 30 days"}
+              </div>
+              {view.checks.length === 0 ? (
+                <p className="text-[12.5px] text-muted">Running deterministic checks…</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-x-[18px] gap-y-1.5 sm:grid-cols-2">
+                  {view.checks.map((c) => (
+                    <div
+                      key={c.key}
+                      className="flex items-center gap-2.5 py-1.5 text-[12.5px] text-[#C9CEE3]"
+                    >
+                      <span
+                        className={`grid h-[17px] w-[17px] flex-none place-items-center rounded-full text-[10px] ${
+                          c.pass
+                            ? "bg-[rgba(61,220,151,0.15)] text-[#3DDC97]"
+                            : "bg-[rgba(255,92,122,0.15)] text-[#FF5C7A]"
+                        }`}
+                      >
+                        {c.pass ? "✓" : "✗"}
+                      </span>
+                      {c.label}
+                      {c.detail ? <span className="text-muted">· {c.detail}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {view.flags.length > 0 && (
+                <div className="mt-3.5">
+                  {view.flags.map((f) => (
+                    <span
+                      key={f}
+                      className="mr-1 mb-1 inline-flex items-center rounded-full border-[1.5px] border-transparent bg-grad px-2.5 py-0.5 text-[11px] font-semibold text-ink"
+                    >
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-3.5 grid grid-cols-2 gap-2.5">
+                {(["desktop", "mobile"] as const).map((k) => (
+                  <div
+                    key={k}
+                    className="grid h-[110px] place-items-center rounded-[10px] border border-line bg-panel-2 text-[11px] text-muted"
+                  >
+                    {view.screenshots[k] ? `${k} screenshot ✓` : `${k} screenshot`}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {view.pitchSummary && (
+              <div className="mt-3.5 rounded-card border-[1.5px] border-transparent bg-[linear-gradient(rgba(4,8,34,0.92),rgba(4,8,34,0.92))_padding-box,linear-gradient(135deg,#310B59,#7427C6)_border-box] p-[18px] shadow-glow-lg">
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="grid h-[22px] w-[22px] place-items-center rounded-[7px] bg-grad text-[12px]">
+                    ✦
+                  </div>
+                  <b className="text-[13px]">Pitch angle</b>
+                  <span className="ml-auto text-[11px] text-muted">1 Haiku call</span>
+                </div>
+                <p className="text-[12.5px] leading-relaxed text-[#D8DCEF]">
+                  {view.pitchSummary}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

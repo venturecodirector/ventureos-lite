@@ -1,0 +1,7 @@
+# Reverse proxy with automatic HTTPS.
+# A real domain (APP_DOMAIN) gets a Let's Encrypt cert automatically; the
+# default `localhost` gets Caddy's internal self-signed cert for local TLS.
+{$APP_DOMAIN:localhost} {
+	encode gzip zstd
+	reverse_proxy app:3000
+}

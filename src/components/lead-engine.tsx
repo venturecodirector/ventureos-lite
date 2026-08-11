@@ -1,0 +1,955 @@
+"use client";
+
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import type { LeadCard } from "@/lib/ai/prompts/lead-research";
+import {
+  captureLinkedin,
+  runResearch,
+  createLeadManual,
+  previewCsvImport,
+  commitCsvImport,
+  overrideScore,
+  moveLeadStage,
+} from "@/modules/leads/actions";
+import {
+  enrichCompanyLookup,
+  confirmEnrichment,
+} from "@/modules/registry/actions";
+import { listReferrers, type ReferrerOption } from "@/modules/referrals/actions";
+import type { RegistryCandidate } from "@/modules/registry/provider";
+import { companyUnderProceedings } from "@/modules/registry/risk";
+import { RiskChip } from "./risk-chip";
+
+export interface LeadRow {
+  id: string;
+  companyId: string | null;
+  contactName: string | null;
+  title: string | null;
+  company: string;
+  industry: string | null;
+  sizeBand: string | null;
+  icpScore: number | null;
+  stage: string;
+  signals: string[];
+  riskLabel: string | null;
+}
+
+// ---- small bits -----------------------------------------------------------
+
+function Notches({ score }: { score: number | null }) {
+  const n = score ?? 0;
+  return (
+    <span className="inline-flex gap-[3px] align-middle">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <i
+          key={i}
+          className={`h-[5px] w-[9px] rounded-[2px] ${i < n ? "bg-grad" : "bg-line"}`}
+        />
+      ))}
+    </span>
+  );
+}
+
+function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="mr-1 mb-1 inline-flex items-center rounded-full border border-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-ink">
+      {children}
+    </span>
+  );
+}
+
+// ---- Claude rail (reveal animation like the prototype) --------------------
+
+type RailState =
+  | { status: "idle" }
+  | { status: "streaming" }
+  | { status: "done"; card: LeadCard; icpScore: number; leadId: string };
+
+function ClaudeRail({
+  state,
+  threshold,
+  onOverride,
+  onAddToPipeline,
+}: {
+  state: RailState;
+  threshold: number;
+  onOverride: (leadId: string) => void;
+  onAddToPipeline: (leadId: string) => void;
+}) {
+  const total = 6;
+  const [revealed, setRevealed] = useState(0);
+
+  useEffect(() => {
+    if (state.status !== "done") {
+      setRevealed(0);
+      return;
+    }
+    setRevealed(0);
+    const iv = setInterval(() => {
+      setRevealed((r) => {
+        if (r >= total) {
+          clearInterval(iv);
+          return r;
+        }
+        return r + 1;
+      });
+    }, 500);
+    return () => clearInterval(iv);
+  }, [state]);
+
+  return (
+    <div className="sticky top-0">
+      <div className="rounded-card border-[1.5px] border-transparent bg-[linear-gradient(rgba(3,7,32,0.95),rgba(3,7,32,0.95))_padding-box,linear-gradient(135deg,#310B59,#7427C6)_border-box] p-[18px] shadow-glow-lg">
+        <div className="mb-3.5 flex items-center gap-2">
+          <div className="grid h-[22px] w-[22px] place-items-center rounded-[7px] bg-grad text-[12px]">
+            ✦
+          </div>
+          <b className="text-[13px]">Claude · Lead card</b>
+          <span className="ml-auto text-[11px] text-muted">
+            {state.status === "streaming" ? (
+              <span className="inline-flex gap-[3px]">
+                <i className="h-1 w-1 animate-pulse rounded-full bg-accent-ink" />
+                <i className="h-1 w-1 animate-pulse rounded-full bg-accent-ink [animation-delay:0.2s]" />
+                <i className="h-1 w-1 animate-pulse rounded-full bg-accent-ink [animation-delay:0.4s]" />
+              </span>
+            ) : state.status === "done" ? (
+              "done"
+            ) : (
+              "idle"
+            )}
+          </span>
+        </div>
+
+        {state.status === "idle" && (
+          <p className="text-[12.5px] text-muted">
+            Paste a profile and run research — the structured lead card streams in
+            here. Every score can be overridden; overrides are logged.
+          </p>
+        )}
+        {state.status === "streaming" && (
+          <p className="text-[12.5px] text-muted">Researching… nothing is sent anywhere.</p>
+        )}
+
+        {state.status === "done" && (
+          <div className="space-y-0">
+            <Section show={revealed >= 1} title="Company">
+              <p className="text-[12.5px] leading-relaxed text-[#C9CEE3]">
+                <b>{state.card.company.name}</b>
+                {state.card.company.industry ? ` · ${state.card.company.industry}` : ""}
+                {state.card.company.sizeEmployees
+                  ? ` · ~${state.card.company.sizeEmployees} employees`
+                  : ""}
+                . {state.card.company.summary}
+              </p>
+            </Section>
+            <Section show={revealed >= 2} title="Person">
+              <p className="text-[12.5px] leading-relaxed text-[#C9CEE3]">
+                <b>{state.card.person.name}</b>
+                {state.card.person.title ? `, ${state.card.person.title}` : ""}.{" "}
+                {state.card.person.summary}
+              </p>
+            </Section>
+            <Section show={revealed >= 3} title="Trigger signals">
+              <div>
+                {state.card.signals.map((s, i) => (
+                  <Tag key={i}>{s}</Tag>
+                ))}
+              </div>
+            </Section>
+            <Section show={revealed >= 4} title="Likely pain points">
+              <ol className="list-decimal pl-4 text-[12.5px] leading-relaxed text-[#C9CEE3]">
+                {state.card.pains.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ol>
+            </Section>
+            <Section show={revealed >= 5} title="Suggested hook">
+              <div className="rounded-[10px] bg-accent-soft px-3 py-2.5 text-[12.5px] italic leading-relaxed text-[#E4D3FF]">
+                {state.card.hook}
+              </div>
+            </Section>
+            <Section show={revealed >= 6} title="ICP score">
+              <div className="flex items-center justify-between border-t border-line pt-2 text-[12.5px]">
+                <span>
+                  <b>Total</b>
+                </span>
+                <span className="flex items-center gap-2">
+                  <Notches score={state.icpScore} />
+                  <b>{state.icpScore}</b>
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-muted">
+                {state.icpScore >= threshold
+                  ? "Above the score gate — can be contacted."
+                  : `Below the gate (${threshold}) — cannot enter Contacted.`}
+              </p>
+              <div className="mt-3.5 flex gap-2">
+                <button
+                  onClick={() => onAddToPipeline(state.leadId)}
+                  className="flex-1 rounded-[10px] border-[1.5px] border-transparent bg-canvas px-3 py-2 text-[12px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box]"
+                >
+                  Add to pipeline
+                </button>
+                <button
+                  onClick={() => onOverride(state.leadId)}
+                  className="rounded-[10px] border border-line bg-panel px-3 py-2 text-[12px] font-semibold text-ink hover:bg-panel-2"
+                >
+                  Override score
+                </button>
+              </div>
+            </Section>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Section({
+  show,
+  title,
+  children,
+}: {
+  show: boolean;
+  title: string;
+  children: React.ReactNode;
+}) {
+  if (!show) return null;
+  return (
+    <section className="animate-[fade_0.25s_ease] border-t border-line py-3 first:border-t-0">
+      <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+        {title}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
+// ---- main -----------------------------------------------------------------
+
+export function LeadEngine({
+  leads,
+  threshold,
+}: {
+  leads: LeadRow[];
+  threshold: number;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [rail, setRail] = useState<RailState>({ status: "idle" });
+  const [paste, setPaste] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [showManual, setShowManual] = useState(false);
+  const [showCsv, setShowCsv] = useState(false);
+  const [overrideFor, setOverrideFor] = useState<string | null>(null);
+  const [enrichFor, setEnrichFor] = useState<string | null>(null);
+
+  function firstUrl(text: string): string {
+    const m = text.match(/https?:\/\/\S+/);
+    return m ? m[0] : "";
+  }
+
+  async function research(leadId: string) {
+    setError(null);
+    setRail({ status: "streaming" });
+    try {
+      const { card, icpScore } = await runResearch(leadId);
+      setRail({ status: "done", card, icpScore, leadId });
+      router.refresh();
+    } catch (e) {
+      setRail({ status: "idle" });
+      setError((e as Error).message);
+    }
+  }
+
+  async function researchFromPaste() {
+    if (!paste.trim()) return;
+    setError(null);
+    setRail({ status: "streaming" });
+    try {
+      const { leadId } = await captureLinkedin({
+        url: firstUrl(paste) || paste.slice(0, 120),
+        pageText: paste,
+      });
+      const { card, icpScore } = await runResearch(leadId);
+      setRail({ status: "done", card, icpScore, leadId });
+      setPaste("");
+      router.refresh();
+    } catch (e) {
+      setRail({ status: "idle" });
+      setError((e as Error).message);
+    }
+  }
+
+  async function toContacted(leadId: string) {
+    setError(null);
+    const res = await moveLeadStage(leadId, "CONTACTED");
+    if (!res.ok) setError(res.error);
+    else router.refresh();
+  }
+
+  return (
+    <div className="max-w-[1400px]">
+      {error && (
+        <div className="mb-3 rounded-[10px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.1)] px-3.5 py-2.5 text-[12.5px] text-[#FFB3C2]">
+          {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 items-start gap-[18px] lg:grid-cols-[1fr_340px]">
+        <div>
+          {/* capture */}
+          <div className="mb-4 rounded-card border border-line bg-panel p-[18px]">
+            <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+              Capture a lead
+            </div>
+            <textarea
+              value={paste}
+              onChange={(e) => setPaste(e.target.value)}
+              placeholder="Paste a LinkedIn profile URL and the page text — or capture it with the browser extension while viewing the profile."
+              className="min-h-[84px] w-full resize-y rounded-[10px] border border-line bg-[rgba(0,5,29,0.5)] p-3 text-[13px] text-ink outline-none placeholder:text-muted focus:border-accent"
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={() => startTransition(researchFromPaste)}
+                disabled={pending || rail.status === "streaming"}
+                className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
+              >
+                ✦ Research with Claude
+              </button>
+              <button
+                onClick={() => setShowManual(true)}
+                className="rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] font-semibold text-ink hover:bg-panel-2"
+              >
+                Add manually
+              </button>
+              <button
+                onClick={() => setShowCsv(true)}
+                className="rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] font-semibold text-ink hover:bg-panel-2"
+              >
+                Import CSV
+              </button>
+              <span className="ml-auto text-[12px] text-muted">
+                Research runs take ~10s · nothing is sent anywhere
+              </span>
+            </div>
+          </div>
+
+          {/* table */}
+          <div className="rounded-card border border-line bg-panel px-0 pb-0 pt-1.5">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  {["Lead", "ICP score", "Signals", "Stage", ""].map((h) => (
+                    <th
+                      key={h}
+                      className="border-b border-line px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {leads.length === 0 && (
+                  <tr>
+                    <td className="px-3 py-6 text-center text-[13px] text-muted" colSpan={5}>
+                      No leads yet. Capture one above.
+                    </td>
+                  </tr>
+                )}
+                {leads.map((l) => {
+                  const ready = (l.icpScore ?? 0) >= threshold;
+                  return (
+                    <tr key={l.id} className="hover:[&>td]:bg-panel">
+                      <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
+                        <span className="flex items-center gap-2">
+                          <b>{l.contactName ?? "Unnamed contact"}</b>
+                          {l.riskLabel && <RiskChip label={l.riskLabel} />}
+                        </span>
+                        <span className="block text-[12px] text-muted">
+                          {l.company}
+                          {l.industry ? ` · ${l.industry}` : ""}
+                          {l.sizeBand ? ` · ${l.sizeBand}` : ""}
+                        </span>
+                      </td>
+                      <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
+                        <Notches score={l.icpScore} />
+                        <b className="ml-1.5">{l.icpScore ?? "—"}</b>
+                      </td>
+                      <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
+                        {l.signals.slice(0, 3).map((s, i) => (
+                          <Tag key={i}>{s}</Tag>
+                        ))}
+                      </td>
+                      <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
+                        {l.stage === "RESEARCHED" && l.icpScore != null && !ready ? (
+                          <span className="rounded-[6px] border border-dashed border-line px-1.5 py-0.5 text-[10.5px] text-muted">
+                            below gate — can&apos;t contact
+                          </span>
+                        ) : (
+                          <span className="text-[12px] text-muted">
+                            {l.stage.toLowerCase().replace("_", " ")}
+                          </span>
+                        )}
+                      </td>
+                      <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
+                        <div className="flex justify-end gap-2">
+                          {l.icpScore == null ? (
+                            <button
+                              onClick={() => startTransition(() => research(l.id))}
+                              disabled={pending}
+                              className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2 disabled:opacity-60"
+                            >
+                              Run research
+                            </button>
+                          ) : l.stage === "RESEARCHED" ? (
+                            <button
+                              onClick={() => startTransition(() => toContacted(l.id))}
+                              disabled={pending}
+                              className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2 disabled:opacity-60"
+                              title={ready ? "Move to Contacted" : "Blocked by the score gate"}
+                            >
+                              → Contacted
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-muted">—</span>
+                          )}
+                          {l.companyId && (
+                            <button
+                              onClick={() => setEnrichFor(l.companyId)}
+                              className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2"
+                            >
+                              Enrich
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setOverrideFor(l.id)}
+                            className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2"
+                          >
+                            Override
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <ClaudeRail
+          state={rail}
+          threshold={threshold}
+          onOverride={(id) => setOverrideFor(id)}
+          onAddToPipeline={(id) => startTransition(() => toContacted(id))}
+        />
+      </div>
+
+      {showManual && (
+        <ManualForm
+          onClose={() => setShowManual(false)}
+          onDone={() => {
+            setShowManual(false);
+            router.refresh();
+          }}
+        />
+      )}
+      {showCsv && (
+        <CsvImport
+          onClose={() => setShowCsv(false)}
+          onDone={() => {
+            setShowCsv(false);
+            router.refresh();
+          }}
+        />
+      )}
+      {overrideFor && (
+        <OverrideDialog
+          leadId={overrideFor}
+          onClose={() => setOverrideFor(null)}
+          onDone={() => {
+            setOverrideFor(null);
+            router.refresh();
+          }}
+        />
+      )}
+      {enrichFor && (
+        <EnrichDialog
+          companyId={enrichFor}
+          onClose={() => setEnrichFor(null)}
+          onDone={() => {
+            setEnrichFor(null);
+            router.refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EnrichDialog({
+  companyId,
+  onClose,
+  onDone,
+}: {
+  companyId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [candidates, setCandidates] = useState<RegistryCandidate[] | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    enrichCompanyLookup(companyId)
+      .then((r) => active && setCandidates(r.candidates))
+      .catch((e) => active && setMsg((e as Error).message));
+    return () => {
+      active = false;
+    };
+  }, [companyId]);
+
+  async function pick(c: RegistryCandidate) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await confirmEnrichment(companyId, c);
+      if (res.ok) onDone();
+      else setMsg(res.error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal>
+      <div className="mb-3 flex items-center">
+        <h3 className="font-display text-lg font-bold lowercase">registry enrichment</h3>
+        <button onClick={onClose} className="ml-auto text-muted hover:text-ink">
+          ✕
+        </button>
+      </div>
+      <p className="mb-3 text-[12px] text-muted">
+        Confirm the matching company. adószám becomes the dedupe key; a company
+        under proceedings is flagged.
+      </p>
+      {msg && <p className="mb-2 text-[12px] text-[#FFB3C2]">{msg}</p>}
+      {candidates === null && !msg ? (
+        <p className="text-[13px] text-muted">Looking up…</p>
+      ) : candidates && candidates.length === 0 ? (
+        <p className="text-[13px] text-muted">No registry matches found.</p>
+      ) : (
+        <div className="grid gap-2">
+          {candidates?.map((c) => (
+            <div
+              key={c.taxId}
+              className="flex items-center gap-3 rounded-[10px] border border-line bg-panel p-3"
+            >
+              <div className="min-w-0 flex-1">
+                <b className="text-[13px]">{c.legalName}</b>
+                <span className="block text-[11.5px] text-muted">
+                  adószám {c.taxId}
+                  {c.headcountBand ? ` · ${c.headcountBand}` : ""}
+                  {c.revenueBand ? ` · ${c.revenueBand}` : ""}
+                </span>
+                {companyUnderProceedings(c.statusFlags) && (
+                  <span className="mt-1 inline-block">
+                    <RiskChip label="Under proceedings" />
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => pick(c)}
+                disabled={busy}
+                className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2 disabled:opacity-60"
+              >
+                Use this
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ---- modals ---------------------------------------------------------------
+
+function Modal({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
+      <div className="w-full max-w-[560px] rounded-card border border-line bg-[rgba(6,11,38,0.98)] p-5 backdrop-blur">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const SOURCE_OPTIONS = [
+  { value: "MANUAL", label: "Manual" },
+  { value: "REFERRAL", label: "Referral" },
+  { value: "LINKEDIN", label: "LinkedIn" },
+  { value: "PROSPECTOR", label: "Prospector" },
+  { value: "COLD_EMAIL", label: "Cold email" },
+] as const;
+
+function ManualForm({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [source, setSource] = useState<string>("MANUAL");
+  const [referrerId, setReferrerId] = useState<string>("");
+  const [referrers, setReferrers] = useState<ReferrerOption[]>([]);
+
+  useEffect(() => {
+    listReferrers().then(setReferrers);
+  }, []);
+
+  async function submit(form: FormData) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await createLeadManual({
+        contactName: String(form.get("contactName") || ""),
+        title: String(form.get("title") || ""),
+        email: String(form.get("email") || ""),
+        phone: String(form.get("phone") || ""),
+        linkedinUrl: String(form.get("linkedinUrl") || ""),
+        notes: String(form.get("notes") || ""),
+        source,
+        referrerId: source === "REFERRAL" ? referrerId || undefined : undefined,
+        company: {
+          name: String(form.get("companyName") || ""),
+          domain: String(form.get("companyDomain") || ""),
+          industry: String(form.get("industry") || ""),
+          sizeBand: String(form.get("sizeBand") || ""),
+          taxId: String(form.get("companyTaxId") || ""),
+        },
+      });
+      if (res.ok) onDone();
+      else setMsg(`Duplicate of an existing lead (${res.duplicateOf}).`);
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const input =
+    "rounded-[8px] border border-line bg-[rgba(0,5,29,0.5)] px-2.5 py-2 text-[13px] text-ink outline-none placeholder:text-muted focus:border-accent";
+
+  return (
+    <Modal>
+      <div className="mb-3 flex items-center">
+        <h3 className="font-display text-lg font-bold lowercase">add a lead manually</h3>
+        <button onClick={onClose} className="ml-auto text-muted hover:text-ink">
+          ✕
+        </button>
+      </div>
+      <form action={submit} className="grid grid-cols-2 gap-2.5">
+        <input name="contactName" placeholder="Contact name" className={input} />
+        <input name="title" placeholder="Title" className={input} />
+        <input name="email" placeholder="Email" className={input} />
+        <input name="phone" placeholder="Phone" className={input} />
+        <input name="linkedinUrl" placeholder="LinkedIn URL" className={`${input} col-span-2`} />
+        <input name="companyName" placeholder="Company name *" required className={input} />
+        <input name="companyDomain" placeholder="Company domain" className={input} />
+        <input name="companyTaxId" placeholder="Adószám (tax id)" className={input} />
+        <input name="industry" placeholder="Industry" className={input} />
+        <input name="sizeBand" placeholder="Size band (e.g. 24 employees)" className={input} />
+        <select value={source} onChange={(e) => setSource(e.target.value)} className={input}>
+          {SOURCE_OPTIONS.map((s) => (
+            <option key={s.value} value={s.value}>
+              Source: {s.label}
+            </option>
+          ))}
+        </select>
+        {source === "REFERRAL" ? (
+          <select
+            value={referrerId}
+            onChange={(e) => setReferrerId(e.target.value)}
+            className={input}
+          >
+            <option value="">Referred by… (optional)</option>
+            {referrers.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+                {r.linkedCompany ? ` · ${r.linkedCompany}` : ""}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div />
+        )}
+        <textarea name="notes" placeholder="Notes" className={`${input} col-span-2 min-h-[60px]`} />
+        {msg && <p className="col-span-2 text-[12px] text-[#FFB3C2]">{msg}</p>}
+        <div className="col-span-2 mt-1 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] hover:bg-panel-2"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
+          >
+            {busy ? "Saving…" : "Add lead"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+const CSV_FIELDS = [
+  { key: "contactName", label: "Contact name" },
+  { key: "title", label: "Title" },
+  { key: "email", label: "Email" },
+  { key: "linkedinUrl", label: "LinkedIn URL" },
+  { key: "companyName", label: "Company name" },
+  { key: "companyDomain", label: "Company domain" },
+] as const;
+
+type CsvField = (typeof CSV_FIELDS)[number]["key"];
+type PreviewRow = Awaited<ReturnType<typeof previewCsvImport>>[number];
+
+function parseCsv(text: string): { headers: string[]; rows: string[][] } {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
+  const split = (line: string) =>
+    line
+      .match(/(".*?"|[^,]+)(?=,|$)/g)
+      ?.map((c) => c.replace(/^"|"$/g, "").trim()) ?? [];
+  if (!lines.length) return { headers: [], rows: [] };
+  return { headers: split(lines[0]), rows: lines.slice(1).map(split) };
+}
+
+function CsvImport({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [parsed, setParsed] = useState<{ headers: string[]; rows: string[][] } | null>(null);
+  const [mapping, setMapping] = useState<Partial<Record<CsvField, number>>>({});
+  const [preview, setPreview] = useState<PreviewRow[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const candidates = useMemo(() => {
+    if (!parsed) return [];
+    return parsed.rows.map((row) => {
+      const c: Record<string, string> = {};
+      for (const f of CSV_FIELDS) {
+        const idx = mapping[f.key];
+        if (idx !== undefined && row[idx]) c[f.key] = row[idx];
+      }
+      return c;
+    });
+  }, [parsed, mapping]);
+
+  async function onFile(file: File) {
+    const text = await file.text();
+    const p = parseCsv(text);
+    setParsed(p);
+    // best-effort auto-map by header name
+    const guess: Partial<Record<CsvField, number>> = {};
+    p.headers.forEach((h, i) => {
+      const n = h.toLowerCase();
+      if (/mail/.test(n)) guess.email = i;
+      else if (/linkedin/.test(n)) guess.linkedinUrl = i;
+      else if (/company|org/.test(n)) guess.companyName = i;
+      else if (/domain|website|url/.test(n)) guess.companyDomain = i;
+      else if (/title|role/.test(n)) guess.title = i;
+      else if (/name|contact/.test(n)) guess.contactName = i;
+    });
+    setMapping(guess);
+    setPreview(null);
+  }
+
+  const input =
+    "rounded-[8px] border border-line bg-[rgba(0,5,29,0.5)] px-2 py-1.5 text-[12px] text-ink outline-none focus:border-accent";
+
+  return (
+    <Modal>
+      <div className="mb-3 flex items-center">
+        <h3 className="font-display text-lg font-bold lowercase">import csv</h3>
+        <button onClick={onClose} className="ml-auto text-muted hover:text-ink">
+          ✕
+        </button>
+      </div>
+
+      {!parsed && (
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+          className="text-[13px] text-muted"
+        />
+      )}
+
+      {parsed && !preview && (
+        <>
+          <p className="mb-2 text-[12px] text-muted">
+            Map your columns · {parsed.rows.length} rows
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {CSV_FIELDS.map((f) => (
+              <label key={f.key} className="flex items-center gap-2 text-[12px]">
+                <span className="w-28 text-muted">{f.label}</span>
+                <select
+                  value={mapping[f.key] ?? ""}
+                  onChange={(e) =>
+                    setMapping((m) => ({
+                      ...m,
+                      [f.key]: e.target.value === "" ? undefined : Number(e.target.value),
+                    }))
+                  }
+                  className={input}
+                >
+                  <option value="">—</option>
+                  {parsed.headers.map((h, i) => (
+                    <option key={i} value={i}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              onClick={async () => {
+                setBusy(true);
+                setPreview(await previewCsvImport(candidates));
+                setBusy(false);
+              }}
+              disabled={busy}
+              className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
+            >
+              Preview dedupe
+            </button>
+          </div>
+        </>
+      )}
+
+      {preview && (
+        <>
+          <p className="mb-2 text-[12px] text-muted">
+            {preview.filter((r) => r.status === "new").length} new ·{" "}
+            {preview.filter((r) => r.status === "duplicate").length} duplicate
+          </p>
+          <div className="max-h-[280px] overflow-auto rounded-[8px] border border-line">
+            <table className="w-full border-collapse text-[12px]">
+              <tbody>
+                {preview.map((r) => (
+                  <tr key={r.index} className="border-b border-line last:border-0">
+                    <td className="px-2.5 py-1.5">
+                      {candidates[r.index].contactName ||
+                        candidates[r.index].email ||
+                        candidates[r.index].companyName ||
+                        `Row ${r.index + 1}`}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-right">
+                      {r.status === "new" ? (
+                        <span className="text-[#3DDC97]">new</span>
+                      ) : (
+                        <span className="text-warn">duplicate · {r.reason}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              onClick={() => setPreview(null)}
+              className="rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] hover:bg-panel-2"
+            >
+              Back
+            </button>
+            <button
+              onClick={async () => {
+                setBusy(true);
+                await commitCsvImport(candidates);
+                setBusy(false);
+                onDone();
+              }}
+              disabled={busy || preview.every((r) => r.status !== "new")}
+              className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
+            >
+              {busy ? "Importing…" : `Import ${preview.filter((r) => r.status === "new").length} new`}
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function OverrideDialog({
+  leadId,
+  onClose,
+  onDone,
+}: {
+  leadId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [score, setScore] = useState(3);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Modal>
+      <div className="mb-3 flex items-center">
+        <h3 className="font-display text-lg font-bold lowercase">override icp score</h3>
+        <button onClick={onClose} className="ml-auto text-muted hover:text-ink">
+          ✕
+        </button>
+      </div>
+      <p className="mb-2 text-[12px] text-muted">
+        Overrides are recorded in the audit log with your reason.
+      </p>
+      <div className="mb-3 flex gap-2">
+        {[0, 1, 2, 3, 4, 5].map((s) => (
+          <button
+            key={s}
+            onClick={() => setScore(s)}
+            className={`h-9 w-9 rounded-[8px] border text-[13px] font-semibold ${
+              score === s ? "border-accent bg-accent-soft text-[#E4D3FF]" : "border-line bg-panel text-ink"
+            }`}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+      <input
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Reason (required)"
+        className="mb-3 w-full rounded-[8px] border border-line bg-[rgba(0,5,29,0.5)] px-2.5 py-2 text-[13px] text-ink outline-none placeholder:text-muted focus:border-accent"
+      />
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={onClose}
+          className="rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] hover:bg-panel-2"
+        >
+          Cancel
+        </button>
+        <button
+          disabled={busy || !reason.trim()}
+          onClick={async () => {
+            setBusy(true);
+            await overrideScore(leadId, score, reason.trim());
+            setBusy(false);
+            onDone();
+          }}
+          className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
+        >
+          {busy ? "Saving…" : "Save override"}
+        </button>
+      </div>
+    </Modal>
+  );
+}

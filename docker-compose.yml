@@ -1,0 +1,116 @@
+name: ventureos-lite
+
+# ---------------------------------------------------------------------------
+# DB_FLAVOR selects the database (CLAUDE.md). It is honored two ways:
+#   - locally:  `docker compose up db redis`   (postgres, the default)
+#               `docker compose up db-mysql redis`  (mysql)
+#     Naming a service on the CLI starts it regardless of its profile.
+#   - full up:  set COMPOSE_PROFILES to match DB_FLAVOR in .env
+#               (postgres -> starts `db`, mysql -> starts `db-mysql`).
+# The two db services never run together; the app talks to whichever is up via
+# DATABASE_URL.
+# ---------------------------------------------------------------------------
+
+x-app-env: &app-env
+  env_file: .env
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    <<: *app-env
+    environment:
+      # In-network overrides for the container (host names, not localhost).
+      DATABASE_URL: ${APP_DATABASE_URL:-postgresql://venture:venture@db:5432/ventureos?schema=public}
+      REDIS_URL: redis://redis:6379
+    expose:
+      - "3000"
+    volumes:
+      - files:/data/files
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    <<: *app-env
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:-postgresql://venture:venture@db:5432/ventureos?schema=public}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - redis
+    volumes:
+      - files:/data/files
+    restart: unless-stopped
+
+  db:
+    # Default flavor — Postgres 16 (RLS + tenant guard).
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-venture}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-venture}
+      POSTGRES_DB: ${POSTGRES_DB:-ventureos}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-venture}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  db-mysql:
+    # Alternate flavor — MySQL 8 (tenant guard only, no RLS).
+    profiles: ["mysql"]
+    image: mysql:8
+    command: ["--default-authentication-plugin=mysql_native_password"]
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ventureos}
+      MYSQL_USER: ${MYSQL_USER:-venture}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-venture}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-venture}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  db-postgres:
+  db-mysql:
+  redis:
+  files:
+  caddy-data:
+  caddy-config:

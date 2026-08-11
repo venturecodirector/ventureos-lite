@@ -1,0 +1,24 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "MemberExpression[property.name=/^\\$(queryRaw|queryRawUnsafe|executeRaw|executeRawUnsafe)$/]",
+        "message": "Raw Prisma queries are forbidden in business code (CLAUDE.md hard rule #1) — they bypass the tenant guard. Use getWorkspaceClient(workspaceId). Raw SQL is allowed only in migrations/RLS setup."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/lib/rls.ts",
+        "prisma/**",
+        "scripts/**",
+        "test/**",
+        "**/*.test.ts"
+      ],
+      "rules": { "no-restricted-syntax": "off" }
+    }
+  ]
+}

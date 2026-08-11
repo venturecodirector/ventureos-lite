@@ -1,0 +1,47 @@
+/**
+ * Model routing (spec §5). Sonnet for writing-quality tasks, Haiku for
+ * classification/summaries — "Claude is frugal" (CLAUDE.md hard rule #3).
+ * Model IDs verified against the Anthropic model catalog.
+ */
+export type ModelId = "claude-sonnet-4-6" | "claude-haiku-4-5";
+
+export type UseCase =
+  | "lead_research" // Sonnet — research card
+  | "outreach_draft" // Sonnet — message draft / critique
+  | "reply_analysis" // Haiku  — inbox reply intent/objection
+  | "prospect_classify" // Haiku  — Prospector batch classify
+  | "audit_summary" // Haiku  — audit pitch summary
+  | "meeting_brief" // Sonnet — meeting brief
+  | "signal_engine" // Sonnet — weekly analysis
+  | "campaign_frame" // Sonnet — cold-email frame drafted ONCE per campaign
+  | "daily_insight" // Haiku  — daily insight
+  | "winloss_digest" // Haiku  — quarterly win/loss digest (aggregates only)
+  | "weekly_report" // Haiku  — Friday report "what worked" commentary
+  | "monday_digest" // Haiku  — per-user Monday digest intro (aggregates only)
+  | "doc_scope"; // Haiku  — document scope paragraph
+
+export const USE_CASE_MODEL: Record<UseCase, ModelId> = {
+  lead_research: "claude-sonnet-4-6",
+  outreach_draft: "claude-sonnet-4-6",
+  reply_analysis: "claude-haiku-4-5",
+  prospect_classify: "claude-haiku-4-5",
+  audit_summary: "claude-haiku-4-5",
+  meeting_brief: "claude-sonnet-4-6",
+  signal_engine: "claude-sonnet-4-6",
+  campaign_frame: "claude-sonnet-4-6",
+  daily_insight: "claude-haiku-4-5",
+  winloss_digest: "claude-haiku-4-5",
+  weekly_report: "claude-haiku-4-5",
+  monday_digest: "claude-haiku-4-5",
+  doc_scope: "claude-haiku-4-5",
+};
+
+export function modelForUseCase(useCase: UseCase): ModelId {
+  return USE_CASE_MODEL[useCase];
+}
+
+// Non-streaming defaults kept modest for frugality; override per call.
+export const DEFAULT_MAX_TOKENS: Record<ModelId, number> = {
+  "claude-sonnet-4-6": 4096,
+  "claude-haiku-4-5": 1024,
+};

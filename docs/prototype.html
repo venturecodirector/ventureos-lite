@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Venture OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@300;500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --canvas:#00051D;
+  --panel:rgba(239,241,248,0.04);
+  --panel-2:rgba(239,241,248,0.07);
+  --line:rgba(239,241,248,0.09);
+  --ink:#EFF1F8;
+  --muted:#858CAE;
+  --accent:#7427C6;
+  --accent-soft:rgba(116,39,198,0.25);
+  --deep:#310B59;
+  --grad:linear-gradient(135deg,#310B59,#7427C6);
+  --pos:#3DDC97; --warn:#F5B841; --neg:#FF5C7A;
+  --r:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  background:var(--canvas);
+  color:var(--ink);
+  font-family:'Inter',sans-serif;
+  font-size:14px;
+  overflow:hidden;
+}
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(900px 600px at 85% -10%, rgba(116,39,198,0.16), transparent 60%),
+    radial-gradient(700px 500px at -10% 110%, rgba(49,11,89,0.35), transparent 60%);
+}
+.app{display:grid;grid-template-columns:228px 1fr;height:100vh;position:relative;z-index:1}
+
+/* ---------- sidebar ---------- */
+.side{border-right:1px solid var(--line);display:flex;flex-direction:column;padding:22px 14px;gap:6px;background:rgba(0,5,29,0.6)}
+.logo{font-family:'Bricolage Grotesque';font-size:22px;letter-spacing:-0.02em;padding:0 10px 20px;color:#EFF1F8}
+.logo b{font-weight:800}.logo span{font-weight:300;color:var(--muted);margin-left:6px}
+.nav-label{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);padding:14px 10px 6px}
+.nav{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;color:var(--muted);cursor:pointer;font-weight:500;transition:all .15s ease;border:1px solid transparent}
+.nav svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.nav:hover{color:var(--ink);background:var(--panel)}
+.nav.on{color:var(--ink);background:var(--panel-2);border-color:var(--line)}
+.nav.on svg{color:#A76BF0}
+.nav .count{margin-left:auto;font-size:11px;background:var(--accent-soft);color:#C79BFF;border-radius:20px;padding:1px 8px;font-weight:600}
+.userchip{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px;border-top:1px solid var(--line)}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--grad);display:grid;place-items:center;font-weight:700;font-size:12px}
+.userchip .who{line-height:1.2}.userchip .who b{font-size:13px;display:block}.userchip .who span{font-size:11px;color:var(--muted)}
+
+/* ---------- main ---------- */
+.main{display:flex;flex-direction:column;min-width:0}
+.topbar{display:flex;align-items:center;gap:16px;padding:16px 28px;border-bottom:1px solid var(--line)}
+h1.page{font-family:'Bricolage Grotesque';font-weight:800;font-size:26px;letter-spacing:-0.02em;text-transform:lowercase}
+.search{margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;color:var(--muted);width:260px;font-size:13px}
+.kbd{margin-left:auto;border:1px solid var(--line);border-radius:5px;padding:0 6px;font-size:11px}
+.btn{border:none;cursor:pointer;font-family:inherit;font-weight:600;font-size:13px;border-radius:10px;padding:9px 16px;transition:all .15s ease}
+.btn-primary{color:var(--ink);background:linear-gradient(var(--canvas),var(--canvas)) padding-box,var(--grad) border-box;border:1.5px solid transparent;box-shadow:0 0 18px rgba(116,39,198,0.35)}
+.btn-primary:hover{box-shadow:0 0 26px rgba(116,39,198,0.6)}
+.btn-ghost{background:var(--panel);border:1px solid var(--line);color:var(--ink)}
+.btn-ghost:hover{background:var(--panel-2)}
+.content{flex:1;overflow:auto;padding:26px 28px;scrollbar-width:thin;scrollbar-color:var(--accent-soft) transparent}
+.view{display:none;max-width:1400px}
+.view.on{display:block;animation:fade .2s ease}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+
+/* account menu */
+.acct{position:relative}
+.acct-btn{background:none;border:none;cursor:pointer;padding:0;border-radius:50%;display:grid;place-items:center}
+.acct-btn:hover .avatar,.acct-btn[aria-expanded="true"] .avatar{box-shadow:0 0 0 2px var(--canvas),0 0 0 3.5px var(--accent)}
+.acct-btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.menu{position:absolute;top:calc(100% + 10px);right:0;width:272px;background:rgba(6,11,38,0.97);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,0.5),0 0 24px rgba(116,39,198,0.12);backdrop-filter:blur(14px);padding:6px;display:none;z-index:50}
+.menu.open{display:block;animation:fade .15s ease}
+.menu-head{display:flex;gap:11px;align-items:center;padding:12px 12px 12px;border-bottom:1px solid var(--line);margin-bottom:6px}
+.menu-head .who b{font-size:13.5px;display:block}
+.menu-head .who span{font-size:11.5px;color:var(--muted);display:block}
+.rolechip{font-size:10px!important;color:#C79BFF!important;background:var(--accent-soft);border-radius:20px;padding:1px 8px;display:inline-block!important;margin-top:4px}
+.menu-sec{padding:4px 0;border-bottom:1px solid var(--line)}
+.menu-sec:last-child{border:none}
+.menu-label{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);padding:6px 12px 4px;font-weight:600}
+.mi{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;color:var(--ink);font-family:inherit;font-size:13px;font-weight:500;padding:9px 12px;border-radius:9px;cursor:pointer;text-align:left}
+.mi svg{width:15px;height:15px;stroke:var(--muted);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.mi:hover{background:var(--panel-2)}
+.mi:hover svg{stroke:#A76BF0}
+.mi .mi-note{margin-left:auto;font-size:10.5px;color:var(--muted)}
+.mi.on{background:var(--panel)}
+.mi.dis{opacity:.5;cursor:not-allowed}
+.mi.out{color:#FFB3C2}
+.mi.out svg{stroke:#FF5C7A}
+.mi.out:hover{background:rgba(255,92,122,0.1)}
+
+/* ---------- shared ---------- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px;backdrop-filter:blur(8px)}
+.grid{display:grid;gap:16px}
+.muted{color:var(--muted)}
+.tag{display:inline-flex;align-items:center;font-size:11px;font-weight:600;border:1px solid var(--accent-soft);color:#C79BFF;border-radius:20px;padding:2px 9px;margin:2px 3px 2px 0;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;border-radius:20px;padding:3px 10px}
+.chip.pos{background:rgba(61,220,151,0.12);color:var(--pos)}
+.chip.warn{background:rgba(245,184,65,0.12);color:var(--warn)}
+.chip.neg{background:rgba(255,92,122,0.12);color:var(--neg)}
+.notches{display:inline-flex;gap:3px;vertical-align:middle}
+.notches i{width:9px;height:5px;border-radius:2px;background:var(--line)}
+.notches i.f{background:linear-gradient(90deg,#310B59,#7427C6)}
+.eyebrow{font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:10px}
+
+/* ---------- dashboard ---------- */
+.kpis{grid-template-columns:repeat(4,1fr)}
+.kpi .num{font-family:'Bricolage Grotesque';font-weight:800;font-size:34px;letter-spacing:-0.02em;margin:4px 0 2px}
+.kpi .lbl{font-size:12px;color:var(--muted);font-weight:500}
+.kpi .delta{font-size:11px;font-weight:600;margin-top:6px}
+.bar{height:3px;background:var(--line);border-radius:3px;margin-top:12px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--grad);border-radius:3px}
+.dash-lower{grid-template-columns:1.5fr 1fr;margin-top:16px}
+.queue-row{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.queue-row:last-child{border:none}
+.queue-row:hover{background:var(--panel)}
+.q-ico{width:26px;height:26px;border-radius:8px;background:var(--accent-soft);display:grid;place-items:center;font-size:12px;flex:none}
+.queue-row .t{flex:1;min-width:0}.queue-row .t b{font-size:13px;font-weight:600;display:block}.queue-row .t span{font-size:12px;color:var(--muted)}
+.insight{border:1.5px solid transparent;background:linear-gradient(rgba(4,8,34,0.92),rgba(4,8,34,0.92)) padding-box,var(--grad) border-box;box-shadow:0 0 24px rgba(116,39,198,0.18)}
+.pipe-strip{display:flex;gap:8px;margin-top:16px}
+.pipe-strip .seg{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.pipe-strip .seg b{font-family:'Bricolage Grotesque';font-size:20px;font-weight:800;display:block}
+.pipe-strip .seg span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em}
+
+/* ---------- lead engine ---------- */
+.engine{display:grid;grid-template-columns:1fr 340px;gap:18px;align-items:start}
+textarea.paste{width:100%;min-height:84px;background:rgba(0,5,29,0.5);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-family:inherit;font-size:13px;padding:12px;resize:vertical}
+textarea.paste::placeholder{color:var(--muted)}
+textarea.paste:focus{outline:none;border-color:var(--accent)}
+table{width:100%;border-collapse:collapse;margin-top:4px}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:12px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}
+tr.lead:hover td{background:var(--panel)}
+td .co{color:var(--muted);font-size:12px;display:block}
+.gatebadge{font-size:10.5px;color:var(--muted);border:1px dashed var(--line);border-radius:6px;padding:2px 7px}
+
+/* claude rail */
+.rail{position:sticky;top:0}
+.rail .card{border:1.5px solid transparent;background:linear-gradient(rgba(3,7,32,0.95),rgba(3,7,32,0.95)) padding-box,var(--grad) border-box;box-shadow:0 0 32px rgba(116,39,198,0.22)}
+.rail-h{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.spark{width:22px;height:22px;border-radius:7px;background:var(--grad);display:grid;place-items:center;font-size:12px}
+.rail-h b{font-size:13px}.rail-h span{font-size:11px;color:var(--muted);margin-left:auto}
+.rail section{border-top:1px solid var(--line);padding:12px 0}
+.rail section h4{font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:8px;font-weight:600}
+.rail p{font-size:12.5px;line-height:1.55;color:#C9CEE3}
+.score-row{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;padding:4px 0;color:#C9CEE3}
+.hookbox{background:var(--accent-soft);border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.5;color:#E4D3FF;font-style:italic}
+.rail-cta{display:flex;gap:8px;margin-top:14px}
+.typing i{display:inline-block;width:4px;height:4px;border-radius:50%;background:#C79BFF;margin-right:3px;animation:blink 1s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
+
+/* ---------- pipeline ---------- */
+.board{display:grid;grid-auto-flow:column;grid-auto-columns:236px;gap:12px;overflow-x:auto;padding-bottom:12px;align-items:start}
+.col{background:rgba(239,241,248,0.025);border:1px solid var(--line);border-radius:var(--r);padding:10px;min-height:200px}
+.col-h{display:flex;align-items:center;gap:8px;padding:4px 6px 10px;font-size:12px;font-weight:600}
+.col-h .n{margin-left:auto;color:var(--muted);font-weight:500}
+.col.dragover{border-color:var(--accent);box-shadow:0 0 20px rgba(116,39,198,0.3) inset}
+.kcard{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:9px;cursor:grab;transition:box-shadow .15s}
+.kcard:hover{box-shadow:0 0 16px rgba(116,39,198,0.25);border-color:var(--accent-soft)}
+.kcard b{font-size:13px;display:block}.kcard .co{font-size:11.5px;color:var(--muted);display:block;margin:2px 0 8px}
+.kcard .meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+.kcard .meta .due{margin-left:auto}
+.kcard .meta .due.hot{color:var(--warn)}
+
+/* ---------- inbox ---------- */
+.inbox{display:grid;grid-template-columns:290px 1fr 300px;gap:16px;align-items:start}
+.thr{padding:12px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:10px}
+.thr:hover,.thr.on{background:var(--panel-2)}
+.thr b{font-size:13px;display:flex;align-items:center;gap:7px}
+.thr .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.thr span{font-size:12px;color:var(--muted);display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msg{max-width:78%;padding:11px 14px;border-radius:13px;font-size:13px;line-height:1.5;margin-bottom:10px}
+.msg.them{background:var(--panel-2);border:1px solid var(--line)}
+.msg.us{background:var(--accent-soft);border:1px solid rgba(116,39,198,0.4);margin-left:auto}
+.analysis{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+.sugg{display:block;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 12px;color:#C9CEE3;font-size:12.5px;cursor:pointer;margin-top:7px;font-family:inherit}
+.sugg:hover{border-color:var(--accent)}
+.qual{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:7px 0;color:#C9CEE3}
+.tick{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-size:10px;flex:none}
+.tick.y{background:var(--grad);border:none;color:#fff}
+.flag{background:rgba(255,92,122,0.1);border:1px solid rgba(255,92,122,0.35);color:#FFB3C2;border-radius:10px;padding:9px 12px;font-size:12px;margin-bottom:12px}
+
+/* ---------- content hub ---------- */
+.posts{grid-template-columns:repeat(3,1fr)}
+.post .head{display:flex;align-items:center;margin-bottom:10px}
+.post h3{font-size:14px;font-weight:600;line-height:1.35;margin-bottom:6px}
+.post p{font-size:12.5px;color:var(--muted);line-height:1.55}
+.post .foot{display:flex;align-items:center;margin-top:14px;font-size:11.5px;color:var(--muted)}
+.post .foot span{margin-left:auto}
+
+/* ---------- shell additions ---------- */
+.wsswitch{display:flex;align-items:center;gap:9px;padding:9px 10px;margin-bottom:6px;border:1px solid var(--line);border-radius:11px;background:var(--panel);cursor:pointer}
+.wsswitch:hover{background:var(--panel-2)}
+.wsdot{width:26px;height:26px;border-radius:8px;background:var(--grad);display:grid;place-items:center;font-weight:800;font-size:13px;font-family:'Bricolage Grotesque'}
+.wsname{line-height:1.15;min-width:0}.wsname b{font-size:12.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wsname span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em}
+.wsswitch .caret{margin-left:auto;color:var(--muted);font-size:11px}
+.logo .lite{font-family:'Inter';font-style:normal;font-size:9px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 5px;margin-left:7px;vertical-align:middle}
+.nav .lock{margin-left:auto;font-size:10px;opacity:.7}
+.budget{padding:10px 10px 12px;border-top:1px solid var(--line)}
+.b-top{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-bottom:7px}.b-top b{color:var(--ink);font-weight:600}
+
+/* prospector */
+.searchrow{display:flex;gap:10px;flex-wrap:wrap}
+.searchrow input{flex:1;min-width:150px;background:rgba(0,5,29,0.5);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-family:inherit;font-size:13px;padding:10px 12px}
+.searchrow input:focus{outline:none;border-color:var(--accent)}
+.result-sum{font-family:'Bricolage Grotesque';font-weight:700;font-size:17px;margin:18px 0 4px}
+.result-sum b{color:#C79BFF}
+.chip.site-no{background:rgba(245,184,65,0.14);color:var(--warn)}
+.chip.site-fb{background:rgba(133,140,174,0.15);color:var(--muted)}
+.chip.site-yes{background:rgba(61,220,151,0.1);color:var(--pos)}
+
+/* auditor */
+.audit-grid{display:grid;grid-template-columns:220px 1fr;gap:18px;align-items:start}
+.scorebig{font-family:'Bricolage Grotesque';font-weight:800;font-size:64px;letter-spacing:-0.03em;line-height:1;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px}
+.check{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:6px 0;color:#C9CEE3}
+.check .ic{width:17px;height:17px;border-radius:50%;display:grid;place-items:center;font-size:10px;flex:none}
+.check .ic.p{background:rgba(61,220,151,0.15);color:var(--pos)}
+.check .ic.f{background:rgba(255,92,122,0.15);color:var(--neg)}
+.shot{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;height:110px;display:grid;place-items:center;color:var(--muted);font-size:11px}
+
+/* documents */
+.doctabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.doctab{border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:7px 14px;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer}
+.doctab.on{color:var(--ink);border-color:var(--accent-soft);background:var(--accent-soft)}
+.docgrid{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;align-items:start}
+.li-row{display:grid;grid-template-columns:1fr 84px 70px 90px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.li-row input{background:rgba(0,5,29,0.5);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit;font-size:12px;padding:6px 8px;width:100%}
+.preset{font-size:10px;border:1px solid var(--accent-soft);color:#C79BFF;border-radius:20px;padding:1px 7px}
+.pdfpane{background:#0A0F2E;border:1px solid var(--line);border-radius:12px;min-height:340px;padding:26px;position:relative;overflow:hidden}
+.pdfpane::after{content:'DRAFT';position:absolute;inset:0;display:grid;place-items:center;font-family:'Bricolage Grotesque';font-weight:800;font-size:70px;color:rgba(239,241,248,0.05);transform:rotate(-24deg);pointer-events:none;letter-spacing:0.1em}
+.pdfpane .ph{font-family:'Bricolage Grotesque';font-weight:800;font-size:15px;margin-bottom:2px}
+.pdfpane .pm{font-size:10.5px;color:var(--muted);margin-bottom:16px}
+.pdfline{display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;border-bottom:1px solid var(--line);color:#C9CEE3}
+.lockbanner{background:var(--accent-soft);border:1px solid rgba(116,39,198,0.4);border-radius:11px;padding:11px 14px;font-size:12.5px;color:#E4D3FF;margin-bottom:16px;display:flex;gap:10px;align-items:center}
+.chainstep{display:flex;align-items:center;gap:8px;font-size:12px}
+.chainstep .cs{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:10px;background:var(--grad);flex:none}
+.chainstep .cs.off{background:var(--panel-2);border:1px solid var(--line);color:var(--muted)}
+.chainline{flex:1;height:1px;background:var(--line);min-width:14px}
+
+/* ---------- responsive ---------- */
+@media (max-width:1100px){
+  .engine,.inbox,.docgrid,.audit-grid{grid-template-columns:1fr}
+  .rail{position:static}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .dash-lower,.ana-grid,.posts{grid-template-columns:1fr}
+}
+@media (max-width:700px){
+  .app{grid-template-columns:1fr;grid-template-rows:1fr auto;height:100dvh}
+  .side{flex-direction:row;align-items:center;order:2;border-right:none;border-top:1px solid var(--line);padding:8px 10px;gap:2px;overflow-x:auto;background:rgba(0,5,29,0.92);backdrop-filter:blur(10px)}
+  .wsswitch,.logo,.nav-label,.userchip,.budget,.nav .count,.nav .lock{display:none}
+  .nav{flex-direction:column;gap:4px;font-size:9.5px;padding:7px 10px;flex:1;min-width:56px;text-align:center}
+  .nav svg{width:18px;height:18px}
+  .main{order:1;min-height:0}
+  .topbar{padding:12px 16px;gap:10px}
+  h1.page{font-size:19px}
+  .search,.btn-ghost:not(.mi){display:none}
+  .menu{position:fixed;top:auto;bottom:70px;right:10px;left:10px;width:auto}
+  .content{padding:16px}
+  .checks{grid-template-columns:1fr}
+  .li-row{grid-template-columns:1fr 60px 54px 70px;gap:6px}
+  .board{grid-auto-columns:82vw;scroll-snap-type:x mandatory}
+  .col{scroll-snap-align:start}
+  .msg{max-width:92%}
+}
+
+/* calls */
+.outbtns{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin:12px 0}
+.outbtn{border:1px solid var(--line);background:var(--panel);border-radius:11px;padding:13px 10px;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer;text-align:center;font-family:inherit;min-height:44px}
+.outbtn:hover{border-color:var(--accent-soft);background:var(--panel-2)}
+.outbtn.sel{background:var(--accent-soft);border-color:var(--accent);color:#E4D3FF}
+.cbchip{border:1px solid var(--line);background:var(--panel);border-radius:20px;padding:6px 13px;font-size:12px;color:#C9CEE3;cursor:pointer;font-family:inherit}
+.cbchip:hover,.cbchip.sel{border-color:var(--accent);color:#E4D3FF;background:var(--accent-soft)}
+.calllog-row{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--line);font-size:13px}
+.calllog-row:last-child{border:none}
+.callic{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-size:12px;flex:none}
+.callic.ok{background:rgba(61,220,151,0.12)} .callic.cb{background:rgba(245,184,65,0.12)} .callic.na{background:rgba(133,140,174,0.12)}
+
+/* campaigns */
+.compliance{background:rgba(255,92,122,0.08);border:1px solid rgba(255,92,122,0.35);border-radius:11px;padding:12px 14px;font-size:12.5px;color:#FFB3C2;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start}
+.health{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}
+.health .h{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted)}
+.health .dot2{width:8px;height:8px;border-radius:50%}
+.camp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+.camp-stats .s{background:rgba(0,5,29,0.4);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.camp-stats .s b{font-family:'Bricolage Grotesque';font-size:19px;font-weight:800;display:block}
+.camp-stats .s span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em}
+.seqstep{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.seqstep:last-child{border:none}
+.seqnum{width:22px;height:22px;border-radius:50%;background:var(--grad);display:grid;place-items:center;font-size:10px;font-weight:700;flex:none}
+
+/* public page previews */
+.pubgrid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+.browser{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#050A26}
+.urlbar{display:flex;align-items:center;gap:8px;background:rgba(239,241,248,0.03);border-bottom:1px solid var(--line);padding:9px 12px;font-size:11px;color:var(--muted)}
+.urlbar .dots{display:flex;gap:4px}
+.urlbar .dots i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.urlbar .url{background:rgba(0,5,29,0.6);border:1px solid var(--line);border-radius:6px;padding:4px 10px;flex:1;color:#C9CEE3}
+.pubbody{padding:26px 24px;background:radial-gradient(500px 300px at 90% -10%, rgba(116,39,198,0.18), transparent 60%), #00051D}
+.publogo{font-family:'Bricolage Grotesque';font-size:16px;margin-bottom:22px}
+.publogo b{font-weight:800}.publogo span{font-weight:300;color:var(--muted)}
+.pubh{font-family:'Bricolage Grotesque';font-weight:800;font-size:22px;letter-spacing:-0.02em;line-height:1.15;margin-bottom:6px;text-transform:lowercase}
+.pubsub{font-size:12px;color:var(--muted);margin-bottom:18px;line-height:1.5}
+.pubinput{width:100%;background:rgba(239,241,248,0.04);border:1px solid var(--line);border-radius:9px;color:var(--ink);font-family:inherit;font-size:12.5px;padding:10px 12px;margin-bottom:9px}
+.slotgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 16px}
+.slot{border:1px solid var(--line);border-radius:9px;padding:9px 4px;text-align:center;font-size:12px;cursor:pointer;color:#C9CEE3}
+.slot:hover{border-color:var(--accent)}
+.slot.sel{background:var(--accent-soft);border-color:var(--accent);color:#E4D3FF;font-weight:600}
+.daystrip{display:flex;gap:7px;overflow-x:auto}
+.day{border:1px solid var(--line);border-radius:10px;padding:8px 0;text-align:center;font-size:11px;color:var(--muted);flex:1;min-width:52px;cursor:pointer}
+.day b{display:block;font-size:14px;color:var(--ink);font-family:'Bricolage Grotesque'}
+.day.sel{background:var(--accent-soft);border-color:var(--accent)}
+.callgrid{grid-template-columns:340px 1fr}
+@media (max-width:1100px){.pubgrid{grid-template-columns:1fr}.camp-stats{grid-template-columns:repeat(2,1fr)}.callgrid{grid-template-columns:1fr}}
+
+/* ---------- analytics ---------- */
+.funnel-row{display:grid;grid-template-columns:110px 1fr 90px;align-items:center;gap:14px;padding:7px 0;font-size:12.5px}
+.funnel-bar{height:22px;border-radius:6px;background:var(--grad);opacity:.92;min-width:8px}
+.funnel-row .pct{color:var(--muted);text-align:right}
+.ana-grid{grid-template-columns:1.4fr 1fr}
+.report-line{display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid var(--line)}
+.report-line:last-child{border:none}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="wsswitch" title="Switch workspace"><div class="wsdot">V</div><div class="wsname"><b>Venture CO Group</b><span>workspace</span></div><span class="caret">▾</span></div>
+    <div class="logo"><b>venture</b><span>os</span><em class="lite">lite</em></div>
+    <div class="nav on" data-v="dashboard" onclick="go(this)"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</div>
+    <div class="nav" data-v="prospector" onclick="go(this)"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 1 8 8c0 5-8 12-8 12S4 15 4 10a8 8 0 0 1 8-8z"/></svg>Prospector</div>
+    <div class="nav" data-v="engine" onclick="go(this)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Lead Engine<span class="count">12</span></div>
+    <div class="nav" data-v="audit" onclick="go(this)"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H4z"/><path d="M8 20h8M12 16v4"/><path d="m7 11 3-3 2 2 4-4"/></svg>Site Audit</div>
+    <div class="nav" data-v="pipeline" onclick="go(this)"><svg viewBox="0 0 24 24"><path d="M4 5h16M7 12h10M10 19h4"/></svg>Pipeline</div>
+    <div class="nav" data-v="inbox" onclick="go(this)"><svg viewBox="0 0 24 24"><path d="M21 12h-5l-2 3h-4l-2-3H3"/><path d="M5 5h14l2 7v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z"/></svg>Inbox<span class="count">3</span></div>
+    <div class="nav" data-v="calls" onclick="go(this)"><svg viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.13.96.36 1.9.7 2.8a2 2 0 0 1-.45 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.27a2 2 0 0 1 2.1-.45c.9.34 1.84.57 2.8.7A2 2 0 0 1 22 16.9z"/></svg>Calls<span class="count">2</span></div>
+    <div class="nav" data-v="campaigns" onclick="go(this)"><svg viewBox="0 0 24 24"><path d="m3 11 18-8-8 18-2-8z"/></svg>Campaigns<span class="lock">🔒</span></div>
+    <div class="nav" data-v="documents" onclick="go(this)"><svg viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/></svg>Documents<span class="lock">🔒</span></div>
+    <div class="nav" data-v="public" onclick="go(this)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></svg>Public Pages</div>
+    <div class="nav" data-v="content" onclick="go(this)"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Content Hub</div>
+    <div class="nav" data-v="analytics" onclick="go(this)"><svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M7 17V9M12 17V5M17 17v-6"/></svg>Analytics</div>
+    <div class="nav-label">System</div>
+    <div class="nav"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.07-.4.1-.8.1-1.2z"/></svg>Settings</div>
+    <div class="budget"><div class="b-top"><span>✦ Claude budget</span><b>$0.84 / $2.00</b></div><div class="bar"><i style="width:42%"></i></div></div>
+    <div class="userchip"><div class="avatar">FV</div><div class="who"><b>Fanni V.</b><span>BDR · Venture CO Group</span></div></div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <h1 class="page" id="pageTitle">good morning, fanni</h1>
+      <div class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search leads, companies…<span class="kbd">/</span></div>
+      <button class="btn btn-ghost">Import CSV</button>
+      <button class="btn btn-primary" onclick="go(document.querySelector('[data-v=engine]'))">+ New lead</button>
+      <div class="acct">
+        <button class="acct-btn" id="acctBtn" onclick="toggleMenu(event)" aria-haspopup="true" aria-expanded="false"><span class="avatar" style="width:34px;height:34px;font-size:13px">FV</span></button>
+        <div class="menu" id="acctMenu" role="menu">
+          <div class="menu-head"><div class="avatar" style="width:38px;height:38px">FV</div><div class="who"><b>Fanni Virágh</b><span>fanni@ventureco.group</span><span class="rolechip">BDR · Venture CO Group</span></div></div>
+          <div class="menu-sec">
+            <button class="mi" role="menuitem"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>Profile</button>
+            <button class="mi" role="menuitem"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.07-.4.1-.8.1-1.2z"/></svg>Settings</button>
+            <button class="mi" role="menuitem"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Password & security<span class="mi-note">2FA on</span></button>
+            <button class="mi" role="menuitem"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>Notifications</button>
+          </div>
+          <div class="menu-sec">
+            <div class="menu-label">Workspace</div>
+            <button class="mi on" role="menuitem"><span class="wsdot" style="width:20px;height:20px;font-size:10px;border-radius:6px">V</span>Venture CO Group<span class="mi-note">current</span></button>
+            <button class="mi dis" role="menuitem" title="No membership"><span class="wsdot" style="width:20px;height:20px;font-size:10px;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted)">e</span>engH<span class="mi-note">no access</span></button>
+          </div>
+          <div class="menu-sec">
+            <button class="mi" role="menuitem"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2.5"/></svg>What's new</button>
+            <button class="mi" role="menuitem"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.4-3 4"/><path d="M12 17.5h.01"/></svg>Help & shortcuts</button>
+            <button class="mi out" role="menuitem"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>Log out</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ============ DASHBOARD ============ -->
+      <div class="view on" id="v-dashboard">
+        <div class="grid kpis">
+          <div class="card kpi"><div class="lbl">Invites sent · this week</div><div class="num">84</div><div class="delta" style="color:var(--pos)">▲ 12 vs last week</div><div class="bar"><i style="width:84%"></i></div><div class="lbl" style="margin-top:6px">Target 100</div></div>
+          <div class="card kpi"><div class="lbl">Acceptance rate</div><div class="num">31%</div><div class="delta" style="color:var(--pos)">▲ 4 pts</div><div class="bar"><i style="width:88%"></i></div><div class="lbl" style="margin-top:6px">Target 35%</div></div>
+          <div class="card kpi"><div class="lbl">Reply rate</div><div class="num">14%</div><div class="delta" style="color:var(--warn)">▼ 2 pts</div><div class="bar"><i style="width:70%"></i></div><div class="lbl" style="margin-top:6px">Target 20%</div></div>
+          <div class="card kpi"><div class="lbl">Meetings booked · Aug</div><div class="num">6</div><div class="delta" style="color:var(--pos)">▲ 2 vs July</div><div class="bar"><i style="width:60%"></i></div><div class="lbl" style="margin-top:6px">Target 10</div></div>
+        </div>
+
+        <div class="pipe-strip">
+          <div class="seg"><b>38</b><span>Researched</span></div>
+          <div class="seg"><b>84</b><span>Contacted</span></div>
+          <div class="seg"><b>26</b><span>Accepted</span></div>
+          <div class="seg"><b>11</b><span>Replied</span></div>
+          <div class="seg"><b>5</b><span>Qualified</span></div>
+          <div class="seg"><b>3</b><span>Meeting booked</span></div>
+        </div>
+
+        <div class="grid dash-lower">
+          <div class="card">
+            <div class="eyebrow">Today queue · 7 tasks</div>
+            <div class="queue-row"><div class="q-ico">✉</div><div class="t"><b>Follow-up 1 due — Kovács Péter</b><span>Danubia Manufacturing Kft. · accepted 3 days ago</span></div><span class="chip warn">due today</span></div>
+            <div class="queue-row"><div class="q-ico">↩</div><div class="t"><b>Reply waiting — Szabó Anna</b><span>MediDent Clinic · asked about scope</span></div><span class="chip pos">interested</span></div>
+            <div class="queue-row"><div class="q-ico">✉</div><div class="t"><b>Follow-up 2 due — Nagy Gábor</b><span>Pannon Foods Zrt. · no reply to FU1</span></div><span class="chip warn">last touch</span></div>
+            <div class="queue-row"><div class="q-ico">📋</div><div class="t"><b>Meeting brief — Horváth Judit</b><span>Aventa Logistics · meeting Thu 10:00 with Tamas</span></div><span class="chip pos">1 click</span></div>
+            <div class="queue-row"><div class="q-ico">🔎</div><div class="t"><b>12 researched leads not yet contacted</b><span>Lead Engine · 9 above score gate</span></div><span class="muted" style="font-size:12px">open</span></div>
+          </div>
+          <div>
+            <div class="card insight">
+              <div class="rail-h"><div class="spark">✦</div><b>Claude insight</b><span>today</span></div>
+              <p style="font-size:13px;line-height:1.6;color:#D8DCEF">Leads carrying the <b>“hiring marketing”</b> signal replied 2.3× more often over the last 3 weeks (n=27). You have 6 uncontacted leads with this signal — consider moving them to the top of today's outreach block.</p>
+              <div class="rail-cta"><button class="btn btn-ghost" style="font-size:12px">Show the 6 leads</button></div>
+            </div>
+            <div class="card" style="margin-top:16px">
+              <div class="eyebrow">Friday report</div>
+              <p class="muted" style="font-size:12.5px;line-height:1.6">Generates automatically Friday 16:00. Last week's report was sent to Tamas · <a href="#" style="color:#C79BFF">view</a></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ LEAD ENGINE ============ -->
+      <div class="view" id="v-engine">
+        <div class="engine">
+          <div>
+            <div class="card" style="margin-bottom:16px">
+              <div class="eyebrow">Capture a lead</div>
+              <textarea class="paste" placeholder="Paste a LinkedIn profile URL and the page text — or capture it with the browser extension while viewing the profile."></textarea>
+              <div style="display:flex;gap:10px;margin-top:12px;align-items:center">
+                <button class="btn btn-primary" onclick="runResearch()">✦ Research with Claude</button>
+                <button class="btn btn-ghost">Add manually</button>
+                <span class="muted" style="font-size:12px;margin-left:auto">Research runs take ~10s · nothing is sent anywhere</span>
+              </div>
+            </div>
+
+            <div class="card" style="padding:6px 0 0">
+              <table>
+                <thead><tr><th>Lead</th><th>ICP score</th><th>Signals</th><th>Stage</th><th></th></tr></thead>
+                <tbody>
+                  <tr class="lead"><td><b>Kelemen Márta</b><span class="co">Fortuna Étterem Group · HoReCa · 24 employees</span></td><td><span class="notches"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></span> <b style="margin-left:6px">5</b></td><td><span class="tag">allergen gap</span><span class="tag">outdated site</span></td><td><span class="chip pos">ready</span></td><td><button class="btn btn-ghost" style="padding:6px 12px;font-size:12px">Draft outreach</button></td></tr>
+                  <tr class="lead"><td><b>Bodor István</b><span class="co">Vektor Gépgyár Kft. · Manufacturing · 47 employees</span></td><td><span class="notches"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span> <b style="margin-left:6px">4</b></td><td><span class="tag">hiring marketing</span><span class="tag">expansion</span></td><td><span class="chip pos">ready</span></td><td><button class="btn btn-ghost" style="padding:6px 12px;font-size:12px">Draft outreach</button></td></tr>
+                  <tr class="lead"><td><b>Fehér Dóra</b><span class="co">Luna Dental · Private health · 18 employees</span></td><td><span class="notches"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></span> <b style="margin-left:6px">3</b></td><td><span class="tag">weak content</span></td><td><span class="chip pos">ready</span></td><td><button class="btn btn-ghost" style="padding:6px 12px;font-size:12px">Draft outreach</button></td></tr>
+                  <tr class="lead"><td><b>Tóth Bence</b><span class="co">TB Consulting · Prof. services · 4 employees</span></td><td><span class="notches"><i class="f"></i><i class="f"></i><i></i><i></i><i></i></span> <b style="margin-left:6px">2</b></td><td><span class="tag">active poster</span></td><td><span class="gatebadge">below gate — can't contact</span></td><td></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- CLAUDE RAIL -->
+          <div class="rail">
+            <div class="card">
+              <div class="rail-h"><div class="spark">✦</div><b>Claude · Lead card</b><span id="railStatus">idle</span></div>
+              <div id="railBody">
+                <p class="muted" style="font-size:12.5px">Paste a profile and run research — the structured lead card streams in here. Every score can be overridden; overrides are logged.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PIPELINE ============ -->
+      <div class="view" id="v-pipeline">
+        <div class="board" id="board">
+          <div class="col" data-col><div class="col-h">Researched <span class="n">12</span></div>
+            <div class="kcard" draggable="true"><b>Kelemen Márta</b><span class="co">Fortuna Étterem Group</span><div class="meta"><span class="notches"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></span><span class="due">2d</span></div></div>
+            <div class="kcard" draggable="true"><b>Bodor István</b><span class="co">Vektor Gépgyár Kft.</span><div class="meta"><span class="notches"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span><span class="due">1d</span></div></div>
+          </div>
+          <div class="col" data-col><div class="col-h">Contacted <span class="n">31</span></div>
+            <div class="kcard" draggable="true"><b>Varga László</b><span class="co">Aqua Wellness Kft.</span><div class="meta"><span class="notches"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></span><span class="due">3d</span></div></div>
+            <div class="kcard" draggable="true"><b>Kiss Réka</b><span class="co">GreenBuild Zrt.</span><div class="meta"><span class="notches"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span><span class="due hot">8d</span></div></div>
+          </div>
+          <div class="col" data-col><div class="col-h">Accepted <span class="n">9</span></div>
+            <div class="kcard" draggable="true"><b>Kovács Péter</b><span class="co">Danubia Manufacturing</span><div class="meta"><span class="notches"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span><span class="due hot">FU1 due</span></div></div>
+          </div>
+          <div class="col" data-col><div class="col-h">Replied <span class="n">4</span></div>
+            <div class="kcard" draggable="true"><b>Szabó Anna</b><span class="co">MediDent Clinic</span><div class="meta"><span class="notches"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></span><span class="due">today</span></div></div>
+          </div>
+          <div class="col" data-col><div class="col-h">Qualified <span class="n">2</span></div>
+            <div class="kcard" draggable="true"><b>Molnár Zsolt</b><span class="co">Trivium Trade Kft.</span><div class="meta"><span class="notches"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span><span class="due">1d</span></div></div>
+          </div>
+          <div class="col" data-col><div class="col-h">Meeting booked <span class="n">3</span></div>
+            <div class="kcard" draggable="true"><b>Horváth Judit</b><span class="co">Aventa Logistics</span><div class="meta"><span class="chip pos" style="font-size:10px">Thu 10:00</span><span class="due">brief ✓</span></div></div>
+          </div>
+          <div class="col" data-col><div class="col-h">Handed off <span class="n">5</span></div>
+            <div class="kcard" draggable="true"><b>Farkas Ádám</b><span class="co">Solaris Energia Kft.</span><div class="meta"><span class="due">→ Tamas</span></div></div>
+          </div>
+        </div>
+        <p class="muted" style="font-size:12px;margin-top:6px">Drag cards between stages. After Follow-up 2 with no reply, leads auto-move to <b>Not now</b> and resurface in 6 months.</p>
+      </div>
+
+      <!-- ============ INBOX ============ -->
+      <div class="view" id="v-inbox">
+        <div class="inbox">
+          <div class="card" style="padding:8px">
+            <div class="thr on"><b><span class="dot"></span>Szabó Anna</b><span>MediDent Clinic · “Ez érdekesen hangzik, de…”</span></div>
+            <div class="thr"><b><span class="dot"></span>Molnár Zsolt</b><span>Trivium Trade · “Mennyibe kerülne egy…”</span></div>
+            <div class="thr"><b>Kovács Péter</b><span>Danubia Mfg. · connection accepted</span></div>
+            <div class="thr"><b>Kiss Réka</b><span>GreenBuild · “Most nem aktuális, de…”</span></div>
+          </div>
+
+          <div class="card">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><div class="avatar" style="background:var(--panel-2);border:1px solid var(--line)">SA</div><div><b style="font-size:14px">Szabó Anna</b><span class="muted" style="display:block;font-size:12px">Managing Director · MediDent Clinic · score 5/5</span></div><span class="chip pos" style="margin-left:auto">interested</span></div>
+            <div class="msg us">Szia Anna, láttam a posztodat az új budai rendelőtökről — gratulálok a nyitáshoz. A Venture CO-nál magánklinikákkal dolgozunk hasonló növekedési fázisban. Örülnék, ha kapcsolódnánk.</div>
+            <div class="msg them">Szia Fanni, köszönöm! Ez érdekesen hangzik, de őszintén szólva most a betegelőjegyzés online részével szenvedünk a legtöbbet. Ti ilyesmivel is foglalkoztok?</div>
+            <div class="analysis">
+              <div class="eyebrow">✦ Claude analysis</div>
+              <div style="display:flex;gap:8px;margin-bottom:8px"><span class="chip pos">intent: interested</span><span class="chip warn">objection: unclear scope</span></div>
+              <p class="muted" style="font-size:12.5px;line-height:1.55">She's revealing a concrete pain (online booking). Confirm scope, then move to qualification — authority is likely (MD), budget and timeline unknown.</p>
+              <button class="sugg" onclick="this.style.borderColor='var(--accent)'">→ “Igen, pont az ilyen rendszerfejlesztés a fő területünk. Az online előjegyzés most teljesen hiányzik, vagy van ami nem működik jól?”</button>
+              <button class="sugg" onclick="this.style.borderColor='var(--accent)'">→ “Foglalkozunk — webes rendszerfejlesztés A-tól Z-ig. Van már erre idei keretetek, vagy még a feltérképezésnél tartotok?”</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="eyebrow">Qualification · 2 of 4</div>
+            <div class="qual"><span class="tick y">✓</span>Authority — she is the decision-maker</div>
+            <div class="qual"><span class="tick y">✓</span>History — no previous vendor attempt</div>
+            <div class="qual"><span class="tick">·</span>Budget — unknown</div>
+            <div class="qual"><span class="tick">·</span>Timeline — unknown</div>
+            <div class="bar" style="margin-top:14px"><i style="width:50%"></i></div>
+            <p class="muted" style="font-size:11.5px;margin-top:10px">“Qualified” unlocks at 3 of 4. Price mentions auto-escalate to Tamas.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ CONTENT HUB ============ -->
+      <div class="view" id="v-content">
+        <div class="grid posts">
+          <div class="card post"><div class="head"><span class="chip pos">Published</span><span class="muted" style="margin-left:auto;font-size:11.5px">Aug 6</span></div><h3>One partner instead of five vendors — what full-scale delivery actually means</h3><p>Most SMEs juggle a web agency, a marketing freelancer, a grant writer and a developer. Here's what changes when one team owns the whole project…</p><div class="foot">Company page · 2,140 views<span>↗ 34 reactions</span></div></div>
+          <div class="card post"><div class="head"><span class="chip warn">In review</span><span class="muted" style="margin-left:auto;font-size:11.5px">sched. Aug 13</span></div><h3>EU 1169/2011: is your menu's allergen information actually compliant?</h3><p>A surprising number of restaurants fail the basics. A 5-point self-check for HoReCa operators — and what fixing it looks like…</p><div class="foot">Draft by Claude · edited by Fanni<span>awaiting Tamas</span></div></div>
+          <div class="card post"><div class="head"><span class="chip" style="background:var(--panel-2);color:var(--muted)">Draft</span><span class="muted" style="margin-left:auto;font-size:11.5px">—</span></div><h3>Why “cheap intro pricing” quietly kills long-term agency relationships</h3><p>Anchoring, switching costs, and how to price a first project so the second one can exist…</p><div class="foot">Draft by Claude<span>needs edit</span></div></div>
+        </div>
+      </div>
+
+      <!-- ============ PROSPECTOR ============ -->
+      <div class="view" id="v-prospector">
+        <div class="card" style="margin-bottom:4px">
+          <div class="eyebrow">Find businesses on Google</div>
+          <div class="searchrow">
+            <input value="vízvezetékszerelő" placeholder="Keyword — e.g. plumber, restaurant, dental clinic">
+            <input value="Budapest" placeholder="Location" style="max-width:180px">
+            <input value="15 km" placeholder="Radius" style="max-width:90px">
+            <button class="btn btn-primary">Run search</button>
+          </div>
+          <p class="muted" style="font-size:11.5px;margin-top:10px">Estimated cost: ~$0.90 Places API · <b style="color:#C9CEE3">0 Claude calls</b> — results come from Google directly. Cached 30 days.</p>
+        </div>
+        <div class="result-sum">27 plumbers found in Budapest · <b>11 have no website</b></div>
+        <p class="muted" style="font-size:12px;margin-bottom:12px">Saved searches: <span class="tag">étterem · Debrecen</span><span class="tag">fogászat · Győr</span></p>
+        <div class="card" style="padding:6px 0 0">
+          <table>
+            <thead><tr><th>Business</th><th>Rating</th><th>Website</th><th>Phone</th><th></th></tr></thead>
+            <tbody>
+              <tr class="lead"><td><b>Csővezeték Mester Kft.</b><span class="co">Plumber · XIII. kerület</span></td><td>4.8 ★ (112)</td><td><span class="chip site-no">No website</span></td><td class="muted">+36 30 …</td><td><button class="btn btn-ghost" style="padding:6px 12px;font-size:12px">Add as lead</button></td></tr>
+              <tr class="lead"><td><b>AquaFix Szerviz</b><span class="co">Plumber · XI. kerület</span></td><td>4.6 ★ (89)</td><td><span class="chip site-fb">Facebook only</span></td><td class="muted">+36 20 …</td><td><button class="btn btn-ghost" style="padding:6px 12px;font-size:12px">Add as lead</button></td></tr>
+              <tr class="lead"><td><b>Budai Vízszerelés Bt.</b><span class="co">Plumber · II. kerület</span></td><td>4.9 ★ (203)</td><td><span class="chip site-yes">Has website</span></td><td class="muted">+36 70 …</td><td><button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="go(document.querySelector('[data-v=audit]'))">Audit site</button></td></tr>
+              <tr class="lead"><td><b>DunaTherm Kft.</b><span class="co">Plumber & heating · IX. kerület</span></td><td>4.4 ★ (57)</td><td><span class="chip site-yes">Has website</span></td><td class="muted">+36 1 …</td><td><button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="go(document.querySelector('[data-v=audit]'))">Audit site</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px;align-items:center">
+          <button class="btn btn-ghost">✦ Classify fit with Claude <span class="muted" style="font-weight:400">· 1 Haiku call / 25 rows</span></button>
+          <span class="muted" style="font-size:12px">Optional — off by default to save credits</span>
+        </div>
+      </div>
+
+      <!-- ============ SITE AUDIT ============ -->
+      <div class="view" id="v-audit">
+        <div class="card" style="margin-bottom:16px">
+          <div class="searchrow">
+            <input value="https://budaivizszereles.hu" placeholder="Website URL">
+            <button class="btn btn-primary">Run audit</button>
+          </div>
+          <p class="muted" style="font-size:11.5px;margin-top:10px">Checks run locally + PageSpeed API (free) · <b style="color:#C9CEE3">0 Claude calls</b> unless you enable the pitch summary.</p>
+        </div>
+        <div class="audit-grid">
+          <div class="card" style="text-align:center">
+            <div class="eyebrow">Opportunity score</div>
+            <div class="scorebig">86</div>
+            <div style="margin:10px 0 14px"><span class="chip warn">Strong prospect</span></div>
+            <p class="muted" style="font-size:11.5px;line-height:1.5">High score = weak site, strong sales opportunity. Thresholds set in Settings, not by AI.</p>
+            <button class="btn btn-primary" style="width:100%;margin-top:14px" onclick="go(document.querySelector('[data-v=engine]'))">Create lead with signals</button>
+            <button class="btn btn-ghost" style="width:100%;margin-top:8px">Export branded PDF</button>
+          </div>
+          <div>
+            <div class="card">
+              <div class="eyebrow">budaivizszereles.hu · audited Aug 11 · cached 30 days</div>
+              <div class="checks">
+                <div class="check"><span class="ic p">✓</span>HTTPS valid</div>
+                <div class="check"><span class="ic f">✗</span>No mobile layout</div>
+                <div class="check"><span class="ic f">✗</span>PageSpeed mobile: 28/100</div>
+                <div class="check"><span class="ic f">✗</span>Meta description missing</div>
+                <div class="check"><span class="ic f">✗</span>Copyright footer says 2019</div>
+                <div class="check"><span class="ic f">✗</span>No online booking form</div>
+                <div class="check"><span class="ic p">✓</span>Phone number visible</div>
+                <div class="check"><span class="ic f">✗</span>No cookie consent (GDPR)</div>
+                <div class="check"><span class="ic p">✓</span>Sitemap.xml present</div>
+                <div class="check"><span class="ic f">✗</span>Images not optimized (4.2 MB)</div>
+              </div>
+              <div style="margin-top:14px"><span class="tag">outdated website</span><span class="tag">no mobile</span><span class="tag">no conversion path</span><span class="tag">GDPR gap</span></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
+                <div class="shot">Desktop screenshot</div>
+                <div class="shot">Mobile screenshot</div>
+              </div>
+            </div>
+            <div class="card insight" style="margin-top:14px">
+              <div class="rail-h"><div class="spark">✦</div><b>Pitch angle</b><span>optional · 1 Haiku call</span></div>
+              <p style="font-size:12.5px;line-height:1.6;color:#D8DCEF">A 4.9-star business with 203 reviews losing mobile visitors to a site that takes 7 seconds to load — the reputation is already built, the website just can't convert it. Lead with the mobile traffic they're paying for and not capturing.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ DOCUMENTS ============ -->
+      <div class="view" id="v-documents">
+        <div class="lockbanner">🔒 <span><b>Owner access.</b> Quotes, contracts and certificates are managed by Tamas. Grants can be assigned per user in Settings — no redeploy needed.</span></div>
+        <div class="doctabs">
+          <div class="doctab on">Quotes</div><div class="doctab">Contracts</div><div class="doctab">Certificates</div><div class="doctab">Templates</div>
+        </div>
+        <div class="docgrid">
+          <div class="card">
+            <div class="eyebrow">New quote · Q-2026-014</div>
+            <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+              <input class="paste" style="min-height:0;padding:9px 12px;flex:1;min-width:180px" value="Aventa Logistics Kft. — Horváth Judit">
+              <input class="paste" style="min-height:0;padding:9px 12px;max-width:140px" value="Valid: Sep 10">
+            </div>
+            <div class="li-row" style="color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:0.08em"><span>Item</span><span>Net price</span><span>Preset</span><span>Total</span></div>
+            <div class="li-row"><input value="Website development (10 pages, HU/EN)"><input value="1 400 000"><span class="preset">prod +30%</span><b>1 820 000</b></div>
+            <div class="li-row"><input value="SEO technical setup"><input value="220 000"><span class="preset">prod +30%</span><b>286 000</b></div>
+            <div class="li-row"><input value="Hosting & photo (pass-through)"><input value="180 000"><span class="preset">+15%</span><b>207 000</b></div>
+            <div style="display:flex;justify-content:space-between;padding:14px 0 4px;font-size:14px"><span class="muted">Total net · +27% VAT applies</span><b style="font-family:'Bricolage Grotesque';font-size:20px">2 313 000 Ft</b></div>
+            <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+              <button class="btn btn-primary">Generate PDF</button>
+              <button class="btn btn-ghost">Send via email</button>
+              <button class="btn btn-ghost">✦ Draft scope text from meeting brief</button>
+            </div>
+          </div>
+          <div>
+            <div class="pdfpane">
+              <div class="ph">venture <span style="font-weight:300">co.group</span></div>
+              <div class="pm">ÁRAJÁNLAT · Q-2026-014 · Aventa Logistics Kft.</div>
+              <div class="pdfline"><span>Weboldal fejlesztés (10 oldal, HU/EN)</span><span>1 820 000 Ft</span></div>
+              <div class="pdfline"><span>SEO technikai beállítás</span><span>286 000 Ft</span></div>
+              <div class="pdfline"><span>Hosting & fotó</span><span>207 000 Ft</span></div>
+              <div class="pdfline"><b>Összesen (nettó)</b><b>2 313 000 Ft</b></div>
+              <p class="muted" style="font-size:9.5px;margin-top:18px">Ez a dokumentum tervezet — véglegesítés előtt jogi átnézés javasolt. · Mailgun: not sent</p>
+            </div>
+            <div class="card" style="margin-top:14px">
+              <div class="eyebrow">Document chain</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <div class="chainstep"><span class="cs">1</span>Quote <span class="muted">draft</span></div><div class="chainline"></div>
+                <div class="chainstep"><span class="cs off">2</span><span class="muted">Contract</span></div><div class="chainline"></div>
+                <div class="chainstep"><span class="cs off">3</span><span class="muted">Certificate</span></div>
+              </div>
+              <p class="muted" style="font-size:11.5px;margin-top:12px">DRAFT watermark stays until an Owner marks the document final — removal is audit-logged. Templates are versioned; old documents re-render identically.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ CALLS ============ -->
+      <div class="view" id="v-calls">
+        <div class="grid callgrid">
+          <div class="card">
+            <div class="eyebrow">Log a call</div>
+            <input class="pubinput" value="Csővezeték Mester Kft. — owner" style="margin-bottom:4px">
+            <div class="outbtns">
+              <button class="outbtn" onclick="pick(this)">No answer</button>
+              <button class="outbtn sel" onclick="pick(this)">Callback requested</button>
+              <button class="outbtn" onclick="pick(this)">Interested</button>
+              <button class="outbtn" onclick="pick(this)">Not interested</button>
+            </div>
+            <div class="eyebrow" style="margin-top:6px">Callback</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="cbchip" onclick="pick(this)">Tomorrow 9:00</button>
+              <button class="cbchip sel" onclick="pick(this)">Thu 14:00</button>
+              <button class="cbchip" onclick="pick(this)">Next Mon</button>
+              <button class="cbchip" onclick="pick(this)">Pick…</button>
+            </div>
+            <textarea class="paste" style="min-height:56px;margin-top:12px" placeholder="Note — 'ask for Gábor, he decides on the website'"></textarea>
+            <button class="btn btn-primary" style="width:100%;margin-top:12px">Save call</button>
+            <p class="muted" style="font-size:11px;margin-top:10px">One-thumb sized — this sheet is built for logging from the street. Callbacks land in Today Queue on time.</p>
+          </div>
+          <div>
+            <div class="card" style="margin-bottom:14px">
+              <div class="eyebrow">Due callbacks</div>
+              <div class="calllog-row"><div class="callic cb">↺</div><div style="flex:1"><b>AquaFix Szerviz</b><span class="co" style="display:block;font-size:11.5px;color:var(--muted)">Callback — today 15:30 · "call after lunch"</span></div><span class="chip warn">today</span></div>
+              <div class="calllog-row"><div class="callic cb">↺</div><div style="flex:1"><b>Csővezeték Mester Kft.</b><span class="co" style="display:block;font-size:11.5px;color:var(--muted)">Callback — Thu 14:00 · ask for Gábor</span></div><span class="chip" style="background:var(--panel-2);color:var(--muted)">Thu</span></div>
+            </div>
+            <div class="card">
+              <div class="eyebrow">Recent calls · this week 14</div>
+              <div class="calllog-row"><div class="callic ok">✓</div><div style="flex:1"><b>DunaTherm Kft.</b><span class="co" style="display:block;font-size:11.5px;color:var(--muted)">Interested — wants the audit PDF by email</span></div><span class="muted" style="font-size:11.5px">2h ago</span></div>
+              <div class="calllog-row"><div class="callic na">—</div><div style="flex:1"><b>Budai Vízszerelés Bt.</b><span class="co" style="display:block;font-size:11.5px;color:var(--muted)">No answer — 2nd attempt</span></div><span class="muted" style="font-size:11.5px">4h ago</span></div>
+              <div class="calllog-row"><div class="callic ok">✓</div><div style="flex:1"><b>Fortuna Étterem Group</b><span class="co" style="display:block;font-size:11.5px;color:var(--muted)">Interested — meeting proposed, booking link sent</span></div><span class="muted" style="font-size:11.5px">yesterday</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ CAMPAIGNS ============ -->
+      <div class="view" id="v-campaigns">
+        <div class="compliance">⚖️ <span><b>Cold email is locked for this workspace.</b> Hungarian law (2008. évi XLVIII. tv.) restricts unsolicited electronic advertising, including B2B. The module activates only after counsel sign-off is recorded in Settings — this is a business gate, not a toggle.</span></div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <b style="font-size:15px">No-website plumbers · Budapest</b>
+            <span class="chip warn">paused — awaiting sign-off</span>
+            <span class="muted" style="margin-left:auto;font-size:12px">Audience: 11 recipients · audited ≥70</span>
+          </div>
+          <div class="camp-stats">
+            <div class="s"><b>0 / 11</b><span>Sent</span></div>
+            <div class="s"><b>—</b><span>Opened</span></div>
+            <div class="s"><b>—</b><span>Replied</span></div>
+            <div class="s"><b>0</b><span>Unsubscribed</span></div>
+          </div>
+          <div style="margin-top:16px" class="eyebrow">Sequence · stops on reply · daily cap 20</div>
+          <div class="seqstep"><div class="seqnum">1</div><div><b>Audit finding + share link</b><p class="muted" style="font-size:12px;margin-top:3px">"A honlapjuk mobilon 7 mp alatt tölt be — készítettünk egy rövid, ingyenes átvilágítást: {{audit_link}}" · plain text · personalization from audit data, not per-recipient AI</p></div></div>
+          <div class="seqstep"><div class="seqnum">2</div><div><b>Follow-up · +5 days</b><p class="muted" style="font-size:12px;margin-top:3px">One concrete number from their audit + booking link. Mandatory unsubscribe footer on every step.</p></div></div>
+          <div class="health">
+            <div class="h"><span class="dot2" style="background:var(--pos)"></span>Domain: cold.ventureco.group (separate from transactional)</div>
+            <div class="h"><span class="dot2" style="background:var(--warn)"></span>Warm-up: week 1 of 4</div>
+            <div class="h"><span class="dot2" style="background:var(--pos)"></span>Bounce rate: — (circuit breaker armed)</div>
+          </div>
+        </div>
+        <p class="muted" style="font-size:12px;margin-top:12px">Claude drafts the frame <b>once per campaign</b>, not per recipient — personalization slots fill from audit and registry data. Replies route into the Inbox.</p>
+      </div>
+
+      <!-- ============ PUBLIC PAGES ============ -->
+      <div class="view" id="v-public">
+        <p class="muted" style="font-size:12.5px;margin-bottom:16px">The two prospect-facing surfaces. Single purpose, Venture letterhead, no product chrome — they must read as Venture collateral, not as "a tool".</p>
+        <div class="pubgrid">
+          <div class="browser">
+            <div class="urlbar"><span class="dots"><i></i><i></i><i></i></span><span class="url">quote.ventureco.group/q-2026-014</span></div>
+            <div class="pubbody">
+              <div class="publogo"><b>venture</b> <span>co.group</span></div>
+              <div class="pubh">árajánlat · aventa logistics</div>
+              <div class="pubsub">Q-2026-014 · érvényes: 2026. szeptember 10-ig</div>
+              <div class="pdfline"><span>Weboldal fejlesztés (10 oldal, HU/EN)</span><span>1 820 000 Ft</span></div>
+              <div class="pdfline"><span>SEO technikai beállítás</span><span>286 000 Ft</span></div>
+              <div class="pdfline"><span>Hosting & fotó</span><span>207 000 Ft</span></div>
+              <div class="pdfline"><b>Összesen (nettó)</b><b>2 313 000 Ft</b></div>
+              <input class="pubinput" style="margin-top:16px" placeholder="Név">
+              <input class="pubinput" placeholder="Cégnév">
+              <label style="display:flex;gap:8px;font-size:11.5px;color:var(--muted);margin:4px 0 14px;line-height:1.5"><input type="checkbox" style="accent-color:#7427C6;margin-top:2px">Az ajánlatot elfogadom. Az elfogadás ténye, időpontja és IP-címe rögzítésre kerül.</label>
+              <button class="btn btn-primary" style="width:100%">Ajánlat elfogadása</button>
+              <p class="muted" style="font-size:10px;margin-top:10px;line-height:1.5">Ez a rögzített elfogadás szerződéses szándéknyilatkozat, nem minősített elektronikus aláírás. · A jövőbeli saját e-aláírás modul ide csatlakozik.</p>
+            </div>
+          </div>
+          <div class="browser">
+            <div class="urlbar"><span class="dots"><i></i><i></i><i></i></span><span class="url">meet.ventureco.group/tamas</span></div>
+            <div class="pubbody">
+              <div class="publogo"><b>venture</b> <span>co.group</span></div>
+              <div class="pubh">book a call with tamas</div>
+              <div class="pubsub">30 min intro · Google Meet · Europe/Budapest</div>
+              <div class="daystrip">
+                <div class="day"><b>12</b>Wed</div>
+                <div class="day sel"><b>13</b>Thu</div>
+                <div class="day"><b>14</b>Fri</div>
+                <div class="day"><b>17</b>Mon</div>
+                <div class="day"><b>18</b>Tue</div>
+              </div>
+              <div class="slotgrid">
+                <div class="slot">9:00</div><div class="slot">9:30</div><div class="slot sel">10:00</div>
+                <div class="slot">11:30</div><div class="slot">14:00</div><div class="slot">15:30</div>
+              </div>
+              <input class="pubinput" placeholder="Name">
+              <input class="pubinput" placeholder="Company">
+              <input class="pubinput" placeholder="Email">
+              <button class="btn btn-primary" style="width:100%">Confirm — Thu 10:00</button>
+              <p class="muted" style="font-size:10px;margin-top:10px">Booking creates the meeting, the Claude brief for Tamas, and confirmations — automatically.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ ANALYTICS ============ -->
+      <div class="view" id="v-analytics">
+        <div class="grid ana-grid">
+          <div class="card">
+            <div class="eyebrow">Funnel · last 30 days</div>
+            <div class="funnel-row"><span>Researched</span><div class="funnel-bar" style="width:100%"></div><span class="pct">142</span></div>
+            <div class="funnel-row"><span>Contacted</span><div class="funnel-bar" style="width:78%"></div><span class="pct">111 · 78%</span></div>
+            <div class="funnel-row"><span>Accepted</span><div class="funnel-bar" style="width:24%"></div><span class="pct">34 · 31%</span></div>
+            <div class="funnel-row"><span>Replied</span><div class="funnel-bar" style="width:11%"></div><span class="pct">15 · 44%</span></div>
+            <div class="funnel-row"><span>Qualified</span><div class="funnel-bar" style="width:6%"></div><span class="pct">8 · 53%</span></div>
+            <div class="funnel-row"><span>Meeting</span><div class="funnel-bar" style="width:4.2%"></div><span class="pct">6 · 75%</span></div>
+            <p class="muted" style="font-size:12px;margin-top:12px">Biggest drop: Contacted → Accepted. Signal Engine proposal pending: promote Frame B for manufacturing (reply 19% vs 9%, n=42).</p>
+          </div>
+          <div class="card">
+            <div class="eyebrow">Friday report · week 32</div>
+            <div class="report-line"><span>Invites sent</span><b>84 <span class="muted" style="font-weight:400">(prev. 72)</span></b></div>
+            <div class="report-line"><span>Acceptance</span><b>31%</b></div>
+            <div class="report-line"><span>Replies</span><b>14%</b></div>
+            <div class="report-line"><span>Qualified meetings</span><b>2</b></div>
+            <div class="report-line"><span>What worked</span><span class="muted" style="text-align:right;max-width:60%">Allergen-compliance hook in HoReCa; new-exec signal</span></div>
+            <div style="display:flex;gap:10px;margin-top:16px"><button class="btn btn-primary">Export branded PDF</button><button class="btn btn-ghost">Send to Tamas</button></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* nav */
+const titles={dashboard:'good morning, fanni',prospector:'prospector',engine:'lead engine',audit:'site audit',pipeline:'pipeline',inbox:'inbox',calls:'calls',campaigns:'campaigns',documents:'documents',public:'public pages',content:'content hub',analytics:'analytics'};
+function pick(el){[...el.parentElement.children].forEach(c=>c.classList.remove('sel'));el.classList.add('sel');}
+
+/* account menu */
+function toggleMenu(e){
+  e.stopPropagation();
+  const m=document.getElementById('acctMenu'),b=document.getElementById('acctBtn');
+  const open=m.classList.toggle('open');
+  b.setAttribute('aria-expanded',open);
+}
+document.addEventListener('click',e=>{
+  const m=document.getElementById('acctMenu');
+  if(m.classList.contains('open')&&!e.target.closest('.acct')){m.classList.remove('open');document.getElementById('acctBtn').setAttribute('aria-expanded','false');}
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){const m=document.getElementById('acctMenu');m.classList.remove('open');document.getElementById('acctBtn').setAttribute('aria-expanded','false');}
+});
+function go(el){
+  if(!el.dataset.v)return;
+  document.querySelectorAll('.nav').forEach(n=>n.classList.remove('on'));
+  el.classList.add('on');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+  document.getElementById('v-'+el.dataset.v).classList.add('on');
+  document.getElementById('pageTitle').textContent=titles[el.dataset.v];
+}
+
+/* fake streaming research run */
+function runResearch(){
+  const body=document.getElementById('railBody'), st=document.getElementById('railStatus');
+  st.innerHTML='<span class="typing"><i></i><i></i><i></i></span>';
+  body.innerHTML='';
+  const blocks=[
+   `<section><h4>Company</h4><p><b>Fortuna Étterem Group</b> · HoReCa, 3 locations, est. 24 employees. Website last redesigned ~2018, not mobile-optimized, no online reservation. Positioning: mid-premium casual dining.</p></section>`,
+   `<section><h4>Person</h4><p><b>Kelemen Márta</b>, Owner & MD. Active on LinkedIn (posted 6 days ago about opening a 4th location). Decision-maker, no marketing hire on team.</p></section>`,
+   `<section><h4>Trigger signals</h4><p><span class="tag">allergen info gap</span><span class="tag">outdated website</span><span class="tag">expansion — 4th location</span></p></section>`,
+   `<section><h4>Likely pain points</h4><p>1 · Menu allergen compliance (1169/2011/EU) unresolved across locations<br>2 · No online reservation → lost covers<br>3 · Expansion without marketing capacity</p></section>`,
+   `<section><h4>Suggested hook</h4><div class="hookbox">Her post about the 4th location — congratulate, then connect expansion to the compliance & web gap a growing group can't ignore.</div></section>`,
+   `<section><h4>ICP score</h4>
+     <div class="score-row"><span>Segment fit</span><b>1 / 1</b></div>
+     <div class="score-row"><span>Trigger signal</span><b>1 / 1</b></div>
+     <div class="score-row"><span>Decision-maker</span><b>1 / 1</b></div>
+     <div class="score-row"><span>Active profile</span><b>1 / 1</b></div>
+     <div class="score-row"><span>Personal hook</span><b>1 / 1</b></div>
+     <div class="score-row" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><span><b>Total</b></span><span class="notches"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></span></div>
+     <div class="rail-cta"><button class="btn btn-primary" style="font-size:12px;flex:1">Add to pipeline</button><button class="btn btn-ghost" style="font-size:12px">Override score</button></div>
+   </section>`
+  ];
+  let i=0;
+  const iv=setInterval(()=>{
+    if(i>=blocks.length){clearInterval(iv);st.textContent='done · 9.2s';return;}
+    body.insertAdjacentHTML('beforeend',blocks[i]);
+    body.lastElementChild.style.animation='fade .25s ease';
+    i++;
+  },700);
+}
+
+/* kanban drag & drop */
+let dragged=null;
+document.querySelectorAll('.kcard').forEach(c=>{
+  c.addEventListener('dragstart',()=>{dragged=c;setTimeout(()=>c.style.opacity='0.4',0)});
+  c.addEventListener('dragend',()=>{c.style.opacity='1';dragged=null});
+});
+document.querySelectorAll('[data-col]').forEach(col=>{
+  col.addEventListener('dragover',e=>{e.preventDefault();col.classList.add('dragover')});
+  col.addEventListener('dragleave',()=>col.classList.remove('dragover'));
+  col.addEventListener('drop',e=>{e.preventDefault();col.classList.remove('dragover');if(dragged)col.appendChild(dragged);});
+});
+
+/* keyboard nav 1-6 */
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='TEXTAREA'||e.target.tagName==='INPUT')return;
+  const navs=document.querySelectorAll('.nav[data-v]');
+  const n=parseInt(e.key);
+  if(n>=1&&n<=navs.length)go(navs[n-1]);
+});
+</script>
+</body>
+</html>

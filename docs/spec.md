@@ -1,0 +1,277 @@
+# Venture OS Lite — Software Specification
+### AI-assisted sales & delivery workspace · Venture CO Group · v1.1
+
+---
+
+## 1. Product summary
+
+Venture OS Lite is the single internal workspace for Venture CO Group's business development and sales-document workflow. One surface covers the whole path: **find** businesses (Google prospecting + LinkedIn + manual), **assess** them (website audit, ICP scoring), **reach** them (Claude-assisted outreach, human-sent), **qualify and book** (pipeline, inbox, meetings), and **close the paperwork** (quotes, contracts, completion certificates, sent by email).
+
+**"Lite" means:** this is v1 of a larger platform. The extended feature set (defined separately) will be added later, so the architecture must be modular from day one — module registry, per-workspace feature flags, versioned APIs between modules. Nothing in Lite may assume it is the final shape.
+
+**Design philosophy — human-in-the-loop, credit-frugal.** Claude does the thinking (research, scoring commentary, drafting, analysis); humans do the sending. Deterministic APIs and local checks do everything they can *before* Claude is called (see §6). No message is ever auto-sent to a prospect; transactional document emails (quotes/contracts/certificates) are sent via Mailgun on explicit user action.
+
+**Users:** Fanni (BDR), Tamas (Owner/Admin). **Multi-workspace:** the same instance can host additional companies later (§7).
+**Language:** English UI, responsive down to mobile. **Brand:** Venture design system (navy `#00051D`, purple gradient `#310B59 → #7427C6`, white logo, Bricolage Grotesque + Inter) — themable per workspace.
+
+## 2. Goals & non-goals
+
+**Goals**
+1. One screen for the entire BDR day; only LinkedIn itself stays external.
+2. Three lead sources: Google keyword prospecting, LinkedIn capture, manual entry / CSV.
+3. Built-in website auditor that answers "is this business worth contacting for a website project?"
+4. Quote → contract → completion certificate generation from editable templates, emailed from the app.
+5. Multi-workspace with per-workspace users, roles, and granular permission grants.
+6. Claude API cost kept low by design (§6): target <$50/month at full usage.
+7. Usable on mobile for on-the-go triage (inbox, pipeline, approvals).
+
+**Non-goals (v1 Lite)**
+- No automated sending of outreach messages on LinkedIn or any social channel.
+- No e-signature in Lite — deferred deliberately: an **in-house e-signature module is planned**, so the quote-acceptance and contract flows are designed with a signature slot (§4.19) rather than a third-party dependency.
+- No client portal (evaluated, rejected).
+- Invoice *issuing* stays in Számlázz.hu — Venture OS prepares and hands off (§4.24), it is not an accounting system.
+- No public SaaS onboarding, billing, or self-service signup — alternative instances/workspaces are provisioned by the owner.
+
+## 3. Roles & permissions (RBAC + grants)
+
+| Role | Scope |
+|---|---|
+| **Owner** (Tamas) | Everything across all workspaces: settings, templates, documents, budgets, user management |
+| **Admin** | Everything within assigned workspace(s) |
+| **BDR** (Fanni) | Leads, prospecting, audits, outreach, inbox, meetings, content, analytics — within assigned workspace(s) |
+
+**Granular grants** on top of roles, assignable per user per workspace: `documents.quote.create`, `documents.contract.create`, `documents.certificate.create`, `documents.send`, `templates.edit`, `signal_engine.approve`, `exports.run`. **Default: all `documents.*` and `templates.*` grants belong to Owner only; Fanni gets none until explicitly granted.** Every grant change is audit-logged.
+
+## 4. Modules
+
+### 4.1 Dashboard
+Today Queue (due follow-ups, replies, briefs, uncontacted researched leads), KPI cards vs. targets, pipeline snapshot, one daily Claude insight, **Claude budget meter** (today's spend vs. cap), pending document approvals (Owner view).
+
+### 4.2 Lead capture — three ways in
+1. **LinkedIn capture:** paste URL + page text, or browser-extension grab of the page the user is viewing. Assistive only; no scraping, no sending.
+2. **Manual entry:** full lead/company form (name, title, company, contacts, industry, size, notes, signals) — no AI required at any step; Claude research is an optional button afterwards.
+3. **CSV import** with column mapping and dedupe preview.
+All three converge on the same Lead Card and dedupe check (same person/domain).
+
+### 4.3 Prospector (Google discovery) — NEW
+Purpose: "find me plumbers / restaurants / dental clinics in <city> and tell me who has no or a weak website."
+- Input: keyword(s) + location + radius; optional filters (rating, review count).
+- **Engine: Google Places API (Text Search + Place Details)** — returns business name, address, phone, rating, and crucially the `website` field. This is deterministic and cheap; **Claude is not needed to find businesses.**
+- Result list flags: `No website` / `Facebook-only` / `Has website`; one-click actions per row: **Audit site** (→ 4.4) and **Add as lead** (creates Company + unnamed contact to fill in later).
+- Optional Claude step (batched, Haiku, one call per ~25 rows, user-triggered): classify segment fit against the ICP and suggest a priority order. Off by default.
+- Search runs are saved (keyword, location, date, results) so the same area isn't re-purchased from the Places API; cached 30 days.
+- Cost note: Places Text Search ≈ $0.032/request + details lookups; budget cap and per-run estimate shown before executing.
+
+### 4.4 Website Auditor — NEW (core sales tool)
+Purpose: decide in 60 seconds whether a business is a website-development prospect, with evidence to quote from.
+- Input: URL (from Prospector row, lead record, or manual paste).
+- **Deterministic checks (no AI):**
+  - HTTPS/SSL validity; mobile viewport tag + responsive heuristics; Google **PageSpeed Insights API** (free) for performance/SEO/accessibility/best-practice scores, Core Web Vitals
+  - Meta title/description presence & length; H1 structure; image alt coverage; sitemap.xml & robots.txt; favicon; last copyright year in footer; broken-link sample; cookie-consent banner presence (GDPR signal); tech fingerprint (WordPress version, page builder, framework)
+  - Contact conversion basics: phone/email visible, form present, online booking/reservation present
+- **Output: Audit Report** — overall opportunity score 0–100, pass/fail check list, screenshots (mobile + desktop via headless render), and **Opportunity flags** ("no mobile layout", "PageSpeed 28", "no online reservation", "copyright 2019") that map directly to Venture's pitch.
+- **Optional Claude step (Haiku, 1 short call, cached 30 days per domain):** 3-sentence pitch-angle summary in the lead's language. Toggleable.
+- Audit results attach to the lead, auto-populate trigger signals ("outdated website"), and feed the ICP score. Exportable as a **branded PDF one-pager** — usable as a value-first attachment in outreach or meetings.
+- Verdict chip: `Strong prospect / Possible / Skip` from rule thresholds (admin-configurable), not AI.
+- **Audit share page:** every audit can be published to a unique branded URL (`audit.ventureco.group/<slug>`) — a polished, prospect-facing version of the report. Open events are tracked (first open, count) and land on the lead timeline; the link is the strongest value-first attachment for outreach and cold email. Pages expire (default 60 days) and are unlisted.
+
+### 4.5 Pipeline
+As v1.0: kanban `Researched → Contacted → Accepted → Replied → Qualified → Meeting booked → Handed off` + `Not now` (wake-up default +6 months) + `Disqualified` (reason required). Score gate: <3 cannot enter Contacted. Stage automations are task-level only, never messaging. Mobile: swipeable columns, tap-to-move stage picker.
+
+### 4.6 Outreach Studio
+As v1.0: sequence (connection ≤300 chars live counter, FU1, FU2), Claude draft + critique, human-edit guardrail before "Sent", "Copy & open LinkedIn", max 2 follow-ups then auto `Not now`. Audit-report insight lines can be inserted as hooks.
+
+### 4.7 Inbox
+As v1.0: threaded replies (pasted/extension-captured), Claude intent & objection analysis, qualification checklist (3 of 4 unlocks Qualified), price-mention auto-escalation to Owner. Mobile-first view (this is the on-the-go module).
+
+### 4.8 Meetings
+Booking with Google Calendar, one-click Claude meeting brief (Sonnet), branded PDF export, outcome logging at handoff.
+
+### 4.9 Documents — NEW (Quotes · Contracts · Completion certificates)
+The paperwork engine from qualified deal to fulfilled project.
+- **Quote generator (árajánlat):** pick client (from pipeline or manual) + template → form with line items; **pricing presets encode house rules** (≈15% commission on venue/catering-type pass-through items, ≈30% markup on production items — editable per line); VAT handling per workspace; validity date; totals computed live. Output: branded PDF.
+- **Contract generator (szerződés):** template + variables (parties from company registry data entered manually, scope from the accepted quote, milestones, payment terms). Hungarian and English template sets.
+- **Completion certificate generator (teljesítésigazolás):** generated from a contract's scope items; marks deliverables complete, date, acceptance clause; closes the document chain.
+- **Document chain & statuses:** Quote `draft → sent → accepted/declined/expired` → Contract `draft → sent → signed (manually marked)` → Certificate `draft → sent → acknowledged`. Each links to the lead and to each other; the pipeline card shows the chain state.
+- **Every legal document renders with a "DRAFT" watermark and a footer note recommending legal review** until an Owner explicitly marks it final (watermark removal is an audited action).
+- **No Claude in the generation path by default** — templates + variables are deterministic (zero credits, zero hallucination risk in legal text). Optional assist: Claude proposes a scope-description paragraph from the meeting brief; always human-approved.
+- **Access:** all generators sit behind `documents.*` grants — Owner-only at launch, grantable to Fanni later without a code change.
+- **Quote acceptance page — NEW:** a sent quote optionally publishes to a unique, unlisted URL where the client sees the branded quote and clicks **Accept** (name + company + checkbox + timestamp + IP logged, confirmation email both ways). Acceptance flips the quote to `accepted`, notifies the Owner, and unlocks contract generation pre-filled from the quote. This is *contractual assent evidence, not a qualified e-signature* — the page carries that wording, and the acceptance record is stored immutably. **The in-house e-signature module planned for later plugs into this exact slot**: the Accept step is an interface, its implementation is swappable.
+
+### 4.10 Template Editor — NEW
+- Rich-text/markdown editor with variable placeholders (`{{client.name}}`, `{{quote.total_net}}`, `{{items_table}}`, `{{workspace.legal_name}}`…), live preview with sample data, HU/EN variants per template.
+- Versioned: documents remember which template version produced them; old documents re-render identically.
+- Per-workspace template sets (each company gets its own letterhead, footer, legal blocks); Venture letterhead derived from the existing brand package.
+- Guard: variables that would render empty block the "final" state with a clear error.
+
+### 4.11 Email (Mailgun) — NEW
+- Transactional sending: quotes, contracts, completion certificates (PDF attached), meeting confirmations, Friday report. Explicit user action every time; **no campaign/bulk sending in Lite.**
+- Per-workspace sending identity: verified domain/subdomain (e.g. `mail.ventureco.group`), from-name, reply-to; **Mailgun EU region** for GDPR data residency.
+- Email templates (subject + body) live in the same Template Editor; delivery + open tracking logged to the lead timeline; bounce/suppression list respected; failed sends surface in Today Queue.
+- BDR can send only document types she has the `documents.send` grant for.
+
+### 4.12 Content Hub
+As v1.0: company-page post drafting (Claude, brand voice locked), Draft → In review → Approved → Published board, manual publishing.
+
+### 4.13 Signal Engine
+As v1.0: weekly Claude analysis of what converts (frames, hooks, signals, segments), proposals to an approval queue (Owner), versioned frame library, min n=20 before proposing. Runs weekly, not per-event — cheap by design.
+
+### 4.14 Analytics & Reports
+Funnel, trends vs. 30/60/90 targets, per-source performance (Prospector vs LinkedIn vs manual), audit-to-meeting conversion, document-chain metrics (quote acceptance rate, avg. days quote→signed), auto Friday report (in-app + Mailgun + branded PDF).
+
+### 4.16 Cold Email — NEW (compliance-gated)
+Second outreach channel beside LinkedIn, especially for Prospector-sourced leads.
+- Campaigns: audience from a saved segment (e.g. "no-website plumbers, Budapest, audited ≥70"), sequence of 2–3 steps with stop-on-reply, per-lead personalization slots (audit findings, company facts) rendered from data — **Claude drafts the frame once per campaign, not per recipient** (credit rule).
+- Sending: Mailgun, but on a **separate sending domain from transactional mail** (deliverability isolation), warmed-up volume ramp, daily send caps, mandatory unsubscribe link + suppression sync, plain-text-first templates.
+- Replies: forwarded into the Inbox module via Mailgun routes → same qualification flow as LinkedIn replies.
+- **Compliance gate — hard requirement:** Hungarian law (2008. évi XLVIII. tv.) treats unsolicited electronic advertising strictly, including B2B. The module ships **disabled per workspace** and can only be enabled after counsel sign-off is recorded in Settings (who/when/scope). Practical guardrails built in: company role addresses vs. named personal addresses are distinguished; legitimate-interest documentation fields per campaign; instant-suppress on any objection. *This spec is not legal advice; the gate exists precisely because the legal answer must come first.*
+
+### 4.17 Call Log & Callbacks — NEW
+Prospector finds businesses whose owners answer phones, not LinkedIn.
+- One-tap call logging on a lead (mobile-first): outcome taxonomy (`no answer / callback requested / interested / not interested / wrong number`), note, duration optional.
+- Callback scheduling creates a task that surfaces in Today Queue at the right time (mobile push via PWA notification).
+- Calls are first-class activities: they feed the funnel, Signal Engine, and win/loss the same as messages.
+
+### 4.18 Referral Tracking — NEW
+- Every lead carries a source (`prospector / linkedin / manual / referral / cold_email`); referral source links to a **Referrer** (person or company, can itself be a client).
+- Referrer view: who has sent what, what it converted to, revenue attributed through the chain.
+- Weekly digest and analytics surface top referrers — the network is a measurable channel, not folklore.
+
+### 4.19 Company Registry Enrichment & Dedupe — NEW
+- Integration with a Hungarian company-data provider (**Opten or Céginformáció API** — select on price at build time): lookup by name or adószám → legal name, tax ID, registration number, headcount band, revenue band, status (active/under proceedings).
+- On lead/company creation: automatic candidate match → confirm → enrich; **adószám becomes the dedupe key** (far stronger than name/domain matching).
+- Enrichment feeds ICP scoring (size/revenue criteria become factual, not guessed) and pre-fills contract party data — typo-free legal documents.
+- Red flags surface automatically: company under liquidation/enforcement → warning chip on the lead and on quote generation.
+
+### 4.20 Win/Loss Analysis — NEW
+- Handoff is no longer the end: post-meeting deals get an outcome record — `won / lost / postponed`, reason taxonomy (price, timing, competitor, no budget, no response…), deal value, competitor name optional.
+- Win/loss data closes the loop for the Signal Engine: it learns not just what gets replies, but **what closes** — hooks, segments, sources, and audit-score bands ranked by revenue, not by reply rate.
+- Quarterly win/loss digest for the Owner.
+
+### 4.21 Booking Page — NEW
+- Branded public scheduling page per host (first: Tamas) — `meet.ventureco.group/tamas` — reading free/busy from Google Calendar, offering configured slots, buffers, and meeting types.
+- A booking creates the Meeting record, triggers the Claude brief, sends confirmations via Mailgun, and drops the event on both calendars. Replaces Calendly; the link goes into outreach, email signatures, and the quote-acceptance thank-you screen.
+
+### 4.22 Weekly Digest — NEW
+- Monday 07:30 Mailgun email to each user, per workspace: this week's Today Queue preview, due callbacks, overdue follow-ups, pipeline deltas, pending approvals (Owner), top referrer note. One Haiku call per digest, aggregates only.
+
+### 4.23 Számlázz.hu Integration — NEW
+- From an acknowledged completion certificate: **Prepare invoice** → Venture OS composes the invoice payload (partner data from registry enrichment, line items from the quote/contract chain) and submits via the **Számlázz.hu Számla Agent API**.
+- Human confirmation is mandatory before submission (accounting is consequential); the returned invoice number and PDF link attach to the document chain; payment status polls back to the pipeline card.
+- Per-workspace Agent key; failures land in Today Queue. Chain complete: *prospect found → audited → contacted → met → quoted → accepted → contracted → certified → invoiced* — one system, end to end.
+
+### 4.24 Settings / Admin
+ICP & score weights, gate threshold, targets, frame library, template management, **workspace management (§7), user & grant management,** Mailgun config (transactional + cold domains), **cold-email compliance gate & counsel sign-off record,** booking-page config, Számlázz.hu Agent keys, registry API keys, API keys, **Claude budget caps,** data retention, audit log, feature flags.
+
+## 5. Claude API usage (frugal by design — see §6)
+
+| Use case | Model | Trigger | Cached |
+|---|---|---|---|
+| Lead research card | Sonnet 4.6 | Manual button only | Until profile text changes |
+| Message draft / critique | Sonnet 4.6 | Manual button | — |
+| Reply analysis | Haiku 4.5 | On reply logged | — |
+| Prospector batch classify | Haiku 4.5 | Manual, 1 call / ~25 rows | 30 days per search |
+| Audit pitch summary | Haiku 4.5 | Toggle, off by default | 30 days per domain |
+| Meeting brief | Sonnet 4.6 | On booking | Regenerate manual |
+| Signal Engine | Sonnet 4.6 | Weekly cron | — |
+| Daily insight | Haiku 4.5 | Daily cron | — |
+| Document scope paragraph | Haiku 4.5 | Manual, optional | — |
+
+All calls server-side; prompt registry versioned in repo; JSON-schema-validated structured outputs with repair-retry; **Anthropic prompt caching** on the long static system prompts (ICP definition, brand voice) to cut input costs further. Verify model names/pricing at docs.claude.com at build time.
+
+## 6. Credit-minimization strategy (hard requirement)
+
+1. **Deterministic first.** Places API finds businesses; PSI + local checks audit websites; templates render documents. Claude never does what an API or regex can.
+2. **Model tiering.** Haiku for classification/summaries/analysis; Sonnet only where writing quality is the product (research cards, outreach drafts, briefs, weekly analysis).
+3. **Manual triggers, no auto-fanout.** Nothing calls Claude on page load or on save; research/classify/summarize are buttons.
+4. **Caching.** Research cards, audit summaries, prospect classifications cached (30 days or until source changes); duplicate calls short-circuit.
+5. **Batching.** Prospector classification batches rows; Signal Engine runs weekly on aggregates, not per event.
+6. **Prompt caching + tight prompts.** Static system content cached; page text pre-trimmed (strip nav/boilerplate) before it hits the API.
+7. **Budget caps.** Per-workspace daily/monthly USD cap; meter on Dashboard; calls beyond cap queue for the next day with a clear message.
+**Projected cost at full usage** (25 researches + 25 drafts + 10 analyses/day, weekly jobs): **≈ $20–45/month.** Places API and PSI budgeted separately (~$10–30/month depending on prospecting volume; PSI is free).
+
+## 7. Multi-workspace architecture ("SaaS-shaped, not SaaS")
+
+- **Workspace** = one operating company (Venture CO Group first; e.g. a Turkish entity or engH later). All business data rows carry `workspace_id`; isolation enforced with Postgres **Row-Level Security**, not just app code.
+- **Users are global; memberships are per-workspace** with a role + grant set (Fanni can be BDR in Workspace A only; Tamas is Owner everywhere). Workspace switcher in the UI shell.
+- Per workspace: branding (logo, colors, letterhead), template sets, Mailgun domain, ICP config, targets, Claude budget, data-retention policy, feature flags.
+- No public signup, no billing engine. New workspaces are provisioned by the Owner from Settings. If this ever becomes sellable SaaS, the tenancy model already supports it — that is deliberate but out of scope.
+
+## 8. Data model (delta from v1.0)
+
+```
+Workspace(id, name, legal_name, brand_json, mailgun_config, claude_budget, retention_days)
+Membership(id, user_id, workspace_id, role, grants[])
+ProspectSearch(id, workspace_id, keywords, location, ran_at, cost, results_json)
+AuditResult(id, company_id, url, score, checks_json, flags[], verdict,
+            pitch_summary, screenshots[], created_at, expires_at)
+Template(id, workspace_id, type[quote|contract|certificate|email], lang,
+         body, variables[], version, status)
+Document(id, workspace_id, lead_id, type, template_version_id, payload_json,
+         totals_json, status, watermark bool, pdf_url, chain_parent_id)
+EmailLog(id, workspace_id, lead_id, document_id, to, subject, mailgun_id,
+         status[queued|delivered|opened|bounced], at)
+Call(id, workspace_id, lead_id, outcome, note, duration, callback_at, by, at)
+Campaign(id, workspace_id, name, segment_query, frame_id, status, compliance_note,
+         daily_cap, started_at)  -- + CampaignStep, CampaignRecipient(suppressed bool)
+Referrer(id, workspace_id, kind[person|company], name, linked_company_id)
+  -- Lead gains: source, referrer_id
+RegistryData(company_id, tax_id, reg_number, legal_name, headcount_band,
+             revenue_band, status_flags, fetched_at)
+DealOutcome(id, lead_id, result[won|lost|postponed], reason, value, competitor, at)
+BookingPage(id, workspace_id, host_user_id, slug, meeting_types_json, buffers)
+QuoteAcceptance(id, document_id, accepted_by_name, company, ip, user_agent, at)
+AuditShare(id, audit_id, slug, expires_at, first_opened_at, open_count)
+Invoice(id, workspace_id, document_id, szamlazz_id, number, pdf_url,
+        status[prepared|submitted|issued|paid|failed], at)
+ClaudeUsage(id, workspace_id, use_case, model, tokens_in, tokens_out, cost, at)
+-- v1.0 entities (Company, Lead, Activity, Message, Frame, Meeting, Insight,
+-- Target, User, AuditLog) all gain workspace_id.
+```
+
+## 9. Integrations
+
+| Integration | Depth | Notes |
+|---|---|---|
+| Google Places API | Core (Prospector) | Text Search + Details; budgeted, cached |
+| Google PageSpeed Insights | Core (Auditor) | Free API |
+| Headless renderer | Auditor screenshots | Playwright server-side |
+| Mailgun | Transactional + cold email | EU region, **separate domains per purpose**, routes for inbound replies, webhooks |
+| Opten / Céginformáció API | Registry enrichment & dedupe | Adószám as dedupe key; subscription cost to be priced at build |
+| Számlázz.hu Számla Agent | Invoice handoff | Per-workspace key, human confirm before submit |
+| LinkedIn | Assistive only | Extension reads user-viewed pages; deep links; no scraping/sending |
+| Google Calendar | Meetings | Event + brief |
+| Claude API | Per §5–6 | Server-side, budget-capped |
+| CSV | Import/export | |
+
+## 10. Non-functional requirements
+
+- **Responsive:** full mobile usability (≥360px). Mobile priorities: Inbox, Today Queue, Pipeline (swipe columns), document approval/send. Desktop-first for Prospector tables, Template Editor, Analytics. PWA installable (icon on Fanni's phone), no offline writes in Lite.
+- **GDPR:** as v1.0 (legitimate-interest LIA, ≤72h erasure, 12-month auto-anonymization, EU data residency incl. Mailgun EU, Anthropic DPA) **plus:** audit/prospect data is public business data — but persons in it are still data subjects; retention applies. Legal documents contain client personal data → per-workspace retention policy, export on request. *Counsel review required; not legal advice.*
+- **Legal-document safety:** DRAFT watermark default, legal-review footer, audited finalization, template versioning for reproducibility.
+- **Security:** email+2FA, RBAC+grants, RLS tenancy isolation, secrets in manager, audit log on grants/exports/deletes/watermark-removal.
+- **Performance:** audit run ≤30s with progressive results; research ≤15s streaming; UI <200ms.
+- **Availability:** business-hours tool, 99%, nightly backups, 30-day retention.
+
+## 11. Acceptance criteria (v1.1 additions)
+
+1. A keyword+city Prospector run returns a business list with website-presence flags without any Claude call, and "Add as lead" creates a deduped company record.
+2. A URL audit completes in ≤30s, produces score + flags + verdict with zero Claude calls when the summary toggle is off, and attaches "outdated website" signals to the lead automatically when thresholds fire.
+3. A lead can be created fully manually with no AI step, and behaves identically in the pipeline.
+4. Fanni's account cannot open any Documents generator; after Tamas assigns `documents.quote.create` in Settings, she can — no redeploy, and the grant change appears in the audit log.
+5. A quote generated from a template renders with DRAFT watermark, correct totals from line items with commission/markup presets, and sends via Mailgun with the PDF attached; delivery status appears on the lead timeline.
+6. Quote → contract → completion certificate chain links correctly and each stage's status is visible on the pipeline card.
+7. Editing a template creates a new version; previously generated documents re-render byte-identically from their original version.
+8. A second workspace can be provisioned from Settings; a user assigned only to Workspace B sees zero rows from Workspace A (verified at the database policy level).
+9. The Claude budget cap, set to $1/day, visibly blocks further AI calls that day with a clear message, while all deterministic features keep working.
+10. The full daily loop (queue triage, inbox replies, stage moves, document approval+send) is completable on a 390px-wide phone screen.
+11. All v1.0 acceptance criteria still pass.
+12. An audit share link renders the branded report publicly, logs the first open to the lead timeline, and expires on schedule.
+13. A quote acceptance page records name + timestamp + IP, flips the quote to `accepted`, notifies the Owner, and pre-fills the contract — and the Accept step is implemented behind an interface a future in-house e-signature can replace.
+14. The Cold Email module cannot start a campaign in a workspace without a recorded counsel sign-off; every cold email contains a working unsubscribe that suppresses instantly across all campaigns; a reply arrives in the Inbox via Mailgun routes.
+15. A call logged with "callback Thursday 14:00" produces a Today Queue item at that time, including on mobile.
+16. Entering a company name with a registry match offers enrichment; two leads with the same adószám cannot both be created; a company under liquidation shows a warning on quote generation.
+17. A lead marked `won` with a value appears in win/loss analytics, and Signal Engine's next weekly run includes close-rate (not just reply-rate) in its proposal evidence.
+18. Booking a slot on the public booking page creates the meeting, the brief, and confirmations without manual steps.
+19. The Monday digest arrives per user per workspace and reflects that workspace's data only.
+20. From an acknowledged certificate, "Prepare invoice" submits to Számlázz.hu only after explicit confirmation, and the returned invoice number appears on the document chain.

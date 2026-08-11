@@ -1,0 +1,72 @@
+import { notFound } from "next/navigation";
+import { getPublicQuote } from "@/modules/documents/acceptance";
+import { AcceptForm } from "@/components/accept-form";
+
+// Public, prospect-facing, no product chrome (spec §4.9). Cross-tenant read by
+// the unlisted slug.
+export const dynamic = "force-dynamic";
+
+export default async function AcceptPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const q = await getPublicQuote(slug);
+  if (!q) notFound();
+
+  return (
+    <main className="relative z-10 min-h-screen">
+      <div className="mx-auto max-w-[560px] px-5 py-14">
+        <div className="mb-7 font-display text-[16px]">
+          <b className="font-extrabold">venture</b>{" "}
+          <span className="font-light text-muted">co.group</span>
+        </div>
+
+        <div className="rounded-card border border-line bg-[radial-gradient(500px_300px_at_90%_-10%,rgba(116,39,198,0.18),transparent_60%),rgba(239,241,248,0.02)] p-7">
+          <h1 className="font-display text-[22px] font-extrabold lowercase tracking-display">
+            árajánlat · {q.clientCompany.toLowerCase()}
+          </h1>
+          <div className="mb-5 text-[12px] text-muted">
+            {q.quoteNumber}
+            {q.validUntil ? ` · érvényes: ${q.validUntil}` : ""}
+          </div>
+
+          {q.items.map((it, i) => (
+            <div key={i} className="flex justify-between border-b border-line py-1.5 text-[12px] text-[#C9CEE3]">
+              <span>{it.description}</span>
+              <span className="tabular-nums">{it.line}</span>
+            </div>
+          ))}
+          <div className="flex justify-between py-2 text-[13px]">
+            <b>Összesen (nettó)</b>
+            <b className="tabular-nums">{q.net}</b>
+          </div>
+          <div className="flex justify-between text-[11.5px] text-muted">
+            <span>ÁFA {q.vatRatePct}%</span>
+            <span className="tabular-nums">{q.vat}</span>
+          </div>
+          <div className="flex justify-between text-[13px]">
+            <b>Bruttó</b>
+            <b className="tabular-nums">{q.gross}</b>
+          </div>
+
+          <div className="mt-6">
+            {q.accepted ? (
+              <div className="rounded-[10px] border border-[rgba(61,220,151,0.35)] bg-[rgba(61,220,151,0.1)] px-3.5 py-3 text-[13px] text-[#8FE9C3]">
+                Elfogadva{q.acceptedByName ? ` — köszönjük, ${q.acceptedByName}!` : "."}
+              </div>
+            ) : (
+              <AcceptForm slug={slug} />
+            )}
+          </div>
+
+          <p className="mt-6 text-[10px] leading-relaxed text-muted">
+            Ez a rögzített elfogadás szerződéses szándéknyilatkozat, nem minősített
+            elektronikus aláírás. · A jövőbeli saját e-aláírás modul ide csatlakozik.
+          </p>
+        </div>
+      </div>
+    </main>
+  );
+}

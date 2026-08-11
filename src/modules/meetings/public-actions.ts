@@ -1,0 +1,262 @@
+"use server";
+
+import { z } from "zod";
+import { headers } from "next/headers";
+import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
+import { getMailProvider } from "@/modules/mail/provider";
+import { resolveSendingIdentity } from "@/modules/mail/identity";
+import { getBookingHost, getAvailability, type Availability } from "./public-booking";
+import { getCalendarProvider, type CalendarCredentials } from "./calendar";
+import { calendarFailureActivity } from "./logic";
+import { enqueueMeetingBrief } from "./enqueue";
+import { botVerdict, MIN_FILL_MS } from "./botcheck";
+import { takeRateLimit } from "./ratelimit";
+
+const bookSchema = z.object({
+  slug: z.string().min(1),
+  meetingTypeId: z.string().min(1),
+  startMs: z.coerce.number().int().positive(),
+  name: z.string().trim().min(1).max(120),
+  company: z.string().trim().max(160).optional().default(""),
+  email: z.string().trim().email(),
+  // bot protection
+  honeypot: z.string().default(""),
+  renderedAt: z.coerce.number().int().nonnegative().default(0),
+});
+
+export type BookingResult =
+  | { ok: true; label: string }
+  | { ok: false; error: string };
+
+/** Re-read availability for a meeting type (used when the visitor switches type). */
+export async function loadAvailability(
+  slug: string,
+  meetingTypeId: string,
+): Promise<Availability | null> {
+  const host = await getBookingHost(slug);
+  if (!host) return null;
+  return getAvailability(host, meetingTypeId, Date.now());
+}
+
+export async function submitPublicBooking(raw: unknown): Promise<BookingResult> {
+  const parsed = bookSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Please check the form and try again." };
+  const input = parsed.data;
+  const now = Date.now();
+
+  // --- abuse controls (no third-party CAPTCHA) ---
+  const h = await headers();
+  const ip = (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "unknown").trim();
+  if (!takeRateLimit(`book:${ip}`, now)) {
+    return { ok: false, error: "Too many attempts. Please wait a minute and try again." };
+  }
+  const bot = botVerdict({
+    honeypot: input.honeypot,
+    elapsedMs: now - input.renderedAt,
+    minElapsedMs: MIN_FILL_MS,
+  });
+  if (!bot.ok) {
+    // Silent-ish: give a generic message, don't reveal which check tripped.
+    return { ok: false, error: "We couldn't verify your submission. Please try again." };
+  }
+
+  const host = await getBookingHost(input.slug);
+  if (!host) return { ok: false, error: "This booking page is unavailable." };
+
+  const mt = host.meetingTypes.find((t) => t.id === input.meetingTypeId);
+  if (!mt) return { ok: false, error: "Unknown meeting type." };
+
+  // --- server-side slot validation (never trust the posted time) ---
+  const avail = await getAvailability(host, input.meetingTypeId, now);
+  const stillFree = avail.days.some((d) => d.slots.some((s) => s.startMs === input.startMs));
+  if (!stillFree) {
+    return { ok: false, error: "That time was just taken. Please pick another slot." };
+  }
+
+  const db = getWorkspaceClient(host.workspaceId);
+  const start = new Date(input.startMs);
+  const end = new Date(input.startMs + mt.durationMin * 60_000);
+
+  // --- find-or-create company + lead (inbound) ---
+  let company = input.company
+    ? await db.company.findFirst({ where: { name: input.company } })
+    : null;
+  if (!company && input.company) {
+    company = await db.company.create({
+      data: { workspaceId: host.workspaceId, name: input.company },
+    });
+  }
+  let lead = await db.lead.findFirst({ where: { email: input.email } });
+  if (!lead) {
+    lead = await db.lead.create({
+      data: {
+        workspaceId: host.workspaceId,
+        companyId: company?.id,
+        contactName: input.name,
+        email: input.email,
+        source: "MANUAL",
+        stage: "RESEARCHED",
+        notes: "Booked via public booking page.",
+      },
+    });
+  }
+
+  // --- create the meeting ---
+  const meeting = await db.meeting.create({
+    data: {
+      workspaceId: host.workspaceId,
+      leadId: lead.id,
+      hostUserId: host.hostUserId,
+      scheduledAt: start,
+      durationMin: mt.durationMin,
+      type: mt.label,
+      briefStatus: "none",
+    },
+  });
+
+  // --- drop the event on the host calendar with the visitor attached ---
+  const cal = getCalendarProvider();
+  try {
+    const cred = await prismaUnsafe.googleCredential.findUnique({
+      where: { userId: host.hostUserId },
+    });
+    if (cal.name === "google" && !cred) throw new Error("google_calendar_not_connected");
+    const creds: CalendarCredentials = cred
+      ? {
+          accessToken: cred.accessToken,
+          refreshToken: cred.refreshToken,
+          expiryDate: cred.expiryDate,
+          calendarId: cred.calendarId,
+        }
+      : { accessToken: "", refreshToken: null, expiryDate: null, calendarId: null };
+    const { result, refreshed } = await cal.createEvent(creds, {
+      summary: `Venture · ${input.name}${input.company ? ` (${input.company})` : ""}`,
+      description: [
+        `Booked via ${host.slug} booking page.`,
+        `${mt.label}`,
+        `Guest: ${input.name} <${input.email}>`,
+        input.company && `Company: ${input.company}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      startISO: start.toISOString(),
+      endISO: end.toISOString(),
+      attendees: [input.email],
+      timeZone: host.config.timezone,
+    });
+    await db.meeting.update({
+      where: { id: meeting.id },
+      data: { googleEventId: result.eventId, eventUrl: result.htmlLink },
+    });
+    if (refreshed && cred) {
+      await prismaUnsafe.googleCredential.update({
+        where: { userId: host.hostUserId },
+        data: refreshed,
+      });
+    }
+  } catch (e) {
+    // Calendar failure lands in the Today Queue (spec §4.8/§4.21).
+    const act = calendarFailureActivity({
+      meetingId: meeting.id,
+      leadId: lead.id,
+      error: (e as Error).message,
+    });
+    await db.activity.create({
+      data: { workspaceId: host.workspaceId, leadId: lead.id, type: act.type, payload: act.payload },
+    });
+  }
+
+  // --- advance the pipeline + trigger the brief (one call per booking) ---
+  await db.lead.update({
+    where: { id: lead.id },
+    data: { stage: "MEETING_BOOKED", stageEnteredAt: new Date(), lastActivityAt: new Date() },
+  });
+  await db.activity.create({
+    data: {
+      workspaceId: host.workspaceId,
+      leadId: lead.id,
+      type: "stage_change",
+      payload: { from: lead.stage, to: "MEETING_BOOKED", via: "booking_page" },
+    },
+  });
+  try {
+    await enqueueMeetingBrief({ meetingId: meeting.id, workspaceId: host.workspaceId });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[booking] brief enqueue failed", e);
+  }
+
+  // --- confirmations both ways (Mailgun; best-effort) ---
+  const whenLabel = formatWhen(input.startMs, host.config.timezone);
+  await sendConfirmations({
+    identity: resolveSendingIdentity(host.mailgunConfig),
+    hostName: host.hostName,
+    hostEmail: host.hostEmail,
+    guestName: input.name,
+    guestEmail: input.email,
+    typeLabel: mt.label,
+    whenLabel,
+  });
+
+  return { ok: true, label: whenLabel };
+}
+
+function formatWhen(startMs: number, tz: string): string {
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  return `${fmt.format(new Date(startMs))} (${tz})`;
+}
+
+async function sendConfirmations(p: {
+  identity: ReturnType<typeof resolveSendingIdentity>;
+  hostName: string;
+  hostEmail: string | null;
+  guestName: string;
+  guestEmail: string;
+  typeLabel: string;
+  whenLabel: string;
+}): Promise<void> {
+  const mail = getMailProvider();
+  const guestHtml =
+    `<p>Hi ${escapeHtml(p.guestName)},</p>` +
+    `<p>Your ${escapeHtml(p.typeLabel)} with ${escapeHtml(p.hostName)} is confirmed for <b>${escapeHtml(p.whenLabel)}</b>.</p>` +
+    `<p>A calendar invite is on its way. Reply to this email if you need to reschedule.</p>` +
+    `<p>— Venture CO Group</p>`;
+  const hostHtml =
+    `<p>New booking via your page.</p>` +
+    `<p><b>${escapeHtml(p.guestName)}</b> &lt;${escapeHtml(p.guestEmail)}&gt; booked ${escapeHtml(p.typeLabel)} for <b>${escapeHtml(p.whenLabel)}</b>.</p>` +
+    `<p>The meeting brief is being generated.</p>`;
+  try {
+    await mail.send({
+      domain: p.identity.domain,
+      to: p.guestEmail,
+      from: p.identity.from,
+      replyTo: p.hostEmail || p.identity.replyTo || undefined,
+      subject: `Confirmed: ${p.typeLabel} — ${p.whenLabel}`,
+      html: guestHtml,
+    });
+    if (p.hostEmail) {
+      await mail.send({
+        domain: p.identity.domain,
+        to: p.hostEmail,
+        from: p.identity.from,
+        subject: `New booking: ${p.guestName} — ${p.whenLabel}`,
+        html: hostHtml,
+      });
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[booking] confirmation email failed", e);
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}

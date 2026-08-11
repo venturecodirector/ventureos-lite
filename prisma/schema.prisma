@@ -1,0 +1,812 @@
+// Venture OS Lite — Prisma schema (spec §8: v1.0 + v1.1 entities).
+//
+// PORTABILITY (CLAUDE.md): the schema runs on Postgres 16 and MySQL 8. To stay
+// portable we avoid Postgres-only column types:
+//   - no scalar lists (String[]) — MySQL can't do them; array-ish data is Json
+//   - long free text is @db.Text (valid native type on both connectors)
+//   - USD amounts are Decimal, HUF is integer forints (Int), never floats
+// Switch `provider` to "mysql" when DB_FLAVOR=mysql (and point DATABASE_URL at
+// MySQL). Columns/tables are snake_cased via @map so the RLS SQL lines up.
+//
+// TENANCY (CLAUDE.md hard rule #1): every business table carries workspace_id
+// and is scoped by the mandatory tenant guard (src/lib/tenant-guard.ts). On
+// Postgres, RLS policies keyed to membership add DB-level enforcement.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // set to "mysql" when DB_FLAVOR=mysql
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// Enums (portable across postgres + mysql)
+// ============================================================================
+
+enum Role {
+  OWNER
+  ADMIN
+  BDR
+}
+
+enum LeadSource {
+  PROSPECTOR
+  LINKEDIN
+  MANUAL
+  REFERRAL
+  COLD_EMAIL
+}
+
+enum Stage {
+  RESEARCHED
+  CONTACTED
+  ACCEPTED
+  REPLIED
+  QUALIFIED
+  MEETING_BOOKED
+  HANDED_OFF
+  NOT_NOW
+  DISQUALIFIED
+}
+
+enum Lang {
+  HU
+  EN
+}
+
+enum TemplateType {
+  QUOTE
+  CONTRACT
+  CERTIFICATE
+  EMAIL
+}
+
+enum TemplateStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum DocumentType {
+  QUOTE
+  CONTRACT
+  CERTIFICATE
+}
+
+enum DocumentStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  SIGNED
+  ACKNOWLEDGED
+}
+
+enum EmailStatus {
+  QUEUED
+  DELIVERED
+  OPENED
+  BOUNCED
+  FAILED
+}
+
+enum CallOutcome {
+  NO_ANSWER
+  CALLBACK_REQUESTED
+  INTERESTED
+  NOT_INTERESTED
+  WRONG_NUMBER
+}
+
+enum CampaignStatus {
+  DRAFT
+  PAUSED
+  ACTIVE
+  COMPLETED
+  DISABLED
+}
+
+enum ReferrerKind {
+  PERSON
+  COMPANY
+}
+
+enum DealResult {
+  WON
+  LOST
+  POSTPONED
+}
+
+enum InvoiceStatus {
+  PREPARED
+  SUBMITTED
+  ISSUED
+  PAID
+  FAILED
+}
+
+enum AuditVerdict {
+  STRONG
+  POSSIBLE
+  SKIP
+}
+
+enum MessageDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum MessageChannel {
+  LINKEDIN
+  EMAIL
+  COLD_EMAIL
+}
+
+enum MessageStatus {
+  DRAFT
+  SENT
+  FAILED
+}
+
+enum FrameStatus {
+  DRAFT
+  PROPOSED
+  APPROVED
+  ARCHIVED
+}
+
+enum InsightKind {
+  DAILY
+  WEEKLY
+}
+
+// ============================================================================
+// Global (NOT tenant-scoped): identity + tenancy mapping. No workspace_id.
+// These are excluded from the tenant guard; RLS restricts them to the acting
+// user / their memberships.
+// ============================================================================
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String
+  passwordHash String       @map("password_hash")
+  totpSecret   String?      @map("totp_secret")
+  totpEnabled  Boolean      @default(false) @map("totp_enabled")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  memberships  Membership[]
+  sessions     Session[]
+  googleCredential GoogleCredential?
+
+  @@map("users")
+}
+
+// Global (per-user) Google OAuth tokens for Calendar (spec §4.8). Not tenant-scoped.
+model GoogleCredential {
+  id           String    @id @default(cuid())
+  userId       String    @unique @map("user_id")
+  accessToken  String    @map("access_token")
+  refreshToken String?   @map("refresh_token")
+  expiryDate   DateTime? @map("expiry_date")
+  scope        String?
+  calendarId   String?   @map("calendar_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("google_credentials")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Membership {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  workspaceId String    @map("workspace_id")
+  role        Role      @default(BDR)
+  grants      Json      @default("[]") // string[] of capability grants (portable as Json)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+  @@map("memberships")
+}
+
+model Workspace {
+  id            String       @id @default(cuid())
+  name          String
+  legalName     String?      @map("legal_name")
+  brand         Json?        @map("brand_json")
+  mailgunConfig Json?        @map("mailgun_config")
+  icpConfig     Json?        @map("icp_config")
+  auditConfig   Json?        @map("audit_config") // verdict thresholds + check weights
+  claudeBudget  Decimal      @default(2) @map("claude_budget") // USD daily cap
+  retentionDays Int          @default(365) @map("retention_days")
+  featureFlags  Json?        @map("feature_flags")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  memberships   Membership[]
+
+  @@map("workspaces")
+}
+
+// ============================================================================
+// Business (tenant-scoped): every table has workspace_id + an index on it.
+// ============================================================================
+
+model Company {
+  id          String        @id @default(cuid())
+  workspaceId String        @map("workspace_id")
+  name        String
+  domain      String?
+  website     String?
+  industry    String?
+  sizeBand    String?       @map("size_band")
+  phone       String?
+  address     String?
+  city        String?
+  taxId       String?       @map("tax_id") // adószám — dedupe key within a workspace
+  notes       String?       @db.Text
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  leads        Lead[]
+  audits       AuditResult[]
+  registry     RegistryData?
+  referrers    Referrer[]
+
+  @@unique([workspaceId, taxId])
+  @@index([workspaceId])
+  @@map("companies")
+}
+
+model Lead {
+  id             String        @id @default(cuid())
+  workspaceId    String        @map("workspace_id")
+  companyId      String?       @map("company_id")
+  referrerId     String?       @map("referrer_id")
+  contactName    String?       @map("contact_name")
+  title          String?
+  email          String?
+  phone          String?
+  linkedinUrl    String?       @map("linkedin_url")
+  source         LeadSource    @default(MANUAL)
+  stage          Stage         @default(RESEARCHED)
+  stageEnteredAt DateTime      @default(now()) @map("stage_entered_at")
+  stageReason    String?       @map("stage_reason")
+  icpScore       Int?          @map("icp_score")
+  scoreBreakdown Json?         @map("score_breakdown")
+  signals        Json          @default("[]") // string[] of trigger signals
+  qualification  Json?         // { authority, history, budget, timeline } booleans
+  escalatedAt    DateTime?     @map("escalated_at")
+  notes          String?       @db.Text
+  wakeUpAt       DateTime?     @map("wake_up_at")
+  lastActivityAt DateTime?     @map("last_activity_at")
+  anonymizedAt   DateTime?     @map("anonymized_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  company    Company?    @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  referrer   Referrer?   @relation(fields: [referrerId], references: [id], onDelete: SetNull)
+  activities Activity[]
+  messages   Message[]
+  calls      Call[]
+  meetings   Meeting[]
+  documents  Document[]
+  emailLogs  EmailLog[]
+  outcomes   DealOutcome[]
+
+  @@index([workspaceId])
+  @@index([companyId])
+  @@map("leads")
+}
+
+model Activity {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  leadId      String   @map("lead_id")
+  type        String
+  payload     Json?
+  byUserId    String?  @map("by_user_id")
+  at          DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([leadId])
+  @@map("activities")
+}
+
+model Message {
+  id           String           @id @default(cuid())
+  workspaceId  String           @map("workspace_id")
+  leadId       String           @map("lead_id")
+  direction    MessageDirection
+  channel      MessageChannel   @default(LINKEDIN)
+  kind         String? // connection | fu1 | fu2 | reply ...
+  body         String           @db.Text
+  aiDrafted    Boolean          @default(false) @map("ai_drafted")
+  humanEdited  Boolean          @default(false) @map("human_edited")
+  analysis     Json?            // Haiku reply analysis (intent, objection, suggestions)
+  status       MessageStatus    @default(DRAFT)
+  sentAt       DateTime?        @map("sent_at")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([leadId])
+  @@map("messages")
+}
+
+model Frame {
+  id          String      @id @default(cuid())
+  workspaceId String      @map("workspace_id")
+  name        String
+  body        String      @db.Text
+  segment     String?
+  version     Int         @default(1)
+  status      FrameStatus @default(DRAFT)
+  metrics     Json?
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  campaigns Campaign[]
+
+  @@index([workspaceId])
+  @@map("frames")
+}
+
+model Meeting {
+  id            String    @id @default(cuid())
+  workspaceId   String    @map("workspace_id")
+  leadId        String?   @map("lead_id")
+  hostUserId    String?   @map("host_user_id")
+  scheduledAt   DateTime  @map("scheduled_at")
+  durationMin   Int       @default(30) @map("duration_min")
+  type          String?
+  googleEventId String?   @map("google_event_id")
+  eventUrl      String?   @map("event_url")
+  brief         String?   @db.Text
+  briefStatus   String    @default("none") @map("brief_status")
+  briefPdfPath  String?   @map("brief_pdf_path")
+  outcome       String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  lead Lead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([leadId])
+  @@map("meetings")
+}
+
+model Insight {
+  id          String      @id @default(cuid())
+  workspaceId String      @map("workspace_id")
+  kind        InsightKind
+  body        String      @db.Text
+  data        Json?
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  @@index([workspaceId])
+  @@map("insights")
+}
+
+// Signal Engine approval queue (spec §4.13). The weekly job writes PENDING
+// proposals; nothing self-modifies. An Owner approve applies the effect
+// (versions a frame / updates a score weight); reject discards.
+model Proposal {
+  id              String         @id @default(cuid())
+  workspaceId     String         @map("workspace_id")
+  kind            ProposalKind
+  title           String
+  evidence        String         @db.Text
+  n               Int
+  data            Json
+  status          ProposalStatus @default(PENDING)
+  createdAt       DateTime       @default(now()) @map("created_at")
+  decidedAt       DateTime?      @map("decided_at")
+  decidedByUserId String?        @map("decided_by_user_id")
+
+  @@index([workspaceId])
+  @@map("proposals")
+}
+
+// Weekly analytics report (spec §4.14). Deterministic numbers in `data`; the
+// Haiku "what worked" commentary and Fanni's comment are optional overlays.
+model Report {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  weekLabel   String   @map("week_label")
+  data        Json
+  commentary  String?  @db.Text
+  comment     String?  @db.Text
+  pdfPath     String?  @map("pdf_path")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([workspaceId])
+  @@map("reports")
+}
+
+enum ProposalKind {
+  FRAME_PROMOTION
+  SCORE_WEIGHT
+}
+
+enum ProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Target {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  metric      String
+  period      String // weekly | monthly | q30 | q60 | q90
+  value       Int
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([workspaceId, metric, period])
+  @@index([workspaceId])
+  @@map("targets")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  actorUserId String?  @map("actor_user_id")
+  action      String
+  entityType  String?  @map("entity_type")
+  entityId    String?  @map("entity_id")
+  meta        Json?
+  at          DateTime @default(now())
+
+  @@index([workspaceId])
+  @@map("audit_logs")
+}
+
+model ProspectSearch {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  keywords    String
+  location    String
+  radius      String?
+  cost        Decimal  @default(0) // USD spent on Places API
+  results     Json?    @map("results_json")
+  ranAt       DateTime @default(now()) @map("ran_at")
+  expiresAt   DateTime @map("expires_at")
+
+  @@index([workspaceId])
+  @@map("prospect_searches")
+}
+
+model AuditResult {
+  id           String        @id @default(cuid())
+  workspaceId  String        @map("workspace_id")
+  companyId    String?       @map("company_id")
+  url          String
+  status       String        @default("queued") // queued | running | done | error
+  score        Int           @default(0)
+  verdict      AuditVerdict  @default(SKIP)
+  checks       Json?         @map("checks_json")
+  flags        Json          @default("[]")
+  pitchSummary String?       @map("pitch_summary") @db.Text
+  screenshots  Json          @default("[]")
+  pdfPath      String?       @map("pdf_path")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  expiresAt    DateTime      @map("expires_at")
+
+  company Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  shares  AuditShare[]
+
+  @@index([workspaceId])
+  @@index([companyId])
+  @@map("audit_results")
+}
+
+model AuditShare {
+  id           String    @id @default(cuid())
+  workspaceId  String    @map("workspace_id")
+  auditId      String    @map("audit_id")
+  leadId       String?   @map("lead_id")
+  slug         String    @unique
+  firstOpenedAt DateTime? @map("first_opened_at")
+  openCount    Int       @default(0) @map("open_count")
+  expiresAt    DateTime  @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  audit AuditResult @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([auditId])
+  @@map("audit_shares")
+}
+
+model Template {
+  id          String         @id @default(cuid())
+  workspaceId String         @map("workspace_id")
+  type        TemplateType
+  lang        Lang           @default(HU)
+  name        String
+  body        String         @db.Text
+  variables   Json           @default("[]")
+  version     Int            @default(1)
+  status      TemplateStatus @default(DRAFT)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  documents Document[]
+
+  @@index([workspaceId])
+  @@map("templates")
+}
+
+model Document {
+  id                String         @id @default(cuid())
+  workspaceId       String         @map("workspace_id")
+  leadId            String?        @map("lead_id")
+  templateVersionId String?        @map("template_version_id")
+  chainParentId     String?        @map("chain_parent_id")
+  type              DocumentType
+  status            DocumentStatus @default(DRAFT)
+  watermark         Boolean        @default(true)
+  payload           Json?          @map("payload_json")
+  totals            Json?          @map("totals_json")
+  pdfUrl            String?        @map("pdf_url")
+  acceptSlug        String?        @unique @map("accept_slug")
+  finalizedAt       DateTime?      @map("finalized_at")
+  finalizedBy       String?        @map("finalized_by")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  lead        Lead?             @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  template    Template?         @relation(fields: [templateVersionId], references: [id], onDelete: SetNull)
+  chainParent Document?         @relation("DocumentChain", fields: [chainParentId], references: [id], onDelete: SetNull)
+  chainChild  Document[]        @relation("DocumentChain")
+  emailLogs   EmailLog[]
+  acceptances QuoteAcceptance[]
+  invoices    Invoice[]
+
+  @@index([workspaceId])
+  @@index([leadId])
+  @@map("documents")
+}
+
+model EmailLog {
+  id          String      @id @default(cuid())
+  workspaceId String      @map("workspace_id")
+  leadId      String?     @map("lead_id")
+  documentId  String?     @map("document_id")
+  to          String
+  subject     String
+  mailgunId   String?     @map("mailgun_id")
+  status      EmailStatus @default(QUEUED)
+  at          DateTime    @default(now())
+
+  lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  document Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@map("email_logs")
+}
+
+model Call {
+  id          String      @id @default(cuid())
+  workspaceId String      @map("workspace_id")
+  leadId      String      @map("lead_id")
+  outcome     CallOutcome
+  note        String?     @db.Text
+  duration     Int? // seconds
+  callbackAt   DateTime?   @map("callback_at")
+  callbackDoneAt DateTime? @map("callback_done_at")
+  byUserId     String?     @map("by_user_id")
+  at          DateTime    @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([leadId])
+  @@map("calls")
+}
+
+model Campaign {
+  id             String             @id @default(cuid())
+  workspaceId    String             @map("workspace_id")
+  frameId        String?            @map("frame_id")
+  name           String
+  segmentQuery   Json?              @map("segment_query")
+  status         CampaignStatus     @default(DRAFT)
+  complianceNote String?            @map("compliance_note") @db.Text
+  dailyCap       Int                @default(20) @map("daily_cap")
+  startedAt      DateTime?          @map("started_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+
+  frame      Frame?               @relation(fields: [frameId], references: [id], onDelete: SetNull)
+  steps      CampaignStep[]
+  recipients CampaignRecipient[]
+
+  @@index([workspaceId])
+  @@map("campaigns")
+}
+
+model CampaignStep {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  campaignId  String   @map("campaign_id")
+  stepNumber  Int      @map("step_number")
+  delayDays   Int      @default(0) @map("delay_days")
+  subject     String?
+  body        String   @db.Text
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@map("campaign_steps")
+}
+
+model CampaignRecipient {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  campaignId  String    @map("campaign_id")
+  leadId      String?   @map("lead_id")
+  email       String
+  suppressed  Boolean   @default(false)
+  bounced     Boolean   @default(false)
+  stepSent    Int       @default(0) @map("step_sent")
+  repliedAt   DateTime? @map("replied_at")
+  sentAt      DateTime? @map("sent_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@map("campaign_recipients")
+}
+
+model Referrer {
+  id              String       @id @default(cuid())
+  workspaceId     String       @map("workspace_id")
+  kind            ReferrerKind
+  name            String
+  linkedCompanyId String?      @map("linked_company_id")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  linkedCompany Company? @relation(fields: [linkedCompanyId], references: [id], onDelete: SetNull)
+  leads         Lead[]
+
+  @@index([workspaceId])
+  @@map("referrers")
+}
+
+model RegistryData {
+  id           String   @id @default(cuid())
+  workspaceId  String   @map("workspace_id")
+  companyId    String   @unique @map("company_id")
+  taxId        String?  @map("tax_id")
+  regNumber    String?  @map("reg_number")
+  legalName    String?  @map("legal_name")
+  headcountBand String? @map("headcount_band")
+  revenueBand  String?  @map("revenue_band")
+  statusFlags  Json     @default("[]") @map("status_flags")
+  fetchedAt    DateTime @default(now()) @map("fetched_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("registry_data")
+}
+
+model DealOutcome {
+  id          String     @id @default(cuid())
+  workspaceId String     @map("workspace_id")
+  leadId      String     @map("lead_id")
+  result      DealResult
+  reason      String?
+  value       Int? // HUF forints
+  competitor  String?
+  at          DateTime   @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([leadId])
+  @@map("deal_outcomes")
+}
+
+// Public per-host scheduling page (spec §4.21). slug is globally unique — the
+// public path segment on meet.{domain}/{slug}. meeting_types_json holds
+// [{ id, label, durationMin }]; config holds working hours, slot step, buffers,
+// notice, horizon, timezone.
+model BookingPage {
+  id            String   @id @default(cuid())
+  workspaceId   String   @map("workspace_id")
+  hostUserId    String   @map("host_user_id")
+  slug          String   @unique
+  title         String?
+  meetingTypes  Json     @default("[]") @map("meeting_types_json")
+  config        Json?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([workspaceId])
+  @@map("booking_pages")
+}
+
+model QuoteAcceptance {
+  id             String   @id @default(cuid())
+  workspaceId    String   @map("workspace_id")
+  documentId     String   @map("document_id")
+  acceptedByName String   @map("accepted_by_name")
+  company        String?
+  ip             String?
+  userAgent      String?  @map("user_agent")
+  at             DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([documentId])
+  @@map("quote_acceptances")
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  workspaceId String        @map("workspace_id")
+  documentId  String?       @map("document_id")
+  szamlazzId  String?       @map("szamlazz_id")
+  number      String?
+  pdfUrl      String?       @map("pdf_url")
+  status      InvoiceStatus @default(PREPARED)
+  at          DateTime      @default(now())
+
+  document Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@map("invoices")
+}
+
+model Suppression {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  address     String
+  reason      String?
+  at          DateTime @default(now())
+
+  @@unique([workspaceId, address])
+  @@index([workspaceId])
+  @@map("suppressions")
+}
+
+model ClaudeUsage {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  useCase     String   @map("use_case")
+  model       String
+  tokensIn    Int      @default(0) @map("tokens_in")
+  tokensOut   Int      @default(0) @map("tokens_out")
+  cost        Decimal  @default(0) // USD
+  at          DateTime @default(now())
+
+  @@index([workspaceId])
+  @@map("claude_usage")
+}
