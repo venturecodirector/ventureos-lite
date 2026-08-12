@@ -48,14 +48,19 @@ const FIELD_MASK = [
 ].join(",");
 
 class GooglePlacesClient implements PlacesClient {
+  /** Workspace key, resolved by the caller; null means fall back to env. */
+  constructor(private readonly apiKey: string | null = null) {}
+
   async textSearch(q: {
     keyword: string;
     location: string;
     radius?: string;
   }): Promise<PlacesSearchResponse> {
-    const key = process.env.GOOGLE_PLACES_API_KEY;
+    // Resolved per workspace by the caller (Settings → Integrations), falling
+    // back to the env key.
+    const key = this.apiKey ?? process.env.GOOGLE_PLACES_API_KEY;
     if (!key) {
-      throw new Error("GOOGLE_PLACES_API_KEY is not set — cannot run a Prospector search.");
+      throw new Error("No Google Places API key configured — cannot run a Prospector search.");
     }
     const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
       method: "POST",
@@ -84,7 +89,9 @@ class GooglePlacesClient implements PlacesClient {
 }
 
 let client: PlacesClient | null = null;
-export function getPlacesClient(): PlacesClient {
+export function getPlacesClient(apiKey: string | null = null): PlacesClient {
+  // A workspace-specific key gets its own client; the env-backed one is cached.
+  if (apiKey) return new GooglePlacesClient(apiKey);
   if (!client) client = new GooglePlacesClient();
   return client;
 }

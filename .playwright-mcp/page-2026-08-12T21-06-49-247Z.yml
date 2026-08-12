@@ -1,0 +1,88 @@
+- generic [ref=f25e2]:
+  - complementary [ref=f25e3]:
+    - button "V Venture CO Group workspace ▾" [ref=f25e5] [cursor=pointer]:
+      - generic [ref=f25e6]: V
+      - generic [ref=f25e7]:
+        - generic [ref=f25e8]: Venture CO Group
+        - generic [ref=f25e9]: workspace
+      - generic [ref=f25e10]: ▾
+    - generic [ref=f25e11]:
+      - text: ventureos
+      - emphasis [ref=f25e12]: lite
+    - navigation [ref=f25e13]:
+      - link "Dashboard" [ref=f25e14] [cursor=pointer]:
+        - /url: /
+      - link "Prospector" [ref=f25e22] [cursor=pointer]:
+        - /url: /prospector
+      - link "Lead Engine" [ref=f25e28] [cursor=pointer]:
+        - /url: /leads
+      - link "Site Audit" [ref=f25e34] [cursor=pointer]:
+        - /url: /audit
+      - link "Pipeline" [ref=f25e41] [cursor=pointer]:
+        - /url: /pipeline
+      - link "Outreach" [ref=f25e46] [cursor=pointer]:
+        - /url: /outreach
+      - link "Inbox" [ref=f25e52] [cursor=pointer]:
+        - /url: /inbox
+      - link "Calls" [ref=f25e58] [cursor=pointer]:
+        - /url: /calls
+      - link "Meetings" [ref=f25e63] [cursor=pointer]:
+        - /url: /meetings
+      - link "Referrers" [ref=f25e69] [cursor=pointer]:
+        - /url: /referrers
+      - link "Campaigns 🔒" [ref=f25e75] [cursor=pointer]:
+        - /url: /campaigns
+        - generic [ref=f25e79]: Campaigns
+        - generic [ref=f25e80]: 🔒
+      - link "Documents 🔒" [ref=f25e81] [cursor=pointer]:
+        - /url: /documents
+        - generic [ref=f25e86]: Documents
+        - generic [ref=f25e87]: 🔒
+      - link "Public Pages" [ref=f25e88] [cursor=pointer]:
+        - /url: /public-pages
+      - link "Content Hub" [ref=f25e94] [cursor=pointer]:
+        - /url: /content
+      - link "Analytics" [ref=f25e99] [cursor=pointer]:
+        - /url: /analytics
+      - generic [ref=f25e104]: System
+      - link "Settings" [ref=f25e105] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=f25e111]:
+      - generic [ref=f25e112]:
+        - generic [ref=f25e113]: ✦ Claude budget
+        - generic [ref=f25e114]: $0.00 / $2.00
+      - 'progressbar "Claude budget: $0.00 of $2.00 used today" [ref=f25e115]'
+    - generic [ref=f25e116]:
+      - generic [ref=f25e117]: F
+      - generic [ref=f25e118]:
+        - generic [ref=f25e119]: Fanni
+        - generic [ref=f25e120]: BDR · Venture CO Group
+  - generic [ref=f25e121]:
+    - banner [ref=f25e122]:
+      - heading "good morning, fanni" [level=1] [ref=f25e123]
+      - generic [ref=f25e125]:
+        - combobox "Search leads, companies and documents" [ref=f25e129]
+        - generic [ref=f25e130]: /
+      - button "Import CSV" [ref=f25e131] [cursor=pointer]
+      - button "+ New lead" [ref=f25e132] [cursor=pointer]
+      - button "Account menu" [ref=f25e134] [cursor=pointer]: F
+    - main [ref=f25e135]:
+      - generic [ref=f25e137]:
+        - generic [ref=f25e138]:
+          - generic [ref=f25e139]: Today
+          - heading "good morning" [level=2] [ref=f25e140]
+          - paragraph [ref=f25e141]: Your day starts here. The Signal Engine analyses what converts each week and surfaces a fresh insight below — approve its proposals in Settings.
+        - generic [ref=f25e142]:
+          - generic [ref=f25e143]:
+            - generic [ref=f25e144]:
+              - generic [ref=f25e145]: ✦
+              - generic [ref=f25e146]: Claude insight
+              - generic [ref=f25e147]: today
+            - paragraph [ref=f25e148]: No insight yet — the Signal Engine runs weekly and the daily card rotates over its digest. Come back after the first run.
+          - generic [ref=f25e149]:
+            - generic [ref=f25e150]: Signal Engine
+            - paragraph [ref=f25e151]:
+              - text: Runs weekly on aggregates. Proposals (frame promotion, score weights) require n≥20 and wait for your approval in
+              - link "Settings" [ref=f25e152] [cursor=pointer]:
+                - /url: /settings
+              - text: . Nothing self-modifies.

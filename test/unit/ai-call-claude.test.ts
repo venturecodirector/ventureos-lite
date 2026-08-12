@@ -20,6 +20,7 @@ function res(over: Partial<ClaudeResponse> = {}): ClaudeResponse {
 function makeDeps(over: Partial<CallClaudeDeps> = {}): CallClaudeDeps {
   return {
     createMessage: vi.fn(async () => res()),
+    apiKeyFor: vi.fn(async () => null),
     spentTodayUsd: vi.fn(async () => 0),
     capUsd: vi.fn(async () => 2),
     logUsage: vi.fn(async () => {}),

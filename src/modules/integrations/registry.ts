@@ -1,0 +1,240 @@
+/**
+ * What is configurable from the UI, and what is not. Pure — no I/O — so the
+ * classification and the Mailgun invariant are testable on their own.
+ *
+ * The split is the important part:
+ *
+ *   INTEGRATION credentials (below) are per-workspace and editable in Settings.
+ *   They are things an operator legitimately rotates: API keys, sending domains.
+ *
+ *   INFRASTRUCTURE settings are env-only and shown read-only. Editing a
+ *   database URL or the encryption key from inside the app that depends on them
+ *   is a way to lock yourself out of your own installation — and CREDENTIALS_KEY
+ *   in particular is what protects everything on the editable list.
+ */
+
+export type FieldKind = "secret" | "plain";
+
+export interface IntegrationField {
+  /** Stable storage key. Never change one without a migration. */
+  key: string;
+  label: string;
+  kind: FieldKind;
+  /** Env variable consulted when the workspace has no value of its own. */
+  envVar: string;
+  placeholder?: string;
+  help?: string;
+}
+
+export interface IntegrationGroup {
+  id: string;
+  title: string;
+  description: string;
+  fields: IntegrationField[];
+  /** Whether a "Test connection" button makes sense for this group. */
+  testable: boolean;
+}
+
+export const INTEGRATION_GROUPS: IntegrationGroup[] = [
+  {
+    id: "anthropic",
+    title: "Anthropic (Claude)",
+    description: "Powers research cards, drafts, briefs and the weekly analysis.",
+    testable: true,
+    fields: [
+      {
+        key: "anthropic.apiKey",
+        label: "API key",
+        kind: "secret",
+        envVar: "ANTHROPIC_API_KEY",
+        placeholder: "sk-ant-…",
+        help: "console.anthropic.com → Settings → API keys",
+      },
+    ],
+  },
+  {
+    id: "google",
+    title: "Google APIs",
+    description: "Prospector search and website-audit performance scores.",
+    testable: true,
+    fields: [
+      {
+        key: "google.placesApiKey",
+        label: "Places API key",
+        kind: "secret",
+        envVar: "GOOGLE_PLACES_API_KEY",
+        help: "Google Cloud → Credentials, with Places API (New) enabled",
+      },
+      {
+        key: "google.pagespeedApiKey",
+        label: "PageSpeed API key",
+        kind: "secret",
+        envVar: "PAGESPEED_API_KEY",
+        help: "Same project, with PageSpeed Insights API enabled",
+      },
+    ],
+  },
+  {
+    id: "mailgun_transactional",
+    title: "Mailgun — transactional",
+    description: "Quotes, contracts, certificates, booking confirmations.",
+    testable: true,
+    fields: [
+      {
+        key: "mailgun.tx.domain",
+        label: "Sending domain",
+        kind: "plain",
+        envVar: "MAILGUN_DOMAIN",
+        placeholder: "mg.ventureco.group",
+      },
+      {
+        key: "mailgun.tx.apiKey",
+        label: "Sending API key",
+        kind: "secret",
+        envVar: "MAILGUN_API_KEY",
+      },
+      {
+        key: "mailgun.webhookSigningKey",
+        label: "Webhook signing key",
+        kind: "secret",
+        envVar: "MAILGUN_WEBHOOK_SIGNING_KEY",
+        help: "Verifies delivery and bounce callbacks are really from Mailgun",
+      },
+    ],
+  },
+  {
+    id: "mailgun_cold",
+    title: "Mailgun — cold outreach",
+    description:
+      "A SEPARATE domain and key. A cold-list complaint must never touch the reputation quotes and contracts depend on.",
+    testable: true,
+    fields: [
+      {
+        key: "mailgun.cold.domain",
+        label: "Cold sending domain",
+        kind: "plain",
+        envVar: "MAILGUN_COLD_DOMAIN",
+        placeholder: "cold.ventureco.agency",
+      },
+      {
+        key: "mailgun.cold.apiKey",
+        label: "Cold sending API key",
+        kind: "secret",
+        envVar: "MAILGUN_COLD_API_KEY",
+      },
+    ],
+  },
+  {
+    id: "szamlazz",
+    title: "Számlázz.hu",
+    description: "Invoice submission. Per-workspace Számla Agent key.",
+    testable: false,
+    fields: [
+      {
+        key: "szamlazz.agentKey",
+        label: "Számla Agent key",
+        kind: "secret",
+        envVar: "",
+        help: "Számlázz.hu → Beállítások → Számla Agent kulcs",
+      },
+    ],
+  },
+];
+
+export const ALL_FIELDS: IntegrationField[] = INTEGRATION_GROUPS.flatMap((g) => g.fields);
+
+export function fieldByKey(key: string): IntegrationField | undefined {
+  return ALL_FIELDS.find((f) => f.key === key);
+}
+
+export function isKnownField(key: string): boolean {
+  return ALL_FIELDS.some((f) => f.key === key);
+}
+
+/**
+ * Env-only settings, listed by NAME so the UI can show what exists without
+ * ever rendering a value. These are read-only on purpose.
+ */
+export const INFRASTRUCTURE_VARS: Array<{ name: string; note: string }> = [
+  { name: "DATABASE_URL", note: "Database connection — changing it in-app would break the app writing the change" },
+  { name: "REDIS_URL", note: "Queue backend" },
+  { name: "NEXTAUTH_SECRET", note: "Signs session cookies; rotating it signs everyone out" },
+  { name: "CREDENTIALS_KEY", note: "Encrypts everything on this page — must never be editable from it" },
+  { name: "APP_URL", note: "Public origin of the app" },
+  { name: "PUBLIC_AUDIT_URL", note: "Public audit-report origin" },
+  { name: "PUBLIC_QUOTE_URL", note: "Public quote-acceptance origin" },
+  { name: "PUBLIC_MEET_URL", note: "Public booking origin" },
+  { name: "FILES_DIR", note: "Where generated PDFs and screenshots live" },
+  { name: "DB_FLAVOR", note: "postgres | mysql" },
+  { name: "MAILGUN_EU", note: "Keeps mail in the EU region (GDPR)" },
+];
+
+// ---------------------------------------------------------------------------
+// invariants
+// ---------------------------------------------------------------------------
+
+export interface IntegrationProblem {
+  key: string;
+  message: string;
+}
+
+/**
+ * The one rule that must hold no matter WHERE a value came from.
+ *
+ * The boot-time env check (src/lib/env.ts) only sees env. Once domains can also
+ * come from the database, that check is no longer sufficient on its own — a
+ * workspace could save a cold domain equal to the transactional one and slip
+ * past it. So the same invariant is enforced here, on the resolved pair, and
+ * this function is called both when saving and when resolving.
+ */
+export function validateResolved(values: Record<string, string | null>): IntegrationProblem[] {
+  const problems: IntegrationProblem[] = [];
+  const tx = values["mailgun.tx.domain"]?.trim().toLowerCase() || null;
+  const cold = values["mailgun.cold.domain"]?.trim().toLowerCase() || null;
+
+  if (tx && cold && tx === cold) {
+    problems.push({
+      key: "mailgun.cold.domain",
+      message:
+        `The cold domain cannot be the same as the transactional domain ("${tx}"). ` +
+        "Cold outreach runs on its own domain so a complaint can never burn the " +
+        "reputation quotes and contracts depend on.",
+    });
+  }
+
+  const txKey = values["mailgun.tx.apiKey"];
+  const coldKey = values["mailgun.cold.apiKey"];
+  if (txKey && coldKey && txKey === coldKey) {
+    problems.push({
+      key: "mailgun.cold.apiKey",
+      message: "The cold sending key must differ from the transactional one.",
+    });
+  }
+
+  for (const key of ["mailgun.tx.domain", "mailgun.cold.domain"]) {
+    const v = values[key]?.trim();
+    if (v && !/^(?=.{1,253}$)(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(v)) {
+      problems.push({
+        key,
+        message: "Enter a bare hostname with no scheme or path, e.g. mg.ventureco.group.",
+      });
+    }
+  }
+  return problems;
+}
+
+/** Shape check for a single field before it is saved. */
+export function validateField(key: string, value: string): string | null {
+  const field = fieldByKey(key);
+  if (!field) return "Unknown setting.";
+  const v = value.trim();
+  if (!v) return null; // clearing is always allowed — it falls back to env
+
+  if (key === "anthropic.apiKey" && !v.startsWith("sk-ant-")) {
+    return "An Anthropic key starts with 'sk-ant-'.";
+  }
+  if (field.kind === "plain" && /^https?:\/\//i.test(v)) {
+    return "Enter a bare hostname, without https://.";
+  }
+  return null;
+}

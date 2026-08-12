@@ -567,6 +567,28 @@ model ContentPost {
   @@map("content_posts")
 }
 
+/// Per-workspace integration credentials (spec §4.24). Secrets are stored
+/// AES-256-GCM encrypted (see src/lib/crypto.ts); non-secret values such as a
+/// sending domain are stored in clear so they can be validated and displayed.
+/// Infrastructure settings are deliberately NOT here — they stay in env.
+model Integration {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  /// Registry key, e.g. "mailgun.cold.apiKey".
+  key         String
+  /// Encrypted payload for secret fields; null for plain ones.
+  valueEnc    String?  @map("value_enc") @db.Text
+  /// Clear value for non-secret fields; null for secrets.
+  valuePlain  String?  @map("value_plain")
+  updatedBy   String?  @map("updated_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId])
+  @@map("integrations")
+}
+
 model AuditLog {
   id          String   @id @default(cuid())
   workspaceId String   @map("workspace_id")

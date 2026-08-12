@@ -32,6 +32,7 @@ const PROD = {
   PUBLIC_QUOTE_URL: "https://quote.ventureco.agency",
   PUBLIC_MEET_URL: "https://meet.ventureco.agency",
   FILES_DIR: "/data/files",
+  CREDENTIALS_KEY: "Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaQ==",
   MAIL_PROVIDER: "mailgun",
   MAILGUN_EU: "true",
   MAILGUN_API_KEY: "key-transactional",

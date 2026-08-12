@@ -1,0 +1,4 @@
+[    2174ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[    2174ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[    2174ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[    2296ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630

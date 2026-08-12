@@ -2,6 +2,7 @@ import { AppShell } from "@/components/app-shell";
 import { SettingsGrants } from "@/components/settings-grants";
 import { SecurityPanel } from "@/components/security-panel";
 import { SettingsUsers } from "@/components/settings-users";
+import { SettingsIntegrations } from "@/components/settings-integrations";
 import { ProposalQueue } from "@/components/proposal-queue";
 import { GdprPanel } from "@/components/gdpr-panel";
 import { WorkspaceAdmin } from "@/components/workspace-admin";
@@ -12,6 +13,7 @@ import { hasSzamlazzKey } from "@/modules/invoicing/actions";
 import { listMembers } from "@/modules/settings/actions";
 import { getSecurityStatus } from "@/modules/auth/actions";
 import { listWorkspaceUsers } from "@/modules/users/actions";
+import { getIntegrations } from "@/modules/integrations/actions";
 import { listProposals } from "@/modules/signal/actions";
 import { getRetention, listErasableLeads } from "@/modules/gdpr/actions";
 import { isOwner, hasGrant } from "@/lib/authz";
@@ -37,6 +39,7 @@ export default async function SettingsPage({
   ]);
   // Owner-only; listWorkspaceUsers throws for anyone else, so only ask when owner.
   const managedUsers = owner ? await listWorkspaceUsers() : [];
+  const integrations = owner ? await getIntegrations() : null;
   const szamlazzKeySet = await hasSzamlazzKey();
   return (
     <AppShell activePath="/settings">
@@ -48,6 +51,7 @@ export default async function SettingsPage({
             minPasswordLength={securityStatus.minPasswordLength}
           />
         )}
+        {integrations && <SettingsIntegrations data={integrations} />}
         <WorkspaceAdmin isOwner={owner} />
         <ColdSignoff status={coldStatus} isOwner={owner} />
         <SzamlazzKey hasKey={szamlazzKeySet} isOwner={owner} />

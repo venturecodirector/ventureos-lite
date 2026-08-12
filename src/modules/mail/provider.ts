@@ -25,6 +25,12 @@ export interface MailMessage {
   domain: string;
   /** Omit for transactional mail; cold campaigns MUST pass "cold". */
   stream?: MailStream;
+  /**
+   * Credentials resolved for the sending workspace (Settings → Integrations),
+   * falling back to env when absent. Carried on the message so the provider
+   * stays stateless across workspaces.
+   */
+  credentials?: { apiKey?: string | null; transactionalDomain?: string | null; coldDomain?: string | null };
   to: string;
   from: string;
   replyTo?: string;
@@ -55,8 +61,10 @@ export class MailStreamError extends Error {
 export function assertStreamDomain(msg: MailMessage): "MAILGUN_API_KEY" | "MAILGUN_COLD_API_KEY" {
   const stream: MailStream = msg.stream ?? "transactional";
   const domain = msg.domain.trim().toLowerCase();
-  const tx = transactionalMailDomain();
-  const cold = coldMailDomain();
+  // Prefer the workspace-resolved domains; fall back to env. The rule is the
+  // same either way — where the values came from does not change it.
+  const tx = (msg.credentials?.transactionalDomain ?? transactionalMailDomain())?.toLowerCase() ?? null;
+  const cold = (msg.credentials?.coldDomain ?? coldMailDomain())?.toLowerCase() ?? null;
 
   if (!domain) {
     throw new MailStreamError("Refusing to send: no sending domain resolved.");
@@ -97,8 +105,13 @@ class MailgunProvider implements MailProvider {
 
   async send(msg: MailMessage): Promise<{ id: string }> {
     const keyVar = assertStreamDomain(msg);
-    const key = process.env[keyVar];
-    if (!key) throw new Error(`${keyVar} is not set`);
+    // A workspace key wins; otherwise the env variable for this stream.
+    const key = msg.credentials?.apiKey?.trim() || process.env[keyVar];
+    if (!key) {
+      throw new Error(
+        `No sending key for this stream — set it in Settings → Integrations or ${keyVar}.`,
+      );
+    }
     const base =
       process.env.MAILGUN_EU === "true"
         ? "https://api.eu.mailgun.net"

@@ -10,12 +10,16 @@ interface PsiResponse {
   };
 }
 
-export async function fetchPsi(url: string): Promise<PsiScores | null> {
+export async function fetchPsi(
+  url: string,
+  apiKey: string | null = null,
+): Promise<PsiScores | null> {
   const params = new URLSearchParams({ url, strategy: "mobile" });
   for (const c of ["performance", "seo", "accessibility", "best-practices"]) {
     params.append("category", c);
   }
-  const key = process.env.PAGESPEED_API_KEY;
+  // Optional; a workspace value wins over the env one.
+  const key = apiKey ?? process.env.PAGESPEED_API_KEY;
   if (key) params.set("key", key);
 
   const res = await fetch(

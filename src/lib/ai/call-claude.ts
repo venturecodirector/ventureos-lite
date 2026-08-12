@@ -6,6 +6,7 @@ import { modelForUseCase, DEFAULT_MAX_TOKENS } from "./models";
 import { computeCostUsd, type ClaudeUsageTokens } from "./cost";
 import { assertWithinBudget } from "./budget";
 import { ClaudeRefusalError, ClaudeJsonError } from "./errors";
+import { resolveIntegration } from "../../modules/integrations/resolve";
 
 /**
  * The single Claude wrapper (CLAUDE.md hard rule #3, spec §5–6):
@@ -53,7 +54,9 @@ export interface UsageLogEntry {
 }
 
 export interface CallClaudeDeps {
-  createMessage(req: ClaudeRequest): Promise<ClaudeResponse>;
+  createMessage(req: ClaudeRequest, apiKey?: string | null): Promise<ClaudeResponse>;
+  /** Workspace Anthropic key, or null to use the env one. */
+  apiKeyFor(workspaceId: string): Promise<string | null>;
   spentTodayUsd(workspaceId: string): Promise<number>;
   capUsd(workspaceId: string): Promise<number>;
   logUsage(entry: UsageLogEntry): Promise<void>;
@@ -182,7 +185,13 @@ export async function callClaude<T = string>(
     return costUsd;
   };
 
-  let res = await deps.createMessage({ model, max_tokens: maxTokens, system, messages });
+  // Resolved once per call: workspace override if present, else env.
+  const apiKey = await deps.apiKeyFor(params.workspaceId);
+
+  let res = await deps.createMessage(
+    { model, max_tokens: maxTokens, system, messages },
+    apiKey,
+  );
   usage = addUsage(usage, res.usage);
 
   if (res.stop_reason === "refusal") {
@@ -211,12 +220,10 @@ export async function callClaude<T = string>(
       content: `Your previous response failed schema validation (${first.error}). Return ONLY the corrected JSON value — nothing else.`,
     },
   ];
-  res = await deps.createMessage({
-    model,
-    max_tokens: maxTokens,
-    system,
-    messages: repairMessages,
-  });
+  res = await deps.createMessage(
+    { model, max_tokens: maxTokens, system, messages: repairMessages },
+    apiKey,
+  );
   usage = addUsage(usage, res.usage);
 
   if (res.stop_reason === "refusal") {
@@ -250,8 +257,10 @@ function startOfUtcDay(): Date {
 }
 
 export const defaultDeps: CallClaudeDeps = {
-  async createMessage(req) {
-    const res = await getAnthropic().messages.create({
+  async createMessage(req, apiKey) {
+    // A workspace may hold its own Anthropic key (Settings → Integrations);
+    // otherwise this falls back to ANTHROPIC_API_KEY.
+    const res = await getAnthropic(apiKey).messages.create({
       model: req.model,
       max_tokens: req.max_tokens,
       ...(req.system ? { system: req.system } : {}),
@@ -268,6 +277,10 @@ export const defaultDeps: CallClaudeDeps = {
       stop_reason: res.stop_reason,
       model: res.model,
     };
+  },
+
+  async apiKeyFor(workspaceId) {
+    return resolveIntegration(workspaceId, "anthropic.apiKey");
   },
 
   async spentTodayUsd(workspaceId) {

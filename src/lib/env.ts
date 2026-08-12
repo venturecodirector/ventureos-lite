@@ -102,6 +102,13 @@ export function buildEnvSchema(strict: boolean) {
       PUBLIC_MEET_URL: req(originUrl),
       FILES_DIR: z.string().min(1).refine((v) => v.startsWith("/"), "must be an absolute path"),
 
+      // ---- credential encryption -------------------------------------------
+      // Encrypts integration secrets at rest (src/lib/crypto.ts). Required in
+      // production: without it, nothing can be saved in Settings → Integrations.
+      CREDENTIALS_KEY: strict
+        ? z.string().min(32, "must be at least 32 characters (openssl rand -base64 32)")
+        : z.string().optional(),
+
       // ---- mail ------------------------------------------------------------
       MAIL_PROVIDER: z.enum(["mailgun", "mock"]).optional(),
       MAILGUN_EU: strict

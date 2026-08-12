@@ -12,6 +12,7 @@ import {
 import { computeIcpScore, type IcpBreakdown } from "../leads/scoring";
 import { probeSite, captureScreenshots } from "./probe";
 import { fetchPsi } from "./psi";
+import { resolveIntegration } from "@/modules/integrations/resolve";
 import { analyzeAudit } from "./analyze";
 import { auditThresholdsFromConfig } from "./config";
 import type { AuditJobData, PdfJobData } from "./enqueue";
@@ -89,7 +90,10 @@ export async function processAudit(data: AuditJobData): Promise<void> {
 
     // Stage 2 — PageSpeed Insights (optional).
     try {
-      probe.psi = await fetchPsi(probe.finalUrl);
+      probe.psi = await fetchPsi(
+        probe.finalUrl,
+        await resolveIntegration(data.workspaceId, "google.pagespeedApiKey"),
+      );
       analysis = analyzeAudit(probe, thresholds);
       await db.auditResult.update({
         where: { id: data.auditId },

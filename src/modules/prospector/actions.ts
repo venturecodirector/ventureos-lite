@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { getPlacesClient } from "@/lib/places";
+import { resolveIntegration } from "@/modules/integrations/resolve";
 import { callClaude } from "@/lib/ai/call-claude";
 import {
   PROSPECT_CLASSIFY_SYSTEM,
@@ -55,7 +56,9 @@ export async function runProspectSearch(raw: unknown): Promise<ProspectSearchRes
     };
   }
 
-  const search = await getPlacesClient().textSearch(input);
+  // Workspace key if configured, else the env one.
+  const placesKey = await resolveIntegration(workspaceId, "google.placesApiKey");
+  const search = await getPlacesClient(placesKey).textSearch(input);
   const results: ProspectRow[] = search.results.map((r) => ({
     ...r,
     presence: classifyWebsite(r.websiteUri),
