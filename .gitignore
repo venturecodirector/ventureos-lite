@@ -38,3 +38,7 @@ e2e/.auth/
 
 # Debug screenshots from browser verification
 /*.png
+
+# Playwright MCP session debris and incremental tsc state — build output.
+/.playwright-mcp/
+/tsconfig.tsbuildinfo
