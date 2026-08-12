@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 import { defineConfig } from "vitest/config";
 
 // Load .env so DB-backed integration tests (tenant isolation) get
@@ -24,6 +27,11 @@ function loadDotenv(): Record<string, string> {
 }
 
 export default defineConfig({
+  // Mirror the tsconfig "@/*" path alias so tests can import modules that use
+  // it internally (server actions do, throughout src/modules).
+  resolve: {
+    alias: { "@": resolve(__dirname, "src") },
+  },
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],

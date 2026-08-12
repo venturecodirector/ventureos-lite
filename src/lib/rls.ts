@@ -116,6 +116,20 @@ function statements(): string[] {
      )`,
   );
 
+  // Reset tokens are consumed before any user context exists, so they follow
+  // the same shape as sessions: reachable by the app role, owner-scoped once a
+  // user context is set.
+  out.push(
+    `ALTER TABLE password_reset_tokens ENABLE ROW LEVEL SECURITY`,
+    `ALTER TABLE password_reset_tokens FORCE ROW LEVEL SECURITY`,
+    `DROP POLICY IF EXISTS reset_self ON password_reset_tokens`,
+    `CREATE POLICY reset_self ON password_reset_tokens USING (
+       ${CURRENT_USER} IS NULL OR ${CURRENT_USER} = '' OR user_id = ${CURRENT_USER}
+     ) WITH CHECK (
+       ${CURRENT_USER} IS NULL OR ${CURRENT_USER} = '' OR user_id = ${CURRENT_USER}
+     )`,
+  );
+
   // 5. Tenancy-mapping tables: a user sees only their own memberships and the
   //    workspaces they belong to.
   out.push(

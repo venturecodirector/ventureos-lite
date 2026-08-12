@@ -25,6 +25,8 @@ export interface ShellContext {
   activeWorkspaceId: string;
   workspaces: WorkspaceOption[];
   role: string;
+  /** Owner reset this user's 2FA; the shell redirects to enrollment. */
+  mustEnrollTotp: boolean;
   /** Today's real Claude spend vs this workspace's cap — drives the shell meter. */
   budget: BudgetStatus;
 }
@@ -42,7 +44,7 @@ export async function getShellContext(): Promise<ShellContext> {
   const { workspaceId, userId } = await getActiveContext();
   const user = await prismaUnsafe.user.findUnique({
     where: { id: userId },
-    select: { id: true, name: true, email: true },
+    select: { id: true, name: true, email: true, mustEnrollTotp: true },
   });
   const memberships = await prismaUnsafe.membership.findMany({
     where: { userId },
@@ -67,6 +69,7 @@ export async function getShellContext(): Promise<ShellContext> {
     activeWorkspaceId: workspaceId,
     workspaces,
     role,
+    mustEnrollTotp: user?.mustEnrollTotp ?? false,
     budget,
   };
 }

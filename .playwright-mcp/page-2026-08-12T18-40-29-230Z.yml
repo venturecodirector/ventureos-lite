@@ -1,0 +1,378 @@
+- generic [active] [ref=f22e1]:
+  - generic [ref=f22e2]:
+    - complementary [ref=f22e3]:
+      - button "V Venture CO Group workspace ▾" [ref=f22e5] [cursor=pointer]:
+        - generic [ref=f22e6]: V
+        - generic [ref=f22e7]:
+          - generic [ref=f22e8]: Venture CO Group
+          - generic [ref=f22e9]: workspace
+        - generic [ref=f22e10]: ▾
+      - generic [ref=f22e11]:
+        - text: ventureos
+        - emphasis [ref=f22e12]: lite
+      - navigation [ref=f22e13]:
+        - link "Dashboard" [ref=f22e14] [cursor=pointer]:
+          - /url: /
+        - link "Prospector" [ref=f22e22] [cursor=pointer]:
+          - /url: /prospector
+        - link "Lead Engine" [ref=f22e28] [cursor=pointer]:
+          - /url: /leads
+        - link "Site Audit" [ref=f22e34] [cursor=pointer]:
+          - /url: /audit
+        - link "Pipeline" [ref=f22e41] [cursor=pointer]:
+          - /url: /pipeline
+        - link "Outreach" [ref=f22e46] [cursor=pointer]:
+          - /url: /outreach
+        - link "Inbox" [ref=f22e52] [cursor=pointer]:
+          - /url: /inbox
+        - link "Calls" [ref=f22e58] [cursor=pointer]:
+          - /url: /calls
+        - link "Meetings" [ref=f22e63] [cursor=pointer]:
+          - /url: /meetings
+        - link "Referrers" [ref=f22e69] [cursor=pointer]:
+          - /url: /referrers
+        - link "Campaigns 🔒" [ref=f22e75] [cursor=pointer]:
+          - /url: /campaigns
+          - generic [ref=f22e79]: Campaigns
+          - generic [ref=f22e80]: 🔒
+        - link "Documents 🔒" [ref=f22e81] [cursor=pointer]:
+          - /url: /documents
+          - generic [ref=f22e86]: Documents
+          - generic [ref=f22e87]: 🔒
+        - link "Public Pages" [ref=f22e88] [cursor=pointer]:
+          - /url: /public-pages
+        - link "Content Hub" [ref=f22e94] [cursor=pointer]:
+          - /url: /content
+        - link "Analytics" [ref=f22e99] [cursor=pointer]:
+          - /url: /analytics
+        - generic [ref=f22e104]: System
+        - link "Settings" [ref=f22e105] [cursor=pointer]:
+          - /url: /settings
+      - generic [ref=f22e111]:
+        - generic [ref=f22e112]:
+          - generic [ref=f22e113]: ✦ Claude budget
+          - generic [ref=f22e114]: $0.00 / $2.00
+        - 'progressbar "Claude budget: $0.00 of $2.00 used today" [ref=f22e115]'
+      - generic [ref=f22e116]:
+        - generic [ref=f22e117]: T
+        - generic [ref=f22e118]:
+          - generic [ref=f22e119]: Tamas
+          - generic [ref=f22e120]: OWNER · Venture CO Group
+    - generic [ref=f22e121]:
+      - banner [ref=f22e122]:
+        - heading "good morning, tamas" [level=1] [ref=f22e123]
+        - generic [ref=f22e125]:
+          - combobox "Search leads, companies and documents" [ref=f22e129]: director@ventureco.group
+          - generic [ref=f22e130]: …
+        - button "Import CSV" [ref=f22e131] [cursor=pointer]
+        - button "+ New lead" [ref=f22e132] [cursor=pointer]
+        - button "Account menu" [ref=f22e134] [cursor=pointer]: T
+      - main [ref=f22e135]:
+        - generic [ref=f22e136]:
+          - generic [ref=f22e137]:
+            - generic [ref=f22e138]:
+              - heading "security" [level=2] [ref=f22e139]
+              - generic [ref=f22e140]: director@ventureco.group
+            - generic [ref=f22e141]:
+              - generic [ref=f22e142]:
+                - generic [ref=f22e143]:
+                  - heading "password" [level=3] [ref=f22e144]
+                  - paragraph [ref=f22e145]: At least 12 characters. Changing it signs out your other devices.
+                - generic [ref=f22e146]:
+                  - textbox "Current password" [ref=f22e147]: e2e-test-password-1
+                  - textbox "New password" [ref=f22e148]
+                  - button "Change password" [disabled] [ref=f22e149]
+              - generic [ref=f22e150]:
+                - generic [ref=f22e151]:
+                  - heading "two-factor" [level=3] [ref=f22e152]
+                  - paragraph [ref=f22e153]: A 6-digit code from your phone, required at every sign-in.
+                - generic [ref=f22e154]:
+                  - paragraph [ref=f22e155]: Off — your account is protected by a password only.
+                  - button "Set up two-factor" [ref=f22e157] [cursor=pointer]
+            - generic [ref=f22e158]:
+              - generic [ref=f22e159]:
+                - heading "signed-in devices" [level=3] [ref=f22e160]
+                - paragraph [ref=f22e161]: Sessions expire after 12 hours of validity.
+              - list [ref=f22e162]:
+                - listitem [ref=f22e163]:
+                  - generic [ref=f22e164]: Macthis device
+                  - generic [ref=f22e165]: ::1 · 2026-08-12 18:40
+              - generic [ref=f22e166]:
+                - button "Sign out other devices" [disabled] [ref=f22e167]
+                - button "Sign out" [ref=f22e168] [cursor=pointer]
+          - generic [ref=f22e169]:
+            - generic [ref=f22e170]:
+              - heading "users" [level=2] [ref=f22e171]
+              - paragraph [ref=f22e172]: Owner-only. Every change here is written to the audit log, and anything that changes how someone signs in also signs them out.
+            - table [ref=f22e174]:
+              - rowgroup [ref=f22e175]:
+                - row [ref=f22e176]:
+                  - columnheader "User" [ref=f22e177]
+                  - columnheader "Role" [ref=f22e178]
+                  - columnheader "Sign-in" [ref=f22e179]
+                  - columnheader "Sessions" [ref=f22e180]
+                  - columnheader [ref=f22e181]
+              - rowgroup [ref=f22e182]:
+                - row [ref=f22e183]:
+                  - cell "Tamas(you) director@ventureco.group" [ref=f22e184]:
+                    - generic [ref=f22e185]: Tamas(you)
+                    - generic [ref=f22e186]: director@ventureco.group
+                  - cell "OWNER" [ref=f22e187]
+                  - cell "2FA off" [ref=f22e188]
+                  - cell "1" [ref=f22e191]
+                  - cell [ref=f22e192]:
+                    - generic [ref=f22e193]:
+                      - button "Edit" [ref=f22e194] [cursor=pointer]
+                      - button "Reset link" [ref=f22e195] [cursor=pointer]
+                      - button "Sign out" [ref=f22e196] [cursor=pointer]
+                - row [ref=f22e197]:
+                  - cell "Fanni Kovacs fanni@ventureco.group" [ref=f22e198]:
+                    - generic [ref=f22e199]: Fanni Kovacs
+                    - generic [ref=f22e200]: fanni@ventureco.group
+                  - cell "BDR" [ref=f22e201]
+                  - cell "2FA on" [ref=f22e202]
+                  - cell "0" [ref=f22e205]
+                  - cell [ref=f22e206]:
+                    - generic [ref=f22e207]:
+                      - button "Edit" [ref=f22e208] [cursor=pointer]
+                      - button "Reset link" [ref=f22e209] [cursor=pointer]
+                      - button "Reset 2FA" [ref=f22e210] [cursor=pointer]
+          - generic [ref=f22e211]:
+            - generic [ref=f22e212]: Workspaces
+            - paragraph [ref=f22e213]: Provision a new workspace and assign members. Owner-only, audit-logged.
+            - generic [ref=f22e214]:
+              - generic [ref=f22e215]:
+                - generic [ref=f22e216]: New workspace
+                - textbox "Name *" [ref=f22e217]
+                - textbox "Legal name" [ref=f22e218]
+                - generic [ref=f22e219]:
+                  - generic [ref=f22e220]:
+                    - text: Brand
+                    - textbox "Brand" [ref=f22e221]: "#7427c6"
+                  - textbox "Logo URL" [ref=f22e222]
+                - textbox "Mailgun domain (placeholder)" [ref=f22e223]
+                - generic [ref=f22e224]:
+                  - generic [ref=f22e225]:
+                    - text: Claude $/day
+                    - textbox "Claude $/day" [ref=f22e226]: "2"
+                  - generic [ref=f22e227]:
+                    - text: Retention (days)
+                    - textbox "Retention (days)" [ref=f22e228]: "365"
+                - button "Create workspace" [disabled] [ref=f22e229]
+              - generic [ref=f22e230]:
+                - generic [ref=f22e231]: Assign a member (this workspace)
+                - textbox "Email *" [ref=f22e232]
+                - textbox "Name" [ref=f22e233]
+                - combobox [ref=f22e234]:
+                  - option "BDR" [selected]
+                  - option "Admin"
+                  - option "Owner"
+                - generic [ref=f22e235]: Grants
+                - generic [ref=f22e236]:
+                  - generic [ref=f22e237]:
+                    - checkbox "documents.quote.create" [ref=f22e238]
+                    - text: documents.quote.create
+                  - generic [ref=f22e239]:
+                    - checkbox "documents.contract.create" [ref=f22e240]
+                    - text: documents.contract.create
+                  - generic [ref=f22e241]:
+                    - checkbox "documents.certificate.create" [ref=f22e242]
+                    - text: documents.certificate.create
+                  - generic [ref=f22e243]:
+                    - checkbox "documents.send" [ref=f22e244]
+                    - text: documents.send
+                  - generic [ref=f22e245]:
+                    - checkbox "templates.edit" [ref=f22e246]
+                    - text: templates.edit
+                  - generic [ref=f22e247]:
+                    - checkbox "signal_engine.approve" [ref=f22e248]
+                    - text: signal_engine.approve
+                  - generic [ref=f22e249]:
+                    - checkbox "exports.run" [ref=f22e250]
+                    - text: exports.run
+                - button "Assign member" [disabled] [ref=f22e251]
+          - generic [ref=f22e252]:
+            - generic [ref=f22e253]:
+              - text: Cold email · counsel sign-off
+              - generic [ref=f22e254]: locked
+            - paragraph [ref=f22e255]: Hungarian law (2008. évi XLVIII. tv.) restricts unsolicited electronic advertising, including B2B. The module activates only once counsel sign-off is recorded here — who approved, when, and the scope. This is a business gate, not a toggle.
+            - generic [ref=f22e256]:
+              - textbox "Approved by (counsel) *" [ref=f22e257]
+              - textbox [ref=f22e258]
+              - textbox "Cold domain (separate from transactional) *" [ref=f22e259]
+              - textbox "Scope note (e.g. B2B legitimate interest) *" [ref=f22e260]
+              - button "Record sign-off & activate" [ref=f22e261] [cursor=pointer]
+          - generic [ref=f22e262]:
+            - generic [ref=f22e263]:
+              - text: Számlázz.hu · Számla Agent
+              - generic [ref=f22e264]: not set
+            - paragraph [ref=f22e265]: Per-workspace Agent key used to submit invoices from acknowledged certificates. Stored server-side; never shown after saving.
+            - generic [ref=f22e266]:
+              - textbox "Agent key" [ref=f22e267]
+              - button "Save key" [disabled] [ref=f22e268]
+          - generic [ref=f22e269]:
+            - generic [ref=f22e270]:
+              - generic [ref=f22e271]: Signal Engine · approval queue
+              - generic [ref=f22e272]: 0 pending
+            - paragraph [ref=f22e273]: Weekly proposals backed by n≥20. Approval versions the frame library or updates score weights — nothing self-modifies.
+            - paragraph [ref=f22e274]: No pending proposals.
+          - generic [ref=f22e275]:
+            - heading "users & grants" [level=2] [ref=f22e276]
+            - paragraph [ref=f22e277]: Capabilities are per user per workspace. Owner-only by default. Every change is written to the audit log — logged.
+            - generic [ref=f22e278]:
+              - generic [ref=f22e279]:
+                - generic [ref=f22e280]:
+                  - generic [ref=f22e281]: TA
+                  - generic [ref=f22e282]:
+                    - text: Tamas
+                    - generic [ref=f22e283]: director@ventureco.group
+                  - generic [ref=f22e284]: OWNER
+                - generic [ref=f22e285]:
+                  - generic [ref=f22e286]:
+                    - generic [ref=f22e287]: Documents
+                    - generic [ref=f22e288]:
+                      - checkbox "quote · create · via role" [checked] [disabled] [ref=f22e289]
+                      - text: quote · create
+                      - generic [ref=f22e290]: · via role
+                    - generic [ref=f22e291]:
+                      - checkbox "contract · create · via role" [checked] [disabled] [ref=f22e292]
+                      - text: contract · create
+                      - generic [ref=f22e293]: · via role
+                    - generic [ref=f22e294]:
+                      - checkbox "certificate · create · via role" [checked] [disabled] [ref=f22e295]
+                      - text: certificate · create
+                      - generic [ref=f22e296]: · via role
+                    - generic [ref=f22e297]:
+                      - checkbox "send · via role" [checked] [disabled] [ref=f22e298]
+                      - text: send
+                      - generic [ref=f22e299]: · via role
+                  - generic [ref=f22e300]:
+                    - generic [ref=f22e301]: Templates
+                    - generic [ref=f22e302]:
+                      - checkbox "edit · via role" [checked] [disabled] [ref=f22e303]
+                      - text: edit
+                      - generic [ref=f22e304]: · via role
+                  - generic [ref=f22e305]:
+                    - generic [ref=f22e306]: Signal Engine
+                    - generic [ref=f22e307]:
+                      - checkbox "approve · via role" [checked] [disabled] [ref=f22e308]
+                      - text: approve
+                      - generic [ref=f22e309]: · via role
+                  - generic [ref=f22e310]:
+                    - generic [ref=f22e311]: Exports
+                    - generic [ref=f22e312]:
+                      - checkbox "run · via role" [checked] [disabled] [ref=f22e313]
+                      - text: run
+                      - generic [ref=f22e314]: · via role
+              - generic [ref=f22e315]:
+                - generic [ref=f22e316]:
+                  - generic [ref=f22e317]: FA
+                  - generic [ref=f22e318]:
+                    - text: Fanni Kovacs
+                    - generic [ref=f22e319]: fanni@ventureco.group
+                  - generic [ref=f22e320]: BDR
+                - generic [ref=f22e321]:
+                  - generic [ref=f22e322]:
+                    - generic [ref=f22e323]: Documents
+                    - generic [ref=f22e324]:
+                      - checkbox "quote · create" [ref=f22e325]
+                      - text: quote · create
+                    - generic [ref=f22e326]:
+                      - checkbox "contract · create" [ref=f22e327]
+                      - text: contract · create
+                    - generic [ref=f22e328]:
+                      - checkbox "certificate · create" [ref=f22e329]
+                      - text: certificate · create
+                    - generic [ref=f22e330]:
+                      - checkbox "send" [ref=f22e331]
+                      - text: send
+                  - generic [ref=f22e332]:
+                    - generic [ref=f22e333]: Templates
+                    - generic [ref=f22e334]:
+                      - checkbox "edit" [ref=f22e335]
+                      - text: edit
+                  - generic [ref=f22e336]:
+                    - generic [ref=f22e337]: Signal Engine
+                    - generic [ref=f22e338]:
+                      - checkbox "approve" [ref=f22e339]
+                      - text: approve
+                  - generic [ref=f22e340]:
+                    - generic [ref=f22e341]: Exports
+                    - generic [ref=f22e342]:
+                      - checkbox "run" [ref=f22e343]
+                      - text: run
+          - generic [ref=f22e344]:
+            - generic [ref=f22e345]: Data & privacy (GDPR)
+            - paragraph [ref=f22e346]: Retention, right-to-erasure, and data portability. Erasure and retention are Owner-only and audit-logged; backups expire within the 14-day rotation.
+            - generic [ref=f22e347]:
+              - generic [ref=f22e348]: Retention policy
+              - generic [ref=f22e349]:
+                - text: Anonymize inactive leads after (days)
+                - spinbutton "Anonymize inactive leads after (days)" [ref=f22e350]: "365"
+              - generic [ref=f22e351]:
+                - text: Backup rotation window (days)
+                - spinbutton "Backup rotation window (days)" [ref=f22e352]: "14"
+              - generic [ref=f22e353]:
+                - 'checkbox "Purge legal documents on erasure (default: retain under legal basis, detached)" [ref=f22e354]'
+                - text: "Purge legal documents on erasure (default: retain under legal basis, detached)"
+              - button "Save retention" [ref=f22e355] [cursor=pointer]
+            - generic [ref=f22e356]:
+              - generic [ref=f22e357]: Full data export
+              - paragraph [ref=f22e358]: CSV bundle (leads, companies, activities, calls, outcomes, documents).
+              - button "Export CSV bundle" [ref=f22e360] [cursor=pointer]
+            - generic [ref=f22e361]:
+              - generic [ref=f22e362]: Erase a lead (right to erasure)
+              - paragraph [ref=f22e363]: Hard-deletes the lead and all derived data within 72h. Irreversible.
+              - combobox [ref=f22e364]:
+                - option "Toth Eszter" [selected]
+                - option "Szabo Gabor"
+                - option "Horvath Judit"
+                - option "E2E Lead 1786497013676"
+                - option "E2E Guest 1786497007774"
+                - option "E2E Lead 1786496699466"
+                - option "E2E Guest 1786496693021"
+                - option "E2E Lead 1786496593531"
+                - option "E2E Guest 1786496587655"
+                - option "E2E Lead 1786496518547"
+                - option "E2E Guest 1786496513352"
+                - option "E2E Lead 1786496442452"
+                - option "E2E Guest 1786496439383"
+                - option "E2E Lead 1786496395512"
+                - option "E2E Guest 1786496389218"
+                - option "Dbg"
+                - option "E2E Lead 1786496235226"
+                - option "E2E Guest 1786496229222"
+                - option "E2E Lead 1786496161304"
+                - option "E2E Guest 1786496154062"
+                - option "E2E Lead 1786496019655"
+                - option "E2E Guest 1786496012927"
+                - option "E2E Guest 1786492701417"
+                - option "E2E Lead 1786492701444"
+                - option "E2E Guest 1786492676189"
+                - option "E2E Lead 1786492676190"
+                - option "E2E Guest 1786490729113"
+                - option "E2E Lead 1786490729115"
+                - option "E2E Guest 1786489889950"
+                - option "E2E Lead 1786489889951"
+                - option "E2E Guest 1786488960207"
+                - option "E2E Lead 1786488960206"
+                - option "E2E Lead 1786488926857"
+                - option "E2E Guest 1786488293313"
+                - option "E2E Lead 1786488293314"
+                - option "E2E Guest 1786487211764"
+                - option "E2E Lead 1786487211765"
+                - option "E2E Lead 1786486366446"
+                - option "E2E Guest 1786485557423"
+                - option "E2E Lead 1786485557422"
+                - option "E2E Guest 1786485009262"
+                - option "E2E Lead 1786485009263"
+                - option "E2E Guest 1786483948953"
+                - option "E2E Lead 1786483870710"
+                - option "E2E Guest 1786483852890"
+                - option "E2E Lead 1786473524553"
+                - option "E2E Lead 1786473484879"
+                - option "E2E Lead 1786473408237"
+              - generic [ref=f22e365]:
+                - textbox "Type ERASE to confirm" [ref=f22e366]
+                - button "Request erasure" [ref=f22e367] [cursor=pointer]
+  - alert [ref=f22e368]

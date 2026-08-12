@@ -136,6 +136,54 @@ export async function changePassword(
   return { ok: true, revoked };
 }
 
+const changeEmailSchema = z.object({
+  currentPassword: z.string().min(1).max(200),
+  email: z.string().trim().toLowerCase().email().max(200),
+});
+
+/**
+ * Change your OWN email. Requires the current password: the email is the login
+ * identifier, so taking it over is equivalent to taking over the account, and a
+ * hijacked session must not be able to do it silently.
+ */
+export async function changeOwnEmail(
+  raw: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { userId, workspaceId } = await getActiveContext();
+  const parsed = changeEmailSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Enter your password and a valid email." };
+
+  const user = await prismaUnsafe.user.findUnique({
+    where: { id: userId },
+    select: { email: true, passwordHash: true },
+  });
+  if (!user) return { ok: false, error: "Account not found." };
+  if (!(await verifyPassword(parsed.data.currentPassword, user.passwordHash))) {
+    return { ok: false, error: "Your current password is not correct." };
+  }
+  if (user.email === parsed.data.email) return { ok: true };
+
+  const clash = await prismaUnsafe.user.findUnique({
+    where: { email: parsed.data.email },
+    select: { id: true },
+  });
+  if (clash) return { ok: false, error: "Another account already uses that email address." };
+
+  await prismaUnsafe.user.update({ where: { id: userId }, data: { email: parsed.data.email } });
+  await prismaUnsafe.auditLog.create({
+    data: {
+      workspaceId,
+      actorUserId: userId,
+      action: "auth.email_changed",
+      entityType: "User",
+      entityId: userId,
+      meta: { from: user.email, to: parsed.data.email },
+    },
+  });
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------------------
 // TOTP enrollment
 // ---------------------------------------------------------------------------
@@ -197,7 +245,8 @@ export async function confirmTotpEnrollment(
 
   await prismaUnsafe.user.update({
     where: { id: userId },
-    data: { totpEnabled: true, totpLastStep: result.step },
+    // Enrolling satisfies a reset an Owner forced (mustEnrollTotp).
+    data: { totpEnabled: true, totpLastStep: result.step, mustEnrollTotp: false },
   });
   await prismaUnsafe.auditLog.create({
     data: { workspaceId, actorUserId: userId, action: "auth.totp_enabled" },
@@ -255,6 +304,7 @@ export interface SecurityStatus {
   email: string;
   name: string;
   totpEnabled: boolean;
+  mustEnrollTotp: boolean;
   mustChangePassword: boolean;
   lastLoginAt: string | null;
   minPasswordLength: number;
@@ -276,6 +326,7 @@ export async function getSecurityStatus(): Promise<SecurityStatus> {
       email: true,
       name: true,
       totpEnabled: true,
+      mustEnrollTotp: true,
       mustChangePassword: true,
       lastLoginAt: true,
     },
@@ -292,6 +343,7 @@ export async function getSecurityStatus(): Promise<SecurityStatus> {
     email: user.email,
     name: user.name,
     totpEnabled: user.totpEnabled,
+    mustEnrollTotp: user.mustEnrollTotp,
     mustChangePassword: user.mustChangePassword,
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     minPasswordLength: MIN_PASSWORD_LENGTH,

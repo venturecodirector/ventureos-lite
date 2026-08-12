@@ -1,0 +1,91 @@
+[    2568ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3111/settings:0
+[    2718ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(pages-dir-browser)/./node_modules/react-dom/cjs/react-dom-client.development.js:28004
+[    2763ms] ModuleBuildError: Module build failed (from ./node_modules/next/dist/build/webpack/loaders/next-swc-loader.js):
+Error:   x Only async functions are allowed to be exported in a "use server" file.
+
+    ,-[/Users/vezertamasdaniel/Developer/venture/ventureos-lite/src/modules/users/actions.ts:26:1]
+ 23 |  *   - revokes the subject's sessions when it changes how they authenticate.
+ 24 |  */
+ 25 | 
+ 26 | export const RESET_LINK_TTL_MINUTES = 60;
+    : ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 27 | 
+ 28 | export interface ManagedUser {
+ 29 |   userId: string;
+    `----
+
+    at processResult (file:///Users/vezertamasdaniel/Developer/venture/ventureos-lite/node_modules/next/dist/compiled/webpack/bundle5.js:29:407086)
+    at <unknown> (file:///Users/vezertamasdaniel/Developer/venture/ventureos-lite/node_modules/next/dist/compiled/webpack/bundle5.js:29:408881)
+    at <unknown> (file:///Users/vezertamasdaniel/Developer/venture/ventureos-lite/node_modules/next/dist/compiled/loader-runner/LoaderRunner.js:1:8645)
+    at <unknown> (file:///Users/vezertamasdaniel/Developer/venture/ventureos-lite/node_modules/next/dist/compiled/loader-runner/LoaderRunner.js:1:5019)
+    at r.callback (file:///Users/vezertamasdaniel/Developer/venture/ventureos-lite/node_modules/next/dist/compiled/loader-runner/LoaderRunner.js:1:4039)
+[    2761ms] [LOG] [HMR] connected @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/client/dev/hot-reloader/pages/websocket.js:45
+[    2762ms] [ERROR] ./src/modules/users/actions.ts
+Error:   x Only async functions are allowed to be exported in a "use server" file.
+
+    ,-[/Users/vezertamasdaniel/Developer/venture/ventureos-lite/src/modules/users/actions.ts:26:1]
+ 23 |  *   - revokes the subject's sessions when it changes how they authenticate.
+ 24 |  */
+ 25 | 
+ 26 | export const RESET_LINK_TTL_MINUTES = 60;
+    : ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 27 | 
+ 28 | export interface ManagedUser {
+ 29 |   userId: string;
+    `---- @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/next-devtools/userspace/pages/pages-dev-overlay-setup.js:76
+[    2762ms] [ERROR] ./src/modules/users/actions.ts
+Error:   x Only async functions are allowed to be exported in a "use server" file.
+
+    ,-[/Users/vezertamasdaniel/Developer/venture/ventureos-lite/src/modules/users/actions.ts:26:1]
+ 23 |  *   - revokes the subject's sessions when it changes how they authenticate.
+ 24 |  */
+ 25 | 
+ 26 | export const RESET_LINK_TTL_MINUTES = 60;
+    : ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 27 | 
+ 28 | export interface ManagedUser {
+ 29 |   userId: string;
+    `---- @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/next-devtools/userspace/pages/pages-dev-overlay-setup.js:76
+[    2794ms] [LOG] {file: Object} @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/compiled/next-devtools/index.js:1630
+[   54114ms] [ERROR] ./src/modules/users/actions.ts
+Error:   x Only async functions are allowed to be exported in a "use server" file.
+
+    ,-[/Users/vezertamasdaniel/Developer/venture/ventureos-lite/src/modules/users/actions.ts:26:1]
+ 23 |  *   - revokes the subject's sessions when it changes how they authenticate.
+ 24 |  */
+ 25 | 
+ 26 | export const RESET_LINK_TTL_MINUTES = 60;
+    : ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 27 | 
+ 28 | export interface ManagedUser {
+ 29 |   userId: string;
+    `----
+
+Import trace for requested module:
+./src/modules/users/actions.ts
+./src/components/settings-users.tsx @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/next-devtools/userspace/pages/pages-dev-overlay-setup.js:76
+[   54114ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/client/dev/hot-reloader/pages/hot-reloader-pages.js:206
+[   54115ms] [LOG] {file: Object} @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/compiled/next-devtools/index.js:1630
+[   54842ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3111/_next/static/webpack/83a45e9c44982715.webpack.hot-update.json:0
+[   54842ms] [WARNING] [Fast Refresh] performing full reload because your application had an unrecoverable error @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/client/dev/hot-reloader/pages/hot-reloader-pages.js:347
+[   55866ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3111/settings:0
+[   55866ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3111/settings:0
+[   55963ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   55963ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   55963ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[   56080ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630
+[  105181ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  105564ms] [LOG] [Fast Refresh] done in 383ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  105674ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  105674ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  105674ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[  109180ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  109391ms] [LOG] [Fast Refresh] done in 210ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  109465ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  109465ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  109465ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[  174381ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  174864ms] [LOG] [Fast Refresh] done in 483ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  175349ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  175349ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  175349ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0

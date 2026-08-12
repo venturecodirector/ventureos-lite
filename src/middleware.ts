@@ -36,6 +36,7 @@ type Surface = keyof typeof SURFACES;
 /** Paths that must stay reachable without a session. */
 const PUBLIC_PREFIXES = [
   "/login",
+  "/reset", // one-time password reset links (the token is the credential)
   "/api/auth", // Auth.js endpoints
   "/api/health", // container + proxy probes
   "/api/cold/unsubscribe", // one-click unsubscribe in cold mail

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getShellContext } from "@/modules/workspaces/actions";
 import type { BudgetStatus } from "@/lib/ai/budget-status";
 import { WorkspaceSwitcher } from "./workspace-switcher";
@@ -8,6 +9,7 @@ import { GlobalSearch } from "./global-search";
 import { AppActionsProvider } from "./app-actions";
 import { AppDialogs } from "./app-dialogs";
 import { TopBarActions } from "./top-bar-actions";
+import { AccountMenu } from "./account-menu";
 import {
   DashboardIcon,
   ProspectorIcon,
@@ -161,6 +163,10 @@ export async function AppShell({
   activePath?: string;
 }) {
   const shell = await getShellContext();
+  // An Owner reset this account's second factor: nothing in the app is
+  // reachable until a new authenticator is registered. Every authenticated
+  // screen renders through this shell, so gating here covers all of them.
+  if (shell.mustEnrollTotp) redirect("/enroll-2fa");
   const active = shell.workspaces.find((w) => w.active);
   const firstName = shell.user.name.split(" ")[0].toLowerCase();
 
@@ -239,6 +245,13 @@ export async function AppShell({
           </h1>
           <GlobalSearch className="ml-auto w-[260px] flex-none" />
           <TopBarActions />
+          <AccountMenu
+            name={shell.user.name}
+            email={shell.user.email}
+            initials={shell.user.initials}
+            role={shell.role}
+            workspaceName={active?.name ?? ""}
+          />
         </header>
 
         {/* pb-24 clears the fixed tab bar; it collapses away at nav:. */}

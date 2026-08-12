@@ -170,23 +170,27 @@ enum InsightKind {
 // ============================================================================
 
 model User {
-  id                 String            @id @default(cuid())
-  email              String            @unique
-  name               String
-  passwordHash       String            @map("password_hash")
-  totpSecret         String?           @map("totp_secret") // base32, set at enrollment
-  totpEnabled        Boolean           @default(false) @map("totp_enabled")
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  name                String
+  passwordHash        String               @map("password_hash")
+  totpSecret          String?              @map("totp_secret") // base32, set at enrollment
+  totpEnabled         Boolean              @default(false) @map("totp_enabled")
   /// Consumed TOTP step, so a code cannot be replayed inside its 30s window.
-  totpLastStep       Int?              @map("totp_last_step")
-  lockedUntil        DateTime?         @map("locked_until")
-  lastLoginAt        DateTime?         @map("last_login_at")
+  totpLastStep        Int?                 @map("totp_last_step")
+  lockedUntil         DateTime?            @map("locked_until")
+  lastLoginAt         DateTime?            @map("last_login_at")
   /// Forces a password change on next login (seeded/reset accounts).
-  mustChangePassword Boolean           @default(false) @map("must_change_password")
-  createdAt          DateTime          @default(now()) @map("created_at")
-  updatedAt          DateTime          @updatedAt @map("updated_at")
-  memberships        Membership[]
-  sessions           Session[]
-  googleCredential   GoogleCredential?
+  mustChangePassword  Boolean              @default(false) @map("must_change_password")
+  /// Set when an Owner resets someone's 2FA: the old secret is gone and they
+  /// must scan a fresh QR before they can use the app again.
+  mustEnrollTotp      Boolean              @default(false) @map("must_enroll_totp")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  memberships         Membership[]
+  sessions            Session[]
+  googleCredential    GoogleCredential?
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
 }
@@ -227,6 +231,24 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+/// One-time password-reset link issued by an Owner. Only a SHA-256 hash is
+/// stored, so a database leak yields no usable links; single-use and short-lived.
+model PasswordResetToken {
+  id              String    @id @default(cuid())
+  userId          String    @map("user_id")
+  token           String    @unique // sha256(raw token)
+  expiresAt       DateTime  @map("expires_at")
+  usedAt          DateTime? @map("used_at")
+  createdByUserId String?   @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 /// Login attempt ledger, used for rate limiting and lockout (CLAUDE.md → Auth:
