@@ -33,29 +33,80 @@ function DimTable({ title, rows }: { title: string; rows: AggRow[] }) {
   );
 }
 
+/**
+ * One row of a bar chart: label, a track the fill lives INSIDE, and a value.
+ *
+ * The track is a real element with overflow-hidden, and the fill is clamped to
+ * 0–100%. Both matter: the funnel previously scaled each bar against the FIRST
+ * stage, so any stage larger than it (leads that enter directly at Contacted)
+ * produced widths like 400% that escaped the card and drew across the rest of
+ * the page. A percentage width alone cannot overflow its own track — but only
+ * if there IS a track and it clips.
+ *
+ * The three columns are a fixed grid so labels, bars and values line up down
+ * the column at every viewport width.
+ */
+function BarRow({
+  label,
+  fillPct,
+  value,
+  over = false,
+  height = "h-[22px]",
+}: {
+  label: string;
+  fillPct: number;
+  value: string;
+  /** Value exceeds the reference — shown as a marker, never as a wider bar. */
+  over?: boolean;
+  height?: string;
+}) {
+  const width = Math.max(0, Math.min(100, Number.isFinite(fillPct) ? fillPct : 0));
+  return (
+    <div className="grid grid-cols-[minmax(88px,110px)_1fr_minmax(72px,96px)] items-center gap-3 py-[7px] text-[12.5px]">
+      <span className="truncate" title={label}>
+        {label}
+      </span>
+      <span
+        className={`relative ${height} w-full overflow-hidden rounded-[6px] bg-panel-2`}
+        role="img"
+        aria-label={`${label}: ${value}`}
+      >
+        <span
+          className="absolute inset-y-0 left-0 rounded-[6px] bg-[linear-gradient(135deg,#310B59,#7427C6)] opacity-90"
+          style={{ width: `${width}%` }}
+        />
+        {over && (
+          // The bar is full; this marks that the real value is past the
+          // reference, instead of letting the bar run off the card.
+          <span className="absolute inset-y-0 right-0 w-[3px] bg-pos" title="Above the reference" />
+        )}
+      </span>
+      <span className="text-right tabular-nums text-muted">{value}</span>
+    </div>
+  );
+}
+
 export function Analytics({ view }: { view: AnalyticsView }) {
   const r = view.report;
-  const top = r.funnel[0]?.count || 1;
+  // Scale against the LARGEST stage, not the first — a funnel is not always
+  // monotonically decreasing, and dividing by the first stage is what produced
+  // the 400%-wide bars.
+  const top = Math.max(1, ...r.funnel.map((f) => f.count));
   const t = view.totals;
 
   return (
-    <div className="max-w-[1200px]">
+    <div className="mx-auto w-full max-w-[1400px]">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.1fr_1fr]">
         {/* funnel with per-step conversion */}
-        <div className="rounded-card border border-line bg-panel p-[18px]">
+        <div className="min-w-0 rounded-card border border-line bg-panel p-[18px]">
           <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Funnel</div>
           {r.funnel.map((f) => (
-            <div key={f.stage} className="grid grid-cols-[110px_1fr_92px] items-center gap-3.5 py-[7px] text-[12.5px]">
-              <span>{STAGE_LABELS[f.stage as Stage] ?? f.stage}</span>
-              <span
-                className="h-[22px] min-w-[8px] rounded-[6px] bg-[linear-gradient(135deg,#310B59,#7427C6)] opacity-90"
-                style={{ width: `${Math.max(4, (f.count / top) * 100)}%` }}
-              />
-              <span className="text-right text-muted tabular-nums">
-                {f.count}
-                {f.conversion != null ? ` · ${pct(f.conversion)}` : ""}
-              </span>
-            </div>
+            <BarRow
+              key={f.stage}
+              label={STAGE_LABELS[f.stage as Stage] ?? f.stage}
+              fillPct={(f.count / top) * 100}
+              value={`${f.count}${f.conversion != null ? ` · ${pct(f.conversion)}` : ""}`}
+            />
           ))}
         </div>
 
@@ -64,18 +115,21 @@ export function Analytics({ view }: { view: AnalyticsView }) {
           <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">KPIs vs target</div>
           {r.kpis.map((k) => (
             <div key={k.metric} className="mb-2.5">
-              <div className="mb-1 flex items-baseline justify-between text-[12.5px]">
-                <span className="text-[#C9CEE3]">{k.metric.replace(/_/g, " ")}</span>
-                <span className="text-muted tabular-nums">
+              <div className="mb-1 grid grid-cols-[1fr_auto] items-baseline gap-3 text-[12.5px]">
+                <span className="truncate text-[#C9CEE3]">{k.metric.replace(/_/g, " ")}</span>
+                <span className="tabular-nums text-muted">
                   <b className="text-ink">{k.value}</b>
                   {k.target != null ? ` / ${k.target} · ${pct(k.pct)}` : ""}
                 </span>
               </div>
-              <div className="h-[6px] w-full overflow-hidden rounded-full bg-panel-2">
+              <div className="relative h-[6px] w-full overflow-hidden rounded-full bg-panel-2">
                 <div
-                  className="h-full rounded-full bg-[linear-gradient(135deg,#310B59,#7427C6)]"
-                  style={{ width: `${Math.min(100, Math.round((k.pct ?? 0) * 100))}%` }}
+                  className="absolute inset-y-0 left-0 rounded-full bg-[linear-gradient(135deg,#310B59,#7427C6)]"
+                  style={{ width: `${Math.max(0, Math.min(100, Math.round((k.pct ?? 0) * 100)))}%` }}
                 />
+                {(k.pct ?? 0) > 1 && (
+                  <span className="absolute inset-y-0 right-0 w-[3px] bg-pos" title="Above target" />
+                )}
               </div>
             </div>
           ))}
