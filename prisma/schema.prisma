@@ -506,6 +506,45 @@ model Target {
   @@map("targets")
 }
 
+enum ContentStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+}
+
+/// Company-page posts (spec §4.12). Drafted with Claude against a locked brand
+/// voice, moved Draft → In review → Approved → Published by hand. Publishing
+/// records that a human posted it; the system never posts anywhere itself
+/// (CLAUDE.md hard rule #2).
+model ContentPost {
+  id           String        @id @default(cuid())
+  workspaceId  String        @map("workspace_id")
+  title        String
+  body         String        @db.Text
+  /// Where it is meant to go — linkedin | blog | newsletter.
+  channel      String        @default("linkedin")
+  status       ContentStatus @default(DRAFT)
+  /// True when Claude produced the first version of this text.
+  aiDrafted    Boolean       @default(false) @map("ai_drafted")
+  /// Exactly what Claude produced, so "did a human edit it?" is answered by
+  /// comparison rather than by a flag (same reasoning as outreach messages).
+  aiDraftBody  String?       @map("ai_draft_body") @db.Text
+  authorUserId String?       @map("author_user_id")
+  approvedBy   String?       @map("approved_by")
+  approvedAt   DateTime?     @map("approved_at")
+  publishedAt  DateTime?     @map("published_at")
+  /// Where it was posted, filled in by the person who published it.
+  publishedUrl String?       @map("published_url")
+  reviewNote   String?       @map("review_note") @db.Text
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  @@index([workspaceId])
+  @@index([workspaceId, status])
+  @@map("content_posts")
+}
+
 model AuditLog {
   id          String   @id @default(cuid())
   workspaceId String   @map("workspace_id")

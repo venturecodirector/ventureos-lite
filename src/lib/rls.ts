@@ -48,6 +48,7 @@ const BUSINESS_TABLES = [
   "invoices",
   "suppressions",
   "claude_usage",
+  "content_posts",
 ];
 
 const CURRENT_WS = "current_setting('app.current_workspace', true)";

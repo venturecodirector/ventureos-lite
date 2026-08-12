@@ -51,7 +51,7 @@ const NAV: NavItem[] = [
   { label: "Campaigns", icon: <CampaignsIcon />, href: "/campaigns", locked: true },
   { label: "Documents", icon: <DocumentsIcon />, href: "/documents", locked: true },
   { label: "Public Pages", icon: <PublicIcon />, href: "/public-pages" },
-  { label: "Content Hub", icon: <ContentIcon /> },
+  { label: "Content Hub", icon: <ContentIcon />, href: "/content" },
   { label: "Analytics", icon: <AnalyticsIcon />, href: "/analytics" },
 ];
 

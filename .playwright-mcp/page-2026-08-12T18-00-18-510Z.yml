@@ -1,0 +1,99 @@
+- generic [ref=f12e2]:
+  - complementary [ref=f12e3]:
+    - button "V Venture CO Group workspace ▾" [ref=f12e5] [cursor=pointer]:
+      - generic [ref=f12e6]: V
+      - generic [ref=f12e7]:
+        - generic [ref=f12e8]: Venture CO Group
+        - generic [ref=f12e9]: workspace
+      - generic [ref=f12e10]: ▾
+    - generic [ref=f12e11]:
+      - text: ventureos
+      - emphasis [ref=f12e12]: lite
+    - navigation [ref=f12e13]:
+      - link "Dashboard" [ref=f12e14] [cursor=pointer]:
+        - /url: /
+      - link "Prospector" [ref=f12e22] [cursor=pointer]:
+        - /url: /prospector
+      - link "Lead Engine" [ref=f12e28] [cursor=pointer]:
+        - /url: /leads
+      - link "Site Audit" [ref=f12e34] [cursor=pointer]:
+        - /url: /audit
+      - link "Pipeline" [ref=f12e41] [cursor=pointer]:
+        - /url: /pipeline
+      - link "Outreach" [ref=f12e46] [cursor=pointer]:
+        - /url: /outreach
+      - link "Inbox" [ref=f12e52] [cursor=pointer]:
+        - /url: /inbox
+      - link "Calls" [ref=f12e58] [cursor=pointer]:
+        - /url: /calls
+      - link "Meetings" [ref=f12e63] [cursor=pointer]:
+        - /url: /meetings
+      - link "Referrers" [ref=f12e69] [cursor=pointer]:
+        - /url: /referrers
+      - link "Campaigns 🔒" [ref=f12e75] [cursor=pointer]:
+        - /url: /campaigns
+        - generic [ref=f12e79]: Campaigns
+        - generic [ref=f12e80]: 🔒
+      - link "Documents 🔒" [ref=f12e81] [cursor=pointer]:
+        - /url: /documents
+        - generic [ref=f12e86]: Documents
+        - generic [ref=f12e87]: 🔒
+      - link "Public Pages" [ref=f12e88] [cursor=pointer]:
+        - /url: /public-pages
+      - link "Content Hub" [ref=f12e94] [cursor=pointer]:
+        - /url: /content
+      - link "Analytics" [ref=f12e99] [cursor=pointer]:
+        - /url: /analytics
+      - generic [ref=f12e104]: System
+      - link "Settings" [ref=f12e105] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=f12e111]:
+      - generic [ref=f12e112]:
+        - generic [ref=f12e113]: ✦ Claude budget
+        - generic [ref=f12e114]: $0.00 / $2.00
+      - 'progressbar "Claude budget: $0.00 of $2.00 used today" [ref=f12e115]'
+    - generic [ref=f12e116]:
+      - generic [ref=f12e117]: F
+      - generic [ref=f12e118]:
+        - generic [ref=f12e119]: Fanni
+        - generic [ref=f12e120]: BDR · Venture CO Group
+  - generic [ref=f12e121]:
+    - banner [ref=f12e122]:
+      - heading "good morning, fanni" [level=1] [ref=f12e123]
+      - generic [ref=f12e125]:
+        - combobox "Search leads, companies and documents" [ref=f12e129]
+        - generic [ref=f12e130]: /
+      - button "Import CSV" [ref=f12e131] [cursor=pointer]
+      - button "+ New lead" [ref=f12e132] [cursor=pointer]
+    - main [ref=f12e133]:
+      - generic [ref=f12e134]:
+        - generic [ref=f12e135]:
+          - generic [ref=f12e136]:
+            - heading "content hub" [level=2] [ref=f12e137]
+            - paragraph [ref=f12e138]: Company-page posts. Claude drafts in a locked brand voice; a human approves and posts.
+          - button "+ New post" [ref=f12e139] [cursor=pointer]
+        - generic [ref=f12e140]:
+          - generic [ref=f12e141]:
+            - generic [ref=f12e142]:
+              - heading "Draft" [level=3] [ref=f12e143]
+              - generic [ref=f12e144]: "0"
+            - paragraph [ref=f12e145]: Being written
+            - paragraph [ref=f12e146]: Nothing here.
+          - generic [ref=f12e147]:
+            - generic [ref=f12e148]:
+              - heading "In review" [level=3] [ref=f12e149]
+              - generic [ref=f12e150]: "0"
+            - paragraph [ref=f12e151]: Waiting on an Owner or Admin
+            - paragraph [ref=f12e152]: Nothing here.
+          - generic [ref=f12e153]:
+            - generic [ref=f12e154]:
+              - heading "Approved" [level=3] [ref=f12e155]
+              - generic [ref=f12e156]: "0"
+            - paragraph [ref=f12e157]: Ready to post
+            - paragraph [ref=f12e158]: Nothing here.
+          - generic [ref=f12e159]:
+            - generic [ref=f12e160]:
+              - heading "Published" [level=3] [ref=f12e161]
+              - generic [ref=f12e162]: "0"
+            - paragraph [ref=f12e163]: Live — recorded by hand
+            - paragraph [ref=f12e164]: Nothing here.

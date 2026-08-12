@@ -1,0 +1,102 @@
+- generic [ref=f16e2]:
+  - complementary [ref=f16e3]:
+    - button "V Venture CO Group workspace ▾" [ref=f16e5] [cursor=pointer]:
+      - generic [ref=f16e6]: V
+      - generic [ref=f16e7]:
+        - generic [ref=f16e8]: Venture CO Group
+        - generic [ref=f16e9]: workspace
+      - generic [ref=f16e10]: ▾
+    - generic [ref=f16e11]:
+      - text: ventureos
+      - emphasis [ref=f16e12]: lite
+    - navigation [ref=f16e13]:
+      - link "Dashboard" [ref=f16e14] [cursor=pointer]:
+        - /url: /
+      - link "Prospector" [ref=f16e22] [cursor=pointer]:
+        - /url: /prospector
+      - link "Lead Engine" [ref=f16e28] [cursor=pointer]:
+        - /url: /leads
+      - link "Site Audit" [ref=f16e34] [cursor=pointer]:
+        - /url: /audit
+      - link "Pipeline" [ref=f16e41] [cursor=pointer]:
+        - /url: /pipeline
+      - link "Outreach" [ref=f16e46] [cursor=pointer]:
+        - /url: /outreach
+      - link "Inbox" [ref=f16e52] [cursor=pointer]:
+        - /url: /inbox
+      - link "Calls" [ref=f16e58] [cursor=pointer]:
+        - /url: /calls
+      - link "Meetings" [ref=f16e63] [cursor=pointer]:
+        - /url: /meetings
+      - link "Referrers" [ref=f16e69] [cursor=pointer]:
+        - /url: /referrers
+      - link "Campaigns 🔒" [ref=f16e75] [cursor=pointer]:
+        - /url: /campaigns
+        - generic [ref=f16e79]: Campaigns
+        - generic [ref=f16e80]: 🔒
+      - link "Documents 🔒" [ref=f16e81] [cursor=pointer]:
+        - /url: /documents
+        - generic [ref=f16e86]: Documents
+        - generic [ref=f16e87]: 🔒
+      - link "Public Pages" [ref=f16e88] [cursor=pointer]:
+        - /url: /public-pages
+      - link "Content Hub" [ref=f16e94] [cursor=pointer]:
+        - /url: /content
+      - link "Analytics" [ref=f16e99] [cursor=pointer]:
+        - /url: /analytics
+      - generic [ref=f16e104]: System
+      - link "Settings" [ref=f16e105] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=f16e111]:
+      - generic [ref=f16e112]:
+        - generic [ref=f16e113]: ✦ Claude budget
+        - generic [ref=f16e114]: $0.00 / $2.00
+      - 'progressbar "Claude budget: $0.00 of $2.00 used today" [ref=f16e115]'
+    - generic [ref=f16e116]:
+      - generic [ref=f16e117]: T
+      - generic [ref=f16e118]:
+        - generic [ref=f16e119]: Tamas
+        - generic [ref=f16e120]: OWNER · Venture CO Group
+  - generic [ref=f16e121]:
+    - banner [ref=f16e122]:
+      - heading "good morning, tamas" [level=1] [ref=f16e123]
+      - generic [ref=f16e125]:
+        - combobox "Search leads, companies and documents" [ref=f16e129]
+        - generic [ref=f16e130]: /
+      - button "Import CSV" [ref=f16e131] [cursor=pointer]
+      - button "+ New lead" [ref=f16e132] [cursor=pointer]
+    - main [ref=f16e133]:
+      - generic [ref=f16e134]:
+        - generic [ref=f16e135]:
+          - generic [ref=f16e136]:
+            - heading "content hub" [level=2] [ref=f16e137]
+            - paragraph [ref=f16e138]: Company-page posts. Claude drafts in a locked brand voice; a human approves and posts.
+          - button "+ New post" [ref=f16e139] [cursor=pointer]
+        - generic [ref=f16e140]:
+          - generic [ref=f16e141]:
+            - generic [ref=f16e142]:
+              - heading "Draft" [level=3] [ref=f16e143]
+              - generic [ref=f16e144]: "0"
+            - paragraph [ref=f16e145]: Being written
+            - paragraph [ref=f16e146]: Nothing here.
+          - generic [ref=f16e147]:
+            - generic [ref=f16e148]:
+              - heading "In review" [level=3] [ref=f16e149]
+              - generic [ref=f16e150]: "1"
+            - paragraph [ref=f16e151]: Waiting on an Owner or Admin
+            - button "Miért lassú a legtöbb hazai céges weboldal Az elmúlt évben nagyjából negyven hazai céges oldalt mértünk le. A leggyakoribb ok nem a tárhely, hanem a kezeletlen képméret. LinkedIn" [ref=f16e152] [cursor=pointer]:
+              - generic [ref=f16e153]: Miért lassú a legtöbb hazai céges weboldal
+              - generic [ref=f16e154]: Az elmúlt évben nagyjából negyven hazai céges oldalt mértünk le. A leggyakoribb ok nem a tárhely, hanem a kezeletlen képméret.
+              - generic [ref=f16e155]: LinkedIn
+          - generic [ref=f16e157]:
+            - generic [ref=f16e158]:
+              - heading "Approved" [level=3] [ref=f16e159]
+              - generic [ref=f16e160]: "0"
+            - paragraph [ref=f16e161]: Ready to post
+            - paragraph [ref=f16e162]: Nothing here.
+          - generic [ref=f16e163]:
+            - generic [ref=f16e164]:
+              - heading "Published" [level=3] [ref=f16e165]
+              - generic [ref=f16e166]: "0"
+            - paragraph [ref=f16e167]: Live — recorded by hand
+            - paragraph [ref=f16e168]: Nothing here.

@@ -18,6 +18,8 @@ export type UseCase =
   | "winloss_digest" // Haiku  — quarterly win/loss digest (aggregates only)
   | "weekly_report" // Haiku  — Friday report "what worked" commentary
   | "monday_digest" // Haiku  — per-user Monday digest intro (aggregates only)
+  | "content_draft" // Haiku  — company-page post (NOT Sonnet: rule #3 lists
+  //                                the four Sonnet use cases and this is not one)
   | "doc_scope"; // Haiku  — document scope paragraph
 
 export const USE_CASE_MODEL: Record<UseCase, ModelId> = {
@@ -33,6 +35,7 @@ export const USE_CASE_MODEL: Record<UseCase, ModelId> = {
   winloss_digest: "claude-haiku-4-5",
   weekly_report: "claude-haiku-4-5",
   monday_digest: "claude-haiku-4-5",
+  content_draft: "claude-haiku-4-5",
   doc_scope: "claude-haiku-4-5",
 };
 
