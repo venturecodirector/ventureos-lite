@@ -1,0 +1,177 @@
+- generic [ref=f30e2]:
+  - complementary [ref=f30e3]:
+    - button "V Venture CO Group workspace ▾" [ref=f30e5] [cursor=pointer]:
+      - generic [ref=f30e6]: V
+      - generic [ref=f30e7]:
+        - generic [ref=f30e8]: Venture CO Group
+        - generic [ref=f30e9]: workspace
+      - generic [ref=f30e10]: ▾
+    - generic [ref=f30e11]:
+      - text: ventureos
+      - emphasis [ref=f30e12]: lite
+    - navigation [ref=f30e13]:
+      - link "Dashboard" [ref=f30e14] [cursor=pointer]:
+        - /url: /
+      - link "Prospector" [ref=f30e22] [cursor=pointer]:
+        - /url: /prospector
+      - link "Lead Engine" [ref=f30e28] [cursor=pointer]:
+        - /url: /leads
+      - link "Site Audit" [ref=f30e34] [cursor=pointer]:
+        - /url: /audit
+      - link "Pipeline" [ref=f30e41] [cursor=pointer]:
+        - /url: /pipeline
+      - link "Outreach" [ref=f30e46] [cursor=pointer]:
+        - /url: /outreach
+      - link "Inbox" [ref=f30e52] [cursor=pointer]:
+        - /url: /inbox
+      - link "Calls" [ref=f30e58] [cursor=pointer]:
+        - /url: /calls
+      - link "Meetings" [ref=f30e63] [cursor=pointer]:
+        - /url: /meetings
+      - link "Referrers" [ref=f30e69] [cursor=pointer]:
+        - /url: /referrers
+      - link "Campaigns 🔒" [ref=f30e75] [cursor=pointer]:
+        - /url: /campaigns
+        - generic [ref=f30e79]: Campaigns
+        - generic [ref=f30e80]: 🔒
+      - link "Documents 🔒" [ref=f30e81] [cursor=pointer]:
+        - /url: /documents
+        - generic [ref=f30e86]: Documents
+        - generic [ref=f30e87]: 🔒
+      - link "Public Pages" [ref=f30e88] [cursor=pointer]:
+        - /url: /public-pages
+      - link "Content Hub" [ref=f30e94] [cursor=pointer]:
+        - /url: /content
+      - link "Analytics" [ref=f30e99] [cursor=pointer]:
+        - /url: /analytics
+      - generic [ref=f30e104]: System
+      - link "Settings" [ref=f30e105] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=f30e111]:
+      - generic [ref=f30e112]:
+        - generic [ref=f30e113]: ✦ Claude budget
+        - generic [ref=f30e114]: $0.00 / $2.00
+      - 'progressbar "Claude budget: $0.00 of $2.00 used today" [ref=f30e115]'
+    - generic [ref=f30e116]:
+      - generic [ref=f30e117]: T
+      - generic [ref=f30e118]:
+        - generic [ref=f30e119]: Tamas
+        - generic [ref=f30e120]: OWNER · Venture CO Group
+  - generic [ref=f30e121]:
+    - banner [ref=f30e122]:
+      - heading "good morning, tamas" [level=1] [ref=f30e123]
+      - generic [ref=f30e125]:
+        - combobox "Search leads, companies and documents" [ref=f30e129]
+        - generic [ref=f30e130]: /
+      - button "Import CSV" [ref=f30e131] [cursor=pointer]
+      - button "+ New lead" [ref=f30e132] [cursor=pointer]
+      - button "Account menu" [ref=f30e134] [cursor=pointer]: T
+    - main [ref=f30e135]:
+      - generic [ref=f30e136]:
+        - generic [ref=f30e137]:
+          - generic [ref=f30e138]:
+            - generic [ref=f30e139]: Funnel
+            - generic [ref=f30e140]:
+              - generic "Researched" [ref=f30e141]
+              - 'img "Researched: 5" [ref=f30e142]'
+              - generic [ref=f30e144]: "5"
+            - generic [ref=f30e145]:
+              - generic "Contacted" [ref=f30e146]
+              - 'img "Contacted: 20 · 400%" [ref=f30e147]'
+              - generic [ref=f30e149]: 20 · 400%
+            - generic [ref=f30e150]:
+              - generic "Accepted" [ref=f30e151]
+              - 'img "Accepted: 0 · 0%" [ref=f30e152]'
+              - generic [ref=f30e153]: 0 · 0%
+            - generic [ref=f30e154]:
+              - generic "Replied" [ref=f30e155]
+              - 'img "Replied: 0 · 0%" [ref=f30e156]'
+              - generic [ref=f30e157]: 0 · 0%
+            - generic [ref=f30e158]:
+              - generic "Qualified" [ref=f30e159]
+              - 'img "Qualified: 0 · 0%" [ref=f30e160]'
+              - generic [ref=f30e161]: 0 · 0%
+            - generic [ref=f30e162]:
+              - generic "Meeting booked" [ref=f30e163]
+              - 'img "Meeting booked: 23 · 0%" [ref=f30e164]'
+              - generic [ref=f30e166]: 23 · 0%
+            - generic [ref=f30e167]:
+              - generic "Handed off" [ref=f30e168]
+              - 'img "Handed off: 0 · 0%" [ref=f30e169]'
+              - generic [ref=f30e170]: 0 · 0%
+          - generic [ref=f30e171]:
+            - generic [ref=f30e172]: KPIs vs target
+            - generic [ref=f30e174]:
+              - generic [ref=f30e175]: invites sent
+              - generic [ref=f30e176]: 0 / 100 · 0%
+            - generic [ref=f30e178]:
+              - generic [ref=f30e179]:
+                - generic [ref=f30e180]: acceptance rate
+                - generic [ref=f30e181]: 53 / 35 · 151%
+              - generic "Above target" [ref=f30e184]
+            - generic [ref=f30e185]:
+              - generic [ref=f30e186]:
+                - generic [ref=f30e187]: reply rate
+                - generic [ref=f30e188]: 53 / 20 · 265%
+              - generic "Above target" [ref=f30e191]
+            - generic [ref=f30e193]:
+              - generic [ref=f30e194]: meetings booked
+              - generic [ref=f30e195]: "23"
+            - generic [ref=f30e198]:
+              - generic [ref=f30e199]: replies logged
+              - generic [ref=f30e200]: "0"
+        - generic [ref=f30e202]:
+          - generic [ref=f30e203]:
+            - generic [ref=f30e204]: Per-source performance
+            - table [ref=f30e205]:
+              - rowgroup [ref=f30e206]:
+                - row [ref=f30e207]:
+                  - columnheader "Source" [ref=f30e208]
+                  - columnheader "Leads" [ref=f30e209]
+                  - columnheader "Reply" [ref=f30e210]
+                  - columnheader "Won" [ref=f30e211]
+                  - columnheader "Revenue" [ref=f30e212]
+              - rowgroup [ref=f30e213]:
+                - row [ref=f30e214]:
+                  - cell "manual" [ref=f30e215]
+                  - cell "48" [ref=f30e216]
+                  - cell "53%" [ref=f30e217]
+                  - cell "0" [ref=f30e218]
+                  - cell "0 Ft" [ref=f30e219]
+          - generic [ref=f30e220]:
+            - generic [ref=f30e221]:
+              - generic [ref=f30e222]: Audit → meeting
+              - generic [ref=f30e223]: 0%
+              - paragraph [ref=f30e224]: 0 of 0 audited leads booked a meeting.
+            - generic [ref=f30e225]:
+              - generic [ref=f30e226]: Document chain
+              - generic [ref=f30e227]: 0%
+              - paragraph [ref=f30e228]: Quote acceptance (0/1) · avg — quote→signed.
+        - generic [ref=f30e229]:
+          - generic [ref=f30e230]: What closes
+          - generic [ref=f30e231]:
+            - generic [ref=f30e232]: 0 Ft
+            - generic [ref=f30e233]: 0 won · 0 lost · 0 postponed
+            - generic [ref=f30e234]: close rate —
+        - generic [ref=f30e235]:
+          - generic [ref=f30e236]:
+            - generic [ref=f30e237]: By hook
+            - paragraph [ref=f30e238]: No closed deals yet.
+          - generic [ref=f30e239]:
+            - generic [ref=f30e240]: By signal
+            - paragraph [ref=f30e241]: No closed deals yet.
+          - generic [ref=f30e242]:
+            - generic [ref=f30e243]: By source
+            - paragraph [ref=f30e244]: No closed deals yet.
+          - generic [ref=f30e245]:
+            - generic [ref=f30e246]: By segment
+            - paragraph [ref=f30e247]: No closed deals yet.
+          - generic [ref=f30e248]:
+            - generic [ref=f30e249]: By audit-score band
+            - paragraph [ref=f30e250]: No closed deals yet.
+          - generic [ref=f30e251]:
+            - generic [ref=f30e252]: Top referrers
+            - paragraph [ref=f30e253]: No referred revenue yet.
+        - generic [ref=f30e254]:
+          - generic [ref=f30e255]: Friday report
+          - paragraph [ref=f30e257]: The Friday report generates automatically at 16:00 — deterministic numbers plus one Claude note. It appears here with a PDF export and a comment field.

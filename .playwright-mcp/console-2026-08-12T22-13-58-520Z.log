@@ -1,0 +1,12 @@
+[    2840ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630
+[    3054ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[    3351ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[    3351ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[    3351ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[    3352ms] [LOG] [Fast Refresh] done in 298ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[   29002ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[   29310ms] [LOG] [Fast Refresh] done in 307ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[   29639ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   29639ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   29639ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[   29813ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Stage } from "@prisma/client";
 import {
@@ -10,6 +10,7 @@ import {
   requiresReason,
 } from "@/modules/pipeline/transitions";
 import { moveLeadStage } from "@/modules/leads/actions";
+import { LeadDetailModal } from "./lead-detail-modal";
 import { closeDeal } from "@/modules/analytics/actions";
 import {
   OUTCOME_RESULTS,
@@ -44,6 +45,13 @@ const INVOICE_CHIP: Record<string, string> = {
 
 const CHAIN_STEPS = ["QUOTE", "CONTRACT", "CERTIFICATE"] as const;
 
+/**
+ * How far the pointer may travel between press and release and still count as
+ * a click. Without this, the small drift of starting a drag would open the
+ * modal on top of the drag the user actually wanted.
+ */
+const DRAG_THRESHOLD_PX = 5;
+
 function ChainDots({ types }: { types: string[] }) {
   if (types.length === 0) return null;
   return (
@@ -76,6 +84,10 @@ export function PipelineBoard({ cards }: { cards: PipelineCard[] }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [detailFor, setDetailFor] = useState<string | null>(null);
+  /** Press origin + whether a drag actually began — see DRAG_THRESHOLD_PX. */
+  const pressRef = useRef<{ x: number; y: number } | null>(null);
+  const draggedRef = useRef(false);
   const [dragOver, setDragOver] = useState<Stage | null>(null);
   const [moveFor, setMoveFor] = useState<PipelineCard | null>(null);
   const [reasonFor, setReasonFor] = useState<{ card: PipelineCard } | null>(null);
@@ -142,9 +154,40 @@ export function PipelineBoard({ cards }: { cards: PipelineCard[] }) {
                 <div
                   key={c.id}
                   draggable
-                  onDragStart={() => setDragId(c.id)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open ${c.name}`}
+                  data-testid="pipeline-card"
+                  onDragStart={() => {
+                    draggedRef.current = true;
+                    setDragId(c.id);
+                  }}
                   onDragEnd={() => setDragId(null)}
-                  className="mb-2.5 cursor-grab rounded-[11px] border border-line bg-panel-2 p-3 transition-shadow hover:border-accent-soft hover:shadow-[0_0_16px_rgba(116,39,198,0.25)]"
+                  onPointerDown={(e) => {
+                    // Remember where the press started; a click that travelled
+                    // more than a few pixels was a drag attempt, not a tap.
+                    pressRef.current = { x: e.clientX, y: e.clientY };
+                    draggedRef.current = false;
+                  }}
+                  onClick={(e) => {
+                    // Buttons inside the card (Move to…, Close deal…) handle
+                    // themselves; don't also open the modal behind them.
+                    if ((e.target as HTMLElement).closest("button")) return;
+                    if (draggedRef.current) return;
+                    const start = pressRef.current;
+                    if (start) {
+                      const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+                      if (moved > DRAG_THRESHOLD_PX) return;
+                    }
+                    setDetailFor(c.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setDetailFor(c.id);
+                    }
+                  }}
+                  className="mb-2.5 cursor-pointer rounded-[11px] border border-line bg-panel-2 p-3 transition-shadow hover:border-accent-soft hover:shadow-[0_0_16px_rgba(116,39,198,0.25)] focus:outline-none focus-visible:border-accent"
                 >
                   <b className="block text-[13px]">{c.name}</b>
                   <span className="mb-2 mt-0.5 block text-[11.5px] text-muted">{c.company}</span>
@@ -208,6 +251,10 @@ export function PipelineBoard({ cards }: { cards: PipelineCard[] }) {
       </p>
 
       {/* Move-to sheet (bottom sheet on mobile, centered on desktop) */}
+      {detailFor && (
+        <LeadDetailModal leadId={detailFor} onClose={() => setDetailFor(null)} />
+      )}
+
       {moveFor && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"

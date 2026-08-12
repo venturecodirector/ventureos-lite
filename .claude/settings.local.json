@@ -130,7 +130,8 @@
       "Bash(curl -s -o /dev/null -w \"  %{http_code}\\\\n\" -H \"Host: meet.localhost\" http://127.0.0.1:3111/tamas)",
       "Bash(curl -s -H \"Host: audit.localhost\" http://127.0.0.1:3111/pubtest-share)",
       "Bash(curl -s -H \"Host: quote.localhost\" http://127.0.0.1:3111/pubtest-accept)",
-      "Bash(curl -s -o /dev/null -w \"settings: %{http_code}\\\\n\" http://127.0.0.1:3111/settings)"
+      "Bash(curl -s -o /dev/null -w \"settings: %{http_code}\\\\n\" http://127.0.0.1:3111/settings)",
+      "Bash(grep -n \"width\\\\|%\\\\`\\\\|pct\\\\|Funnel\\\\|funnel\" src/components/analytics.tsx)"
     ]
   },
   "enableAllProjectMcpServers": true,

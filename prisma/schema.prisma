@@ -341,6 +341,9 @@ model Lead {
   phone          String?
   linkedinUrl    String?    @map("linkedin_url")
   source         LeadSource @default(MANUAL)
+  /// Language to write to this contact in. Feeds the outreach drafter, which
+  /// previously always assumed Hungarian.
+  language       Lang       @default(HU)
   stage          Stage      @default(RESEARCHED)
   stageEnteredAt DateTime   @default(now()) @map("stage_entered_at")
   stageReason    String?    @map("stage_reason")
