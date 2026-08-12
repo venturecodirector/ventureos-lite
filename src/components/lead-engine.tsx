@@ -22,6 +22,7 @@ import { companyUnderProceedings } from "@/modules/registry/risk";
 import { RiskChip } from "./risk-chip";
 import { Modal } from "./modal";
 import { CsvImport } from "./csv-import";
+import { ManualLeadForm } from "./manual-lead-form";
 
 export interface LeadRow {
   id: string;
@@ -451,7 +452,7 @@ export function LeadEngine({
       </div>
 
       {showManual && (
-        <ManualForm
+        <ManualLeadForm
           onClose={() => setShowManual(false)}
           onDone={() => {
             setShowManual(false);
@@ -580,124 +581,6 @@ function EnrichDialog({
 }
 
 // ---- modals ---------------------------------------------------------------
-
-const SOURCE_OPTIONS = [
-  { value: "MANUAL", label: "Manual" },
-  { value: "REFERRAL", label: "Referral" },
-  { value: "LINKEDIN", label: "LinkedIn" },
-  { value: "PROSPECTOR", label: "Prospector" },
-  { value: "COLD_EMAIL", label: "Cold email" },
-] as const;
-
-function ManualForm({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [source, setSource] = useState<string>("MANUAL");
-  const [referrerId, setReferrerId] = useState<string>("");
-  const [referrers, setReferrers] = useState<ReferrerOption[]>([]);
-
-  useEffect(() => {
-    listReferrers().then(setReferrers);
-  }, []);
-
-  async function submit(form: FormData) {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const res = await createLeadManual({
-        contactName: String(form.get("contactName") || ""),
-        title: String(form.get("title") || ""),
-        email: String(form.get("email") || ""),
-        phone: String(form.get("phone") || ""),
-        linkedinUrl: String(form.get("linkedinUrl") || ""),
-        notes: String(form.get("notes") || ""),
-        source,
-        referrerId: source === "REFERRAL" ? referrerId || undefined : undefined,
-        company: {
-          name: String(form.get("companyName") || ""),
-          domain: String(form.get("companyDomain") || ""),
-          industry: String(form.get("industry") || ""),
-          sizeBand: String(form.get("sizeBand") || ""),
-          taxId: String(form.get("companyTaxId") || ""),
-        },
-      });
-      if (res.ok) onDone();
-      else setMsg(`Duplicate of an existing lead (${res.duplicateOf}).`);
-    } catch (e) {
-      setMsg((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const input =
-    "rounded-[8px] border border-line bg-[rgba(0,5,29,0.5)] px-2.5 py-2 text-[13px] text-ink outline-none placeholder:text-muted focus:border-accent";
-
-  return (
-    <Modal>
-      <div className="mb-3 flex items-center">
-        <h3 className="font-display text-lg font-bold lowercase">add a lead manually</h3>
-        <button onClick={onClose} className="ml-auto text-muted hover:text-ink">
-          ✕
-        </button>
-      </div>
-      <form action={submit} className="grid grid-cols-2 gap-2.5">
-        <input name="contactName" placeholder="Contact name" className={input} />
-        <input name="title" placeholder="Title" className={input} />
-        <input name="email" placeholder="Email" className={input} />
-        <input name="phone" placeholder="Phone" className={input} />
-        <input name="linkedinUrl" placeholder="LinkedIn URL" className={`${input} col-span-2`} />
-        <input name="companyName" placeholder="Company name *" required className={input} />
-        <input name="companyDomain" placeholder="Company domain" className={input} />
-        <input name="companyTaxId" placeholder="Adószám (tax id)" className={input} />
-        <input name="industry" placeholder="Industry" className={input} />
-        <input name="sizeBand" placeholder="Size band (e.g. 24 employees)" className={input} />
-        <select value={source} onChange={(e) => setSource(e.target.value)} className={input}>
-          {SOURCE_OPTIONS.map((s) => (
-            <option key={s.value} value={s.value}>
-              Source: {s.label}
-            </option>
-          ))}
-        </select>
-        {source === "REFERRAL" ? (
-          <select
-            value={referrerId}
-            onChange={(e) => setReferrerId(e.target.value)}
-            className={input}
-          >
-            <option value="">Referred by… (optional)</option>
-            {referrers.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-                {r.linkedCompany ? ` · ${r.linkedCompany}` : ""}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <div />
-        )}
-        <textarea name="notes" placeholder="Notes" className={`${input} col-span-2 min-h-[60px]`} />
-        {msg && <p className="col-span-2 text-[12px] text-[#FFB3C2]">{msg}</p>}
-        <div className="col-span-2 mt-1 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] hover:bg-panel-2"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
-          >
-            {busy ? "Saving…" : "Add lead"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
 
 function OverrideDialog({
   leadId,

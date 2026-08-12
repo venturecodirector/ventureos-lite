@@ -1,0 +1,17 @@
+[     270ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[     621ms] [LOG] [Fast Refresh] done in 352ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[     783ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[     783ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[     783ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[     951ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630
+[   11184ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   11184ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   11184ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[   31336ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   31337ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   31337ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[   34339ms] [WARNING] The resource http://localhost:3111/_next/static/css/app/layout.css?v=1786556461838 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:3111/leads?lead=cmsqdl97r000ebpocwgysqr1j:0
+[   51877ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   51877ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   51877ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[   58482ms] [WARNING] The resource http://localhost:3111/_next/static/css/app/layout.css?v=1786556461838 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:3111/leads?lead=cmsqdlp19000hbpocqmby4tni:0

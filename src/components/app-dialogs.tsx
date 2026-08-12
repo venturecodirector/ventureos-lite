@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useAppActions } from "./app-actions";
 import { CsvImport } from "./csv-import";
+import { ManualLeadForm } from "./manual-lead-form";
 
 /**
  * Single mount point for the dialogs the top bar can open from any screen.
@@ -15,6 +16,18 @@ export function AppDialogs() {
   if (dialog === "csv-import") {
     return (
       <CsvImport
+        onClose={closeDialog}
+        onDone={() => {
+          closeDialog();
+          router.refresh();
+        }}
+      />
+    );
+  }
+  if (dialog === "new-lead") {
+    return (
+      <ManualLeadForm
+        navigateOnCreate
         onClose={closeDialog}
         onDone={() => {
           closeDialog();
