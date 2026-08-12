@@ -1,0 +1,341 @@
+- generic [ref=f5e2]:
+  - complementary [ref=f5e3]:
+    - button "V Venture CO Group workspace ▾" [ref=f5e5] [cursor=pointer]:
+      - generic [ref=f5e6]: V
+      - generic [ref=f5e7]:
+        - generic [ref=f5e8]: Venture CO Group
+        - generic [ref=f5e9]: workspace
+      - generic [ref=f5e10]: ▾
+    - generic [ref=f5e11]:
+      - text: ventureos
+      - emphasis [ref=f5e12]: lite
+    - navigation [ref=f5e13]:
+      - link "Dashboard" [ref=f5e14] [cursor=pointer]:
+        - /url: /
+      - link "Prospector" [ref=f5e22] [cursor=pointer]:
+        - /url: /prospector
+      - link "Lead Engine" [ref=f5e28] [cursor=pointer]:
+        - /url: /leads
+      - link "Site Audit" [ref=f5e34] [cursor=pointer]:
+        - /url: /audit
+      - link "Pipeline" [ref=f5e41] [cursor=pointer]:
+        - /url: /pipeline
+      - link "Outreach" [ref=f5e46] [cursor=pointer]:
+        - /url: /outreach
+      - link "Inbox" [ref=f5e52] [cursor=pointer]:
+        - /url: /inbox
+      - link "Calls" [ref=f5e58] [cursor=pointer]:
+        - /url: /calls
+      - link "Meetings" [ref=f5e63] [cursor=pointer]:
+        - /url: /meetings
+      - link "Referrers" [ref=f5e69] [cursor=pointer]:
+        - /url: /referrers
+      - link "Campaigns 🔒" [ref=f5e75] [cursor=pointer]:
+        - /url: /campaigns
+        - generic [ref=f5e79]: Campaigns
+        - generic [ref=f5e80]: 🔒
+      - link "Documents 🔒" [ref=f5e81] [cursor=pointer]:
+        - /url: /documents
+        - generic [ref=f5e86]: Documents
+        - generic [ref=f5e87]: 🔒
+      - generic [ref=f5e88] [cursor=pointer]: Public Pages
+      - generic [ref=f5e94] [cursor=pointer]: Content Hub
+      - link "Analytics" [ref=f5e99] [cursor=pointer]:
+        - /url: /analytics
+      - generic [ref=f5e104]: System
+      - link "Settings" [ref=f5e105] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=f5e111]:
+      - generic [ref=f5e112]:
+        - generic [ref=f5e113]: ✦ Claude budget
+        - generic [ref=f5e114]: $0.00 / $2.00
+      - 'progressbar "Claude budget: $0.00 of $2.00 used today" [ref=f5e115]'
+    - generic [ref=f5e116]:
+      - generic [ref=f5e117]: F
+      - generic [ref=f5e118]:
+        - generic [ref=f5e119]: Fanni
+        - generic [ref=f5e120]: BDR · Venture CO Group
+  - generic [ref=f5e121]:
+    - banner [ref=f5e122]:
+      - heading "good morning, fanni" [level=1] [ref=f5e123]
+      - generic [ref=f5e125]:
+        - combobox "Search leads, companies and documents" [ref=f5e129]
+        - generic [ref=f5e130]: /
+      - button "Import CSV" [ref=f5e131] [cursor=pointer]
+      - button "+ New lead" [ref=f5e132] [cursor=pointer]
+    - main [ref=f5e133]:
+      - generic [ref=f5e134]:
+        - generic [ref=f5e135]:
+          - generic [ref=f5e136]:
+            - generic [ref=f5e137]:
+              - text: Researched
+              - generic [ref=f5e138]: "5"
+            - generic [ref=f5e139]:
+              - generic [ref=f5e140]: E2E Lead 1786473408237
+              - generic [ref=f5e141]: E2E Co 1786473408237
+              - generic [ref=f5e142]: 0d
+              - button "Move to…" [ref=f5e150] [cursor=pointer]
+            - generic [ref=f5e151]:
+              - generic [ref=f5e152]: Dbg
+              - generic [ref=f5e153]: —
+              - generic [ref=f5e154]: 0d
+              - button "Move to…" [ref=f5e162] [cursor=pointer]
+            - generic [ref=f5e163]:
+              - generic [ref=f5e164]: Horvath Judit
+              - generic [ref=f5e165]: Aventa Logistics Kft.
+              - generic [ref=f5e166]:
+                - generic "Document chain" [ref=f5e173]
+                - generic [ref=f5e177]: 0d
+              - button "Move to…" [ref=f5e178] [cursor=pointer]
+            - generic [ref=f5e179]:
+              - generic [ref=f5e180]: Szabo Gabor
+              - generic [ref=f5e181]: CsvTest Alfa Kft.
+              - generic [ref=f5e182]: 0d
+              - button "Move to…" [ref=f5e190] [cursor=pointer]
+            - generic [ref=f5e191]:
+              - generic [ref=f5e192]: Toth Eszter
+              - generic [ref=f5e193]: CsvTest Beta Zrt.
+              - generic [ref=f5e194]: 0d
+              - button "Move to…" [ref=f5e202] [cursor=pointer]
+          - generic [ref=f5e203]:
+            - generic [ref=f5e204]:
+              - text: Contacted
+              - generic [ref=f5e205]: "20"
+            - generic [ref=f5e206]:
+              - generic [ref=f5e207]: E2E Lead 1786473484879
+              - generic [ref=f5e208]: E2E Co 1786473484879
+              - generic [ref=f5e209]: 0d
+              - button "Move to…" [ref=f5e217] [cursor=pointer]
+            - generic [ref=f5e218]:
+              - generic [ref=f5e219]: E2E Lead 1786473524553
+              - generic [ref=f5e220]: E2E Co 1786473524553
+              - generic [ref=f5e221]: 0d
+              - button "Move to…" [ref=f5e229] [cursor=pointer]
+            - generic [ref=f5e230]:
+              - generic [ref=f5e231]: E2E Lead 1786485009263
+              - generic [ref=f5e232]: E2E Co 1786485009263
+              - generic [ref=f5e233]: 0d
+              - button "Move to…" [ref=f5e241] [cursor=pointer]
+            - generic [ref=f5e242]:
+              - generic [ref=f5e243]: E2E Lead 1786485557422
+              - generic [ref=f5e244]: E2E Co 1786485557422
+              - generic [ref=f5e245]: 0d
+              - button "Move to…" [ref=f5e253] [cursor=pointer]
+            - generic [ref=f5e254]:
+              - generic [ref=f5e255]: E2E Lead 1786487211765
+              - generic [ref=f5e256]: E2E Co 1786487211765
+              - generic [ref=f5e257]: 0d
+              - button "Move to…" [ref=f5e265] [cursor=pointer]
+            - generic [ref=f5e266]:
+              - generic [ref=f5e267]: E2E Lead 1786488293314
+              - generic [ref=f5e268]: E2E Co 1786488293314
+              - generic [ref=f5e269]: 0d
+              - button "Move to…" [ref=f5e277] [cursor=pointer]
+            - generic [ref=f5e278]:
+              - generic [ref=f5e279]: E2E Lead 1786488960206
+              - generic [ref=f5e280]: E2E Co 1786488960206
+              - generic [ref=f5e281]: 0d
+              - button "Move to…" [ref=f5e289] [cursor=pointer]
+            - generic [ref=f5e290]:
+              - generic [ref=f5e291]: E2E Lead 1786489889951
+              - generic [ref=f5e292]: E2E Co 1786489889951
+              - generic [ref=f5e293]: 0d
+              - button "Move to…" [ref=f5e301] [cursor=pointer]
+            - generic [ref=f5e302]:
+              - generic [ref=f5e303]: E2E Lead 1786490729115
+              - generic [ref=f5e304]: E2E Co 1786490729115
+              - generic [ref=f5e305]: 0d
+              - button "Move to…" [ref=f5e313] [cursor=pointer]
+            - generic [ref=f5e314]:
+              - generic [ref=f5e315]: E2E Lead 1786492676190
+              - generic [ref=f5e316]: E2E Co 1786492676190
+              - generic [ref=f5e317]: 0d
+              - button "Move to…" [ref=f5e325] [cursor=pointer]
+            - generic [ref=f5e326]:
+              - generic [ref=f5e327]: E2E Lead 1786492701444
+              - generic [ref=f5e328]: E2E Co 1786492701444
+              - generic [ref=f5e329]: 0d
+              - button "Move to…" [ref=f5e337] [cursor=pointer]
+            - generic [ref=f5e338]:
+              - generic [ref=f5e339]: E2E Lead 1786496019655
+              - generic [ref=f5e340]: E2E Co 1786496019655
+              - generic [ref=f5e341]: 0d
+              - button "Move to…" [ref=f5e349] [cursor=pointer]
+            - generic [ref=f5e350]:
+              - generic [ref=f5e351]: E2E Lead 1786496161304
+              - generic [ref=f5e352]: E2E Co 1786496161304
+              - generic [ref=f5e353]: 0d
+              - button "Move to…" [ref=f5e361] [cursor=pointer]
+            - generic [ref=f5e362]:
+              - generic [ref=f5e363]: E2E Lead 1786496235226
+              - generic [ref=f5e364]: E2E Co 1786496235226
+              - generic [ref=f5e365]: 0d
+              - button "Move to…" [ref=f5e373] [cursor=pointer]
+            - generic [ref=f5e374]:
+              - generic [ref=f5e375]: E2E Lead 1786496395512
+              - generic [ref=f5e376]: E2E Co 1786496395512
+              - generic [ref=f5e377]: 0d
+              - button "Move to…" [ref=f5e385] [cursor=pointer]
+            - generic [ref=f5e386]:
+              - generic [ref=f5e387]: E2E Lead 1786496442452
+              - generic [ref=f5e388]: E2E Co 1786496442452
+              - generic [ref=f5e389]: 0d
+              - button "Move to…" [ref=f5e397] [cursor=pointer]
+            - generic [ref=f5e398]:
+              - generic [ref=f5e399]: E2E Lead 1786496518547
+              - generic [ref=f5e400]: E2E Co 1786496518547
+              - generic [ref=f5e401]: 0d
+              - button "Move to…" [ref=f5e409] [cursor=pointer]
+            - generic [ref=f5e410]:
+              - generic [ref=f5e411]: E2E Lead 1786496593531
+              - generic [ref=f5e412]: E2E Co 1786496593531
+              - generic [ref=f5e413]: 0d
+              - button "Move to…" [ref=f5e421] [cursor=pointer]
+            - generic [ref=f5e422]:
+              - generic [ref=f5e423]: E2E Lead 1786496699466
+              - generic [ref=f5e424]: E2E Co 1786496699466
+              - generic [ref=f5e425]: 0d
+              - button "Move to…" [ref=f5e433] [cursor=pointer]
+            - generic [ref=f5e434]:
+              - generic [ref=f5e435]: E2E Lead 1786497013676
+              - generic [ref=f5e436]: E2E Co 1786497013676
+              - generic [ref=f5e437]: 0d
+              - button "Move to…" [ref=f5e445] [cursor=pointer]
+          - generic [ref=f5e447]:
+            - text: Accepted
+            - generic [ref=f5e448]: "0"
+          - generic [ref=f5e450]:
+            - text: Replied
+            - generic [ref=f5e451]: "0"
+          - generic [ref=f5e453]:
+            - text: Qualified
+            - generic [ref=f5e454]: "0"
+          - generic [ref=f5e455]:
+            - generic [ref=f5e456]:
+              - text: Meeting booked
+              - generic [ref=f5e457]: "23"
+            - generic [ref=f5e458]:
+              - generic [ref=f5e459]: E2E Guest 1786483852890
+              - generic [ref=f5e460]: E2E Co 1786483852890
+              - generic [ref=f5e461]: 0d
+              - button "Move to…" [ref=f5e469] [cursor=pointer]
+            - generic [ref=f5e470]:
+              - generic [ref=f5e471]: E2E Lead 1786483870710
+              - generic [ref=f5e472]: E2E Co 1786483870710
+              - generic [ref=f5e473]: 0d
+              - button "Move to…" [ref=f5e481] [cursor=pointer]
+            - generic [ref=f5e482]:
+              - generic [ref=f5e483]: E2E Guest 1786483948953
+              - generic [ref=f5e484]: E2E Co 1786483948953
+              - generic [ref=f5e485]: 0d
+              - button "Move to…" [ref=f5e493] [cursor=pointer]
+            - generic [ref=f5e494]:
+              - generic [ref=f5e495]: E2E Guest 1786485009262
+              - generic [ref=f5e496]: E2E Co 1786485009262
+              - generic [ref=f5e497]: 0d
+              - button "Move to…" [ref=f5e505] [cursor=pointer]
+            - generic [ref=f5e506]:
+              - generic [ref=f5e507]: E2E Guest 1786485557423
+              - generic [ref=f5e508]: E2E Co 1786485557423
+              - generic [ref=f5e509]: 0d
+              - button "Move to…" [ref=f5e517] [cursor=pointer]
+            - generic [ref=f5e518]:
+              - generic [ref=f5e519]: E2E Lead 1786486366446
+              - generic [ref=f5e520]: E2E Co 1786486366446
+              - generic [ref=f5e521]: 0d
+              - button "Move to…" [ref=f5e529] [cursor=pointer]
+            - generic [ref=f5e530]:
+              - generic [ref=f5e531]: E2E Guest 1786487211764
+              - generic [ref=f5e532]: E2E Co 1786487211764
+              - generic [ref=f5e533]: 0d
+              - button "Move to…" [ref=f5e541] [cursor=pointer]
+            - generic [ref=f5e542]:
+              - generic [ref=f5e543]: E2E Guest 1786488293313
+              - generic [ref=f5e544]: E2E Co 1786488293313
+              - generic [ref=f5e545]: 0d
+              - button "Move to…" [ref=f5e553] [cursor=pointer]
+            - generic [ref=f5e554]:
+              - generic [ref=f5e555]: E2E Lead 1786488926857
+              - generic [ref=f5e556]: E2E Co 1786488926857
+              - generic [ref=f5e557]: 0d
+              - button "Move to…" [ref=f5e565] [cursor=pointer]
+            - generic [ref=f5e566]:
+              - generic [ref=f5e567]: E2E Guest 1786488960207
+              - generic [ref=f5e568]: E2E Co 1786488960207
+              - generic [ref=f5e569]: 0d
+              - button "Move to…" [ref=f5e577] [cursor=pointer]
+            - generic [ref=f5e578]:
+              - generic [ref=f5e579]: E2E Guest 1786489889950
+              - generic [ref=f5e580]: E2E Co 1786489889950
+              - generic [ref=f5e581]: 0d
+              - button "Move to…" [ref=f5e589] [cursor=pointer]
+            - generic [ref=f5e590]:
+              - generic [ref=f5e591]: E2E Guest 1786490729113
+              - generic [ref=f5e592]: E2E Co 1786490729113
+              - generic [ref=f5e593]: 0d
+              - button "Move to…" [ref=f5e601] [cursor=pointer]
+            - generic [ref=f5e602]:
+              - generic [ref=f5e603]: E2E Guest 1786492676189
+              - generic [ref=f5e604]: E2E Co 1786492676189
+              - generic [ref=f5e605]: 0d
+              - button "Move to…" [ref=f5e613] [cursor=pointer]
+            - generic [ref=f5e614]:
+              - generic [ref=f5e615]: E2E Guest 1786492701417
+              - generic [ref=f5e616]: E2E Co 1786492701417
+              - generic [ref=f5e617]: 0d
+              - button "Move to…" [ref=f5e625] [cursor=pointer]
+            - generic [ref=f5e626]:
+              - generic [ref=f5e627]: E2E Guest 1786496012927
+              - generic [ref=f5e628]: E2E Co 1786496012927
+              - generic [ref=f5e629]: 0d
+              - button "Move to…" [ref=f5e637] [cursor=pointer]
+            - generic [ref=f5e638]:
+              - generic [ref=f5e639]: E2E Guest 1786496154062
+              - generic [ref=f5e640]: E2E Co 1786496154062
+              - generic [ref=f5e641]: 0d
+              - button "Move to…" [ref=f5e649] [cursor=pointer]
+            - generic [ref=f5e650]:
+              - generic [ref=f5e651]: E2E Guest 1786496229222
+              - generic [ref=f5e652]: E2E Co 1786496229222
+              - generic [ref=f5e653]: 0d
+              - button "Move to…" [ref=f5e661] [cursor=pointer]
+            - generic [ref=f5e662]:
+              - generic [ref=f5e663]: E2E Guest 1786496389218
+              - generic [ref=f5e664]: E2E Co 1786496389218
+              - generic [ref=f5e665]: 0d
+              - button "Move to…" [ref=f5e673] [cursor=pointer]
+            - generic [ref=f5e674]:
+              - generic [ref=f5e675]: E2E Guest 1786496439383
+              - generic [ref=f5e676]: E2E Co 1786496439383
+              - generic [ref=f5e677]: 0d
+              - button "Move to…" [ref=f5e685] [cursor=pointer]
+            - generic [ref=f5e686]:
+              - generic [ref=f5e687]: E2E Guest 1786496513352
+              - generic [ref=f5e688]: E2E Co 1786496513352
+              - generic [ref=f5e689]: 0d
+              - button "Move to…" [ref=f5e697] [cursor=pointer]
+            - generic [ref=f5e698]:
+              - generic [ref=f5e699]: E2E Guest 1786496587655
+              - generic [ref=f5e700]: E2E Co 1786496587655
+              - generic [ref=f5e701]: 0d
+              - button "Move to…" [ref=f5e709] [cursor=pointer]
+            - generic [ref=f5e710]:
+              - generic [ref=f5e711]: E2E Guest 1786496693021
+              - generic [ref=f5e712]: E2E Co 1786496693021
+              - generic [ref=f5e713]: 0d
+              - button "Move to…" [ref=f5e721] [cursor=pointer]
+            - generic [ref=f5e722]:
+              - generic [ref=f5e723]: E2E Guest 1786497007774
+              - generic [ref=f5e724]: E2E Co 1786497007774
+              - generic [ref=f5e725]: 0d
+              - button "Move to…" [ref=f5e733] [cursor=pointer]
+          - generic [ref=f5e735]:
+            - text: Handed off
+            - generic [ref=f5e736]: "0"
+          - generic [ref=f5e738]:
+            - text: Not now
+            - generic [ref=f5e739]: "0"
+          - generic [ref=f5e741]:
+            - text: Disqualified
+            - generic [ref=f5e742]: "0"
+        - paragraph [ref=f5e743]: Drag cards between stages, or use “Move to…” on touch. After Follow-up 2 with no reply, leads auto-move to Not now and resurface in 6 months.

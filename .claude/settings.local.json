@@ -120,7 +120,8 @@
       "Bash(git checkout *)",
       "Bash(grep -E \"^\\\\.env$|\\\\.env\\\\.caddy|caddy-auth\\\\.conf$|e2e/\\\\.auth\")",
       "Bash(git push *)",
-      "Bash(gh pr create --base main --head feat/production-readiness --title 'Production readiness: auth, domain layout, deploy, Outreach Studio' --body ' *)"
+      "Bash(gh pr create --base main --head feat/production-readiness --title 'Production readiness: auth, domain layout, deploy, Outreach Studio' --body ' *)",
+      "mcp__plugin_playwright_playwright__browser_file_upload"
     ]
   },
   "enableAllProjectMcpServers": true,

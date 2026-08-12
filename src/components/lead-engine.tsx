@@ -20,6 +20,8 @@ import { listReferrers, type ReferrerOption } from "@/modules/referrals/actions"
 import type { RegistryCandidate } from "@/modules/registry/provider";
 import { companyUnderProceedings } from "@/modules/registry/risk";
 import { RiskChip } from "./risk-chip";
+import { Modal } from "./modal";
+import { CsvImport } from "./csv-import";
 
 export interface LeadRow {
   id: string;
@@ -579,16 +581,6 @@ function EnrichDialog({
 
 // ---- modals ---------------------------------------------------------------
 
-function Modal({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
-      <div className="w-full max-w-[560px] rounded-card border border-line bg-[rgba(6,11,38,0.98)] p-5 backdrop-blur">
-        {children}
-      </div>
-    </div>
-  );
-}
-
 const SOURCE_OPTIONS = [
   { value: "MANUAL", label: "Manual" },
   { value: "REFERRAL", label: "Referral" },
@@ -703,186 +695,6 @@ function ManualForm({ onClose, onDone }: { onClose: () => void; onDone: () => vo
           </button>
         </div>
       </form>
-    </Modal>
-  );
-}
-
-const CSV_FIELDS = [
-  { key: "contactName", label: "Contact name" },
-  { key: "title", label: "Title" },
-  { key: "email", label: "Email" },
-  { key: "linkedinUrl", label: "LinkedIn URL" },
-  { key: "companyName", label: "Company name" },
-  { key: "companyDomain", label: "Company domain" },
-] as const;
-
-type CsvField = (typeof CSV_FIELDS)[number]["key"];
-type PreviewRow = Awaited<ReturnType<typeof previewCsvImport>>[number];
-
-function parseCsv(text: string): { headers: string[]; rows: string[][] } {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
-  const split = (line: string) =>
-    line
-      .match(/(".*?"|[^,]+)(?=,|$)/g)
-      ?.map((c) => c.replace(/^"|"$/g, "").trim()) ?? [];
-  if (!lines.length) return { headers: [], rows: [] };
-  return { headers: split(lines[0]), rows: lines.slice(1).map(split) };
-}
-
-function CsvImport({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [parsed, setParsed] = useState<{ headers: string[]; rows: string[][] } | null>(null);
-  const [mapping, setMapping] = useState<Partial<Record<CsvField, number>>>({});
-  const [preview, setPreview] = useState<PreviewRow[] | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const candidates = useMemo(() => {
-    if (!parsed) return [];
-    return parsed.rows.map((row) => {
-      const c: Record<string, string> = {};
-      for (const f of CSV_FIELDS) {
-        const idx = mapping[f.key];
-        if (idx !== undefined && row[idx]) c[f.key] = row[idx];
-      }
-      return c;
-    });
-  }, [parsed, mapping]);
-
-  async function onFile(file: File) {
-    const text = await file.text();
-    const p = parseCsv(text);
-    setParsed(p);
-    // best-effort auto-map by header name
-    const guess: Partial<Record<CsvField, number>> = {};
-    p.headers.forEach((h, i) => {
-      const n = h.toLowerCase();
-      if (/mail/.test(n)) guess.email = i;
-      else if (/linkedin/.test(n)) guess.linkedinUrl = i;
-      else if (/company|org/.test(n)) guess.companyName = i;
-      else if (/domain|website|url/.test(n)) guess.companyDomain = i;
-      else if (/title|role/.test(n)) guess.title = i;
-      else if (/name|contact/.test(n)) guess.contactName = i;
-    });
-    setMapping(guess);
-    setPreview(null);
-  }
-
-  const input =
-    "rounded-[8px] border border-line bg-[rgba(0,5,29,0.5)] px-2 py-1.5 text-[12px] text-ink outline-none focus:border-accent";
-
-  return (
-    <Modal>
-      <div className="mb-3 flex items-center">
-        <h3 className="font-display text-lg font-bold lowercase">import csv</h3>
-        <button onClick={onClose} className="ml-auto text-muted hover:text-ink">
-          ✕
-        </button>
-      </div>
-
-      {!parsed && (
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
-          className="text-[13px] text-muted"
-        />
-      )}
-
-      {parsed && !preview && (
-        <>
-          <p className="mb-2 text-[12px] text-muted">
-            Map your columns · {parsed.rows.length} rows
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {CSV_FIELDS.map((f) => (
-              <label key={f.key} className="flex items-center gap-2 text-[12px]">
-                <span className="w-28 text-muted">{f.label}</span>
-                <select
-                  value={mapping[f.key] ?? ""}
-                  onChange={(e) =>
-                    setMapping((m) => ({
-                      ...m,
-                      [f.key]: e.target.value === "" ? undefined : Number(e.target.value),
-                    }))
-                  }
-                  className={input}
-                >
-                  <option value="">—</option>
-                  {parsed.headers.map((h, i) => (
-                    <option key={i} value={i}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
-          <div className="mt-3 flex justify-end gap-2">
-            <button
-              onClick={async () => {
-                setBusy(true);
-                setPreview(await previewCsvImport(candidates));
-                setBusy(false);
-              }}
-              disabled={busy}
-              className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
-            >
-              Preview dedupe
-            </button>
-          </div>
-        </>
-      )}
-
-      {preview && (
-        <>
-          <p className="mb-2 text-[12px] text-muted">
-            {preview.filter((r) => r.status === "new").length} new ·{" "}
-            {preview.filter((r) => r.status === "duplicate").length} duplicate
-          </p>
-          <div className="max-h-[280px] overflow-auto rounded-[8px] border border-line">
-            <table className="w-full border-collapse text-[12px]">
-              <tbody>
-                {preview.map((r) => (
-                  <tr key={r.index} className="border-b border-line last:border-0">
-                    <td className="px-2.5 py-1.5">
-                      {candidates[r.index].contactName ||
-                        candidates[r.index].email ||
-                        candidates[r.index].companyName ||
-                        `Row ${r.index + 1}`}
-                    </td>
-                    <td className="px-2.5 py-1.5 text-right">
-                      {r.status === "new" ? (
-                        <span className="text-[#3DDC97]">new</span>
-                      ) : (
-                        <span className="text-warn">duplicate · {r.reason}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-3 flex justify-end gap-2">
-            <button
-              onClick={() => setPreview(null)}
-              className="rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] hover:bg-panel-2"
-            >
-              Back
-            </button>
-            <button
-              onClick={async () => {
-                setBusy(true);
-                await commitCsvImport(candidates);
-                setBusy(false);
-                onDone();
-              }}
-              disabled={busy || preview.every((r) => r.status !== "new")}
-              className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
-            >
-              {busy ? "Importing…" : `Import ${preview.filter((r) => r.status === "new").length} new`}
-            </button>
-          </div>
-        </>
-      )}
     </Modal>
   );
 }

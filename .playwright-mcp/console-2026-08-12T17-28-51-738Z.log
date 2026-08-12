@@ -1,0 +1,34 @@
+[     172ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[     172ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[     172ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[     350ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630
+[   30154ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[   30306ms] [LOG] [Fast Refresh] done in 153ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[   30430ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   30430ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[   30430ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[  513564ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  513998ms] [LOG] [Fast Refresh] done in 434ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  514453ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  514453ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  514453ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[  527702ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  527928ms] [LOG] [Fast Refresh] done in 226ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  528108ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  528108ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  528108ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[  536454ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  536542ms] [LOG] [Fast Refresh] done in 88ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  536663ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  536663ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  536663ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[  546109ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  546238ms] [LOG] [Fast Refresh] done in 129ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  546334ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  546334ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  546334ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0
+[  557169ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
+[  557714ms] [LOG] [Fast Refresh] done in 545ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13
+[  557909ms] [WARNING] Manifest: property 'start_url' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  557909ms] [WARNING] Manifest: property 'id' ignored, should be same origin as document. @ http://localhost:3111/manifest.webmanifest:0
+[  557909ms] [WARNING] Manifest: property 'scope' ignored. Start url should be within scope of scope URL. @ http://localhost:3111/manifest.webmanifest:0

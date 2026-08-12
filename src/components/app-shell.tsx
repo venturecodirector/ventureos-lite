@@ -5,6 +5,9 @@ import type { BudgetStatus } from "@/lib/ai/budget-status";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { MobileNav, type MobileNavItem } from "./mobile-nav";
 import { GlobalSearch } from "./global-search";
+import { AppActionsProvider } from "./app-actions";
+import { AppDialogs } from "./app-dialogs";
+import { TopBarActions } from "./top-bar-actions";
 import {
   DashboardIcon,
   ProspectorIcon,
@@ -175,6 +178,7 @@ export async function AppShell({
     .map((i) => ({ label: i.label, href: i.href, locked: i.locked }));
 
   return (
+    <AppActionsProvider>
     <div className="relative z-10 flex min-h-screen flex-col nav:grid nav:h-screen nav:grid-cols-[228px_1fr]">
       {/* ---------- sidebar (nav: and up) ---------- */}
       <aside className="hidden flex-col gap-1.5 overflow-y-auto border-r border-line bg-canvas/60 px-3.5 py-5 nav:flex">
@@ -234,12 +238,7 @@ export async function AppShell({
             good morning, {firstName}
           </h1>
           <GlobalSearch className="ml-auto w-[260px] flex-none" />
-          <button className="min-h-[44px] rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] font-semibold text-ink hover:bg-panel-2">
-            Import CSV
-          </button>
-          <button className="min-h-[44px] rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background:linear-gradient(var(--tw-gradient-stops))] [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box]">
-            + New lead
-          </button>
+          <TopBarActions />
         </header>
 
         {/* pb-24 clears the fixed tab bar; it collapses away at nav:. */}
@@ -254,6 +253,8 @@ export async function AppShell({
         activePath={activePath}
         icons={icons}
       />
+      <AppDialogs />
     </div>
+    </AppActionsProvider>
   );
 }
