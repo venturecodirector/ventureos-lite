@@ -1,0 +1,132 @@
+- generic [ref=f7e2]:
+  - complementary [ref=f7e3]:
+    - button "V Venture CO Group workspace ▾" [ref=f7e5] [cursor=pointer]:
+      - generic [ref=f7e6]: V
+      - generic [ref=f7e7]:
+        - generic [ref=f7e8]: Venture CO Group
+        - generic [ref=f7e9]: workspace
+      - generic [ref=f7e10]: ▾
+    - generic [ref=f7e11]:
+      - text: ventureos
+      - emphasis [ref=f7e12]: lite
+    - navigation [ref=f7e13]:
+      - link "Dashboard" [ref=f7e14] [cursor=pointer]:
+        - /url: /
+      - link "Prospector" [ref=f7e22] [cursor=pointer]:
+        - /url: /prospector
+      - link "Lead Engine" [ref=f7e28] [cursor=pointer]:
+        - /url: /leads
+      - link "Site Audit" [ref=f7e34] [cursor=pointer]:
+        - /url: /audit
+      - link "Pipeline" [ref=f7e41] [cursor=pointer]:
+        - /url: /pipeline
+      - link "Outreach" [ref=f7e46] [cursor=pointer]:
+        - /url: /outreach
+      - link "Inbox" [ref=f7e52] [cursor=pointer]:
+        - /url: /inbox
+      - link "Calls" [ref=f7e58] [cursor=pointer]:
+        - /url: /calls
+      - link "Meetings" [ref=f7e63] [cursor=pointer]:
+        - /url: /meetings
+      - link "Referrers" [ref=f7e69] [cursor=pointer]:
+        - /url: /referrers
+      - link "Campaigns 🔒" [ref=f7e75] [cursor=pointer]:
+        - /url: /campaigns
+        - generic [ref=f7e79]: Campaigns
+        - generic [ref=f7e80]: 🔒
+      - link "Documents 🔒" [ref=f7e81] [cursor=pointer]:
+        - /url: /documents
+        - generic [ref=f7e86]: Documents
+        - generic [ref=f7e87]: 🔒
+      - link "Public Pages" [ref=f7e88] [cursor=pointer]:
+        - /url: /public-pages
+      - generic [ref=f7e94] [cursor=pointer]: Content Hub
+      - link "Analytics" [ref=f7e99] [cursor=pointer]:
+        - /url: /analytics
+      - generic [ref=f7e104]: System
+      - link "Settings" [ref=f7e105] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=f7e111]:
+      - generic [ref=f7e112]:
+        - generic [ref=f7e113]: ✦ Claude budget
+        - generic [ref=f7e114]: $0.00 / $2.00
+      - 'progressbar "Claude budget: $0.00 of $2.00 used today" [ref=f7e115]'
+    - generic [ref=f7e116]:
+      - generic [ref=f7e117]: F
+      - generic [ref=f7e118]:
+        - generic [ref=f7e119]: Fanni
+        - generic [ref=f7e120]: BDR · Venture CO Group
+  - generic [ref=f7e121]:
+    - banner [ref=f7e122]:
+      - heading "good morning, fanni" [level=1] [ref=f7e123]
+      - generic [ref=f7e125]:
+        - combobox "Search leads, companies and documents" [ref=f7e129]
+        - generic [ref=f7e130]: /
+      - button "Import CSV" [ref=f7e131] [cursor=pointer]
+      - button "+ New lead" [ref=f7e132] [cursor=pointer]
+    - main [ref=f7e133]:
+      - generic [ref=f7e134]:
+        - generic [ref=f7e135]:
+          - heading "public pages" [level=2] [ref=f7e136]
+          - paragraph [ref=f7e137]: Every link this workspace has handed to a prospect. These pages need no sign-in — anyone with the URL can open them.
+        - generic [ref=f7e138]:
+          - heading "booking page" [level=3] [ref=f7e139]
+          - list [ref=f7e140]:
+            - listitem [ref=f7e141]:
+              - generic [ref=f7e142]: book a call with tamas
+              - generic [ref=f7e143]: Tamas · 0 upcoming
+              - generic [ref=f7e144]: live
+              - link "http://localhost:3000/book/tamas" [ref=f7e146] [cursor=pointer]:
+                - /url: http://localhost:3000/book/tamas
+              - button "Copy" [ref=f7e148] [cursor=pointer]
+        - generic [ref=f7e149]:
+          - heading "audit reports (1)" [level=3] [ref=f7e150]:
+            - text: audit reports
+            - generic [ref=f7e151]: (1)
+          - table [ref=f7e153]:
+            - rowgroup [ref=f7e154]:
+              - row [ref=f7e155]:
+                - columnheader "Company" [ref=f7e156]
+                - columnheader "Link" [ref=f7e157]
+                - columnheader "Opens" [ref=f7e158]
+                - columnheader "Expires" [ref=f7e159]
+                - columnheader [ref=f7e160]
+            - rowgroup [ref=f7e161]:
+              - row [ref=f7e162]:
+                - cell "PublicPage Test Kft. https://publicpage-test.hu · 62/100" [ref=f7e163]:
+                  - generic [ref=f7e164]: PublicPage Test Kft.
+                  - generic [ref=f7e165]: https://publicpage-test.hu · 62/100
+                - cell [ref=f7e166]:
+                  - link "http://localhost:3000/share/pubtest-share" [ref=f7e167] [cursor=pointer]:
+                    - /url: http://localhost:3000/share/pubtest-share
+                - cell "2 first 2026-08-12 17:44" [ref=f7e168]:
+                  - generic [ref=f7e169]:
+                    - text: "2"
+                    - generic [ref=f7e170]: first 2026-08-12 17:44
+                - cell "2029-06-19" [ref=f7e171]
+                - cell [ref=f7e172]:
+                  - generic [ref=f7e173]:
+                    - button "Copy" [ref=f7e174] [cursor=pointer]
+                    - button "Revoke" [ref=f7e175] [cursor=pointer]
+        - generic [ref=f7e176]:
+          - heading "quote acceptance (1)" [level=3] [ref=f7e177]:
+            - text: quote acceptance
+            - generic [ref=f7e178]: (1)
+          - table [ref=f7e180]:
+            - rowgroup [ref=f7e181]:
+              - row [ref=f7e182]:
+                - columnheader "Quote" [ref=f7e183]
+                - columnheader "Client" [ref=f7e184]
+                - columnheader "Link" [ref=f7e185]
+                - columnheader "Status" [ref=f7e186]
+                - columnheader [ref=f7e187]
+            - rowgroup [ref=f7e188]:
+              - row [ref=f7e189]:
+                - cell "Q-2026-999" [ref=f7e190]
+                - cell "PublicPage Test Kft." [ref=f7e191]
+                - cell [ref=f7e192]:
+                  - link "http://localhost:3000/accept/pubtest-accept" [ref=f7e193] [cursor=pointer]:
+                    - /url: http://localhost:3000/accept/pubtest-accept
+                - cell "sent" [ref=f7e194]
+                - cell [ref=f7e195]:
+                  - button "Copy" [ref=f7e196] [cursor=pointer]

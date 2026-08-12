@@ -121,7 +121,15 @@
       "Bash(grep -E \"^\\\\.env$|\\\\.env\\\\.caddy|caddy-auth\\\\.conf$|e2e/\\\\.auth\")",
       "Bash(git push *)",
       "Bash(gh pr create --base main --head feat/production-readiness --title 'Production readiness: auth, domain layout, deploy, Outreach Studio' --body ' *)",
-      "mcp__plugin_playwright_playwright__browser_file_upload"
+      "mcp__plugin_playwright_playwright__browser_file_upload",
+      "Bash(curl -s -o /dev/null -w \"meet.localhost/tamas → %{http_code}\\\\n\" -H \"Host: meet.localhost\" http://127.0.0.1:3111/tamas)",
+      "Bash(curl -s -o /dev/null -w \"X-Public-Surface meet  → %{http_code}\\\\n\" -H \"X-Public-Surface: meet\" http://127.0.0.1:3111/tamas)",
+      "Bash(curl -s -o /dev/null -w \"/book/tamas direct     → %{http_code}\\\\n\" http://127.0.0.1:3111/book/tamas)",
+      "Bash(curl -s -o /dev/null -w \"  %{http_code}\\\\n\" -H \"Host: audit.localhost\" http://127.0.0.1:3111/pubtest-share)",
+      "Bash(curl -s -o /dev/null -w \"  %{http_code}\\\\n\" -H \"Host: quote.localhost\" http://127.0.0.1:3111/pubtest-accept)",
+      "Bash(curl -s -o /dev/null -w \"  %{http_code}\\\\n\" -H \"Host: meet.localhost\" http://127.0.0.1:3111/tamas)",
+      "Bash(curl -s -H \"Host: audit.localhost\" http://127.0.0.1:3111/pubtest-share)",
+      "Bash(curl -s -H \"Host: quote.localhost\" http://127.0.0.1:3111/pubtest-accept)"
     ]
   },
   "enableAllProjectMcpServers": true,
