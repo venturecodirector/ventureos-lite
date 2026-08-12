@@ -129,7 +129,7 @@ function BudgetMeter({
   }
 
   return (
-    <div className="mt-auto border-t border-line px-2.5 pb-3 pt-2.5" data-testid={testId}>
+    <div className="border-t border-line px-2.5 pb-3 pt-2.5" data-testid={testId}>
       <div className="mb-2 flex justify-between text-[10.5px] text-muted">
         <span>✦ Claude budget</span>
         <b className={`font-semibold tabular-nums ${budget.exhausted ? "text-neg" : "text-ink"}`}>
@@ -187,10 +187,17 @@ export async function AppShell({
     <AppActionsProvider>
     <div className="relative z-10 flex min-h-screen flex-col nav:grid nav:h-screen nav:grid-cols-[228px_1fr]">
       {/* ---------- sidebar (nav: and up) ---------- */}
-      <aside className="hidden flex-col gap-1.5 overflow-y-auto border-r border-line bg-canvas/60 px-3.5 py-5 nav:flex">
-        <WorkspaceSwitcher workspaces={shell.workspaces} />
+      {/* min-h-0 is what makes this scroll. A grid item defaults to
+          min-height:auto, so the sidebar grew to fit its content — 1041px in an
+          800px viewport — and the budget meter and profile block below it were
+          simply off-screen and unreachable. Clamping it lets the nav region
+          scroll while the header and footer stay pinned. */}
+      <aside className="hidden min-h-0 flex-col border-r border-line bg-canvas/60 px-3.5 py-5 nav:flex">
+        <div className="flex-none">
+          <WorkspaceSwitcher workspaces={shell.workspaces} />
+        </div>
 
-        <div className="px-2.5 pb-5 pt-0 font-display text-[22px] tracking-display">
+        <div className="flex-none px-2.5 pb-5 pt-3 font-display text-[22px] tracking-display">
           <b className="font-extrabold">venture</b>
           <span className="ml-1.5 font-light text-muted">os</span>
           <em className="ml-1.5 rounded-[5px] border border-line px-1.5 py-px align-middle text-[9px] font-semibold not-italic uppercase tracking-[0.14em] text-muted">
@@ -198,7 +205,7 @@ export async function AppShell({
           </em>
         </div>
 
-        <nav className="flex flex-col gap-1.5">
+        <nav className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-1.5 pr-0.5">
           {NAV.map((item) => (
             <NavRow key={item.label} item={item} activePath={activePath} />
           ))}
@@ -208,9 +215,11 @@ export async function AppShell({
           <NavRow item={SETTINGS_ITEM} activePath={activePath} />
         </nav>
 
-        <BudgetMeter budget={shell.budget} />
+        <div className="flex-none">
+          <BudgetMeter budget={shell.budget} />
+        </div>
 
-        <div className="flex items-center gap-2.5 border-t border-line p-2.5">
+        <div className="flex flex-none items-center gap-2.5 border-t border-line p-2.5">
           <div className="grid h-[30px] w-[30px] place-items-center rounded-full bg-grad text-[12px] font-bold">
             {shell.user.initials || "U"}
           </div>
@@ -226,10 +235,10 @@ export async function AppShell({
       </aside>
 
       {/* ---------- main ---------- */}
-      <div className="flex min-w-0 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-col">
         {/* Phone header: workspace + budget only. The greeting and the desktop
             actions are dropped here — at 390px the screen belongs to content. */}
-        <header className="flex items-center gap-2 border-b border-line px-4 py-3 nav:hidden">
+        <header className="flex flex-none items-center gap-2 border-b border-line px-4 py-3 nav:hidden">
           <div className="min-w-0 flex-1">
             <WorkspaceSwitcher
               workspaces={shell.workspaces}
@@ -239,11 +248,11 @@ export async function AppShell({
           <BudgetMeter budget={shell.budget} compact />
         </header>
 
-        <header className="hidden items-center gap-4 border-b border-line px-7 py-4 nav:flex">
-          <h1 className="font-display text-[26px] font-extrabold lowercase tracking-display">
+        <header className="hidden flex-none items-center gap-3 border-b border-line px-7 py-4 nav:flex">
+          <h1 className="min-w-0 truncate font-display text-[26px] font-extrabold lowercase tracking-display">
             good morning, {firstName}
           </h1>
-          <GlobalSearch className="ml-auto w-[260px] flex-none" />
+          <GlobalSearch className="ml-auto w-[clamp(180px,22vw,320px)] min-w-0 flex-none" />
           <TopBarActions />
           <AccountMenu
             name={shell.user.name}
@@ -255,7 +264,7 @@ export async function AppShell({
         </header>
 
         {/* pb-24 clears the fixed tab bar; it collapses away at nav:. */}
-        <main className="flex-1 overflow-x-hidden p-4 pb-24 nav:overflow-auto nav:p-7 nav:pb-7">
+        <main className="min-h-0 flex-1 overflow-x-hidden p-4 pb-24 nav:overflow-auto nav:p-7 nav:pb-7">
           {children}
         </main>
       </div>
