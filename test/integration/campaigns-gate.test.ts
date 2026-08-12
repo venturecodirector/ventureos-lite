@@ -67,7 +67,7 @@ describe("compliance gate blocks sending without a sign-off record", () => {
     await prismaUnsafe.campaignRecipient.create({ data: { workspaceId: wsId, campaignId, leadId: lead.id, email: "x@x.hu" } });
 
     await expect(
-      runCampaignSend(db, campaignId, { workspaceId: wsId, featureFlags: {}, mailgunConfig: null, appUrl: "http://t", nowMs: Date.now() }),
+      runCampaignSend(db, campaignId, { workspaceId: wsId, featureFlags: {}, mailgunConfig: null, nowMs: Date.now() }),
     ).rejects.toBeInstanceOf(ColdGateError);
 
     expect(await prismaUnsafe.emailLog.count({ where: { workspaceId: wsId } })).toBe(0);
@@ -81,7 +81,7 @@ describe("compliance gate blocks sending without a sign-off record", () => {
     const lead = await prismaUnsafe.lead.create({ data: { workspaceId: wsId, companyId: company.id, email: "x@x.hu" } });
     await prismaUnsafe.campaignRecipient.create({ data: { workspaceId: wsId, campaignId, leadId: lead.id, email: "x@x.hu" } });
 
-    const res = await runCampaignSend(db, campaignId, { workspaceId: wsId, featureFlags: SIGNOFF_FLAGS, mailgunConfig: null, appUrl: "http://t", nowMs: Date.now() });
+    const res = await runCampaignSend(db, campaignId, { workspaceId: wsId, featureFlags: SIGNOFF_FLAGS, mailgunConfig: null, nowMs: Date.now() });
     expect(res.sent).toBe(1);
     expect(await prismaUnsafe.emailLog.count({ where: { workspaceId: wsId } })).toBe(1);
   });

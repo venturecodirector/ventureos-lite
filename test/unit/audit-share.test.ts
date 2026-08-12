@@ -48,10 +48,10 @@ describe("share slug + expiry", () => {
     expect(isShareExpired(exp, new Date("2026-11-01T00:00:00Z"))).toBe(true);
   });
 
-  it("builds the public share URL", () => {
-    expect(shareUrl("https://app.example/", "abc123")).toBe(
-      "https://app.example/share/abc123",
-    );
+  it("builds the public share URL on the audit subdomain", () => {
+    process.env.APP_URL = "https://ventureco.agency";
+    process.env.PUBLIC_AUDIT_URL = "https://audit.ventureco.agency";
+    expect(shareUrl("abc123")).toBe("https://audit.ventureco.agency/abc123");
   });
 });
 

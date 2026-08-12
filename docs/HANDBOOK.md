@@ -1,0 +1,458 @@
+# Venture OS Lite — Operator Handbook
+
+For the Owner of a Venture OS Lite installation. Covers the six things only you
+can do: managing people and their permissions, provisioning workspaces, editing
+legal document templates, controlling AI spend, verifying backups, and executing
+a GDPR erasure request.
+
+Installation and server maintenance live in [`DEPLOY.md`](DEPLOY.md).
+Feature-level behaviour lives in [`spec.md`](spec.md).
+
+---
+
+> ### Security model in one paragraph
+>
+> Everyone signs in with an email and a bcrypt-hashed password, optionally
+> backed by a TOTP second factor. Sessions live as rows in the database, so they
+> are revocable and expire after 12 hours. Roles and grants are checked
+> server-side on every mutation — not merely hidden in the UI. Five failed
+> sign-ins lock an account for 15 minutes.
+>
+> The three prospect-facing surfaces (`audit.`, `quote.`, `meet.`) are
+> deliberately public, reachable only via unguessable slugs.
+
+---
+
+## 1. Users and grants
+
+### Roles vs. grants
+
+Two independent layers:
+
+**Role** (`OWNER`, `ADMIN`, `BDR`) — set when a person is added to a workspace.
+It governs broad access: only an Owner can change grants, provision workspaces,
+finalize legal documents, or change retention policy.
+
+**Grants** — individual capabilities, assigned per user *per workspace*. They
+are checked server-side on every mutation, not just hidden in the UI. Turning
+one on takes effect immediately; no redeploy, no restart.
+
+The seven grants:
+
+| Grant | What it unlocks |
+|---|---|
+| `documents.quote.create` | Generate quotes from templates |
+| `documents.contract.create` | Generate contracts from an accepted quote |
+| `documents.certificate.create` | Generate completion certificates |
+| `documents.send` | Email a document to a client, and publish its public accept link |
+| `templates.edit` | Edit quote/contract/certificate/email templates |
+| `signal_engine.approve` | Approve the weekly Signal Engine proposals |
+| `exports.run` | Run a full data export |
+
+**Default:** an Owner gets all seven. Everyone else gets **none** until you
+explicitly grant them. This is deliberate — the document and template grants
+control legally binding output.
+
+### Granting a capability
+
+1. **Settings → users & grants**.
+2. Find the person's row; each grant is a toggle grouped by module.
+3. Click the toggle. It saves immediately.
+
+Every grant change is written to the audit log with who changed it, for whom,
+which grant, and when.
+
+### Adding someone to a workspace
+
+**Settings → workspace → add member**: enter their email address and pick a
+role. If no user exists with that address, one is created.
+
+They start with zero grants regardless of role (except Owner). Add the grants
+they need, one at a time — the safe default is to grant nothing until someone
+is blocked by its absence.
+
+### Removing access
+
+There is no "remove member" button yet. To revoke someone today:
+
+```bash
+# 1. Kill their live sessions immediately.
+docker compose -f docker-compose.prod.yml exec db psql -U venture -d ventureos -c \
+  "UPDATE sessions SET revoked_at = now() WHERE revoked_at IS NULL AND user_id =
+   (SELECT id FROM users WHERE email = 'person@example.hu');"
+
+# 2. Remove their membership.
+docker compose -f docker-compose.prod.yml exec db psql -U venture -d ventureos -c \
+  "DELETE FROM memberships WHERE user_id =
+   (SELECT id FROM users WHERE email = 'person@example.hu');"
+```
+
+Step 1 takes effect on their very next request — the session row is the
+authority, so a browser holding a valid cookie is signed out at once. Step 2
+alone would also deny them (no membership, no workspace), but revoking first
+closes the window.
+
+### Locked out / lost second factor
+
+Both are fixed from the server console:
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm worker \
+  npm run set-password -- person@ventureco.group            # new password, clears any lock
+docker compose -f docker-compose.prod.yml run --rm worker \
+  npm run set-password -- person@ventureco.group --clear-2fa  # also removes TOTP
+```
+
+Setting a password revokes every existing session for that account.
+
+---
+
+## 2. Workspace provisioning
+
+A workspace is a complete tenant: its own companies, leads, documents,
+templates, campaigns, budget and settings. Nothing crosses between workspaces.
+
+Use a second workspace when you are running sales for a genuinely separate legal
+entity or brand — **not** to separate teams or regions within Venture CO Group.
+Data cannot be moved or reported across workspaces afterwards.
+
+### Creating one
+
+**Settings → workspaces → create workspace.** You need:
+
+- **Name** — internal label shown in the switcher.
+- **Legal name** — the exact registered company name. This is printed on every
+  quote, contract and certificate as `{{workspace.legal_name}}`. Get it right.
+
+The creator becomes its Owner and is switched into it. A new workspace starts
+with the default document templates and default settings.
+
+### After creating one
+
+Do these before generating any document from it:
+
+1. **Settings → brand** — tax number (adószám) and registered address. They fill
+   `{{workspace.tax_id}}` and `{{workspace.address}}` on legal documents.
+2. **Settings → email** — the verified Mailgun sending domain for this
+   workspace, if it differs from the installation default.
+3. **Settings → AI budget** — see §5. New workspaces default to **$2/day**.
+4. **Settings → ICP** — scoring thresholds, if this entity targets a different
+   customer profile.
+
+### Switching
+
+The workspace switcher is in the top bar. It only ever lists workspaces you are
+a member of, and your choice is stored on the session row server-side — there is
+no client-writable value to tamper with. A session pointing at a workspace you
+are not a member of is ignored and repaired to one of your own. Verified by the
+isolation test suite.
+
+---
+
+## 3. Editing templates
+
+Templates produce every quote, contract and completion certificate. There is
+**no AI in this path** — documents render from a versioned template plus
+variables, and nothing else. That is what makes them reproducible.
+
+Requires the `templates.edit` grant.
+
+### The editor
+
+**Templates** in the left rail. Pick a type (Quote / Contract / Certificate /
+Email) and a language (HU / EN).
+
+- Type `{{` to get autocomplete for available variables.
+- The live preview on the right renders with sample data.
+- **Unknown variables are flagged** as you type. Fix them before saving — an
+  unknown variable renders as empty text on a client-facing document.
+
+### Versioning — the important part
+
+**Saving creates a new version. It never edits the existing one.**
+
+Documents already generated keep rendering from the version they were created
+with, byte-identically, forever. So:
+
+- Changing a template does **not** retroactively change any quote you have
+  already sent.
+- A contract signed last month still renders exactly as signed, even after ten
+  template revisions.
+
+After saving, the new version is a **draft**. It is not used for new documents
+until you **activate** it. Activate it from the version list.
+
+### Working practice
+
+1. Save a draft.
+2. Read the preview end to end — especially totals, VAT wording and legal
+   clauses.
+3. Activate.
+4. Generate one throwaway document and read the PDF before sending anything to
+   a client.
+
+### The DRAFT watermark
+
+Every generated legal document carries a **DRAFT watermark** until an Owner
+finalizes it. Finalizing is an audited action — who removed the watermark, on
+which document, and when. Do not finalize a document you have not read in full.
+
+---
+
+## 4. Outreach and the human-edit rule
+
+Outreach Studio (**Outreach** in the rail) runs a three-step LinkedIn sequence
+per lead: a connection note capped at 300 characters, then up to two follow-ups.
+
+**Claude drafts; you send.** The system never sends outreach itself — "Mark
+sent" only records that *you* sent it, after "Copy & open LinkedIn".
+
+Two rules are enforced on the server, not just in the interface:
+
+1. **A Claude-drafted message cannot be marked sent until you have changed it.**
+   Adding spaces does not count; the comparison ignores whitespace. If you press
+   Mark sent on an untouched draft, the server refuses and says so. The intent
+   is that nothing leaves in Claude's voice unedited.
+2. **Two follow-ups with no reply parks the lead as `Not now`**, with a wake-up
+   in 30 days. Nobody gets chased indefinitely.
+
+Also available: **Critique** (Claude reviews your text and names what is weak),
+**Blank draft** (write it yourself, no AI at all), and one-click **audit hooks**
+that insert a finding from the lead's website audit as an opening line. Hooks
+are assembled from audit data, not generated, so they cost nothing and cannot
+invent a fact.
+
+Both Draft and Critique are manual buttons and count against the AI budget
+below. Nothing on this screen calls Claude on load.
+
+---
+
+## 5. AI budget caps
+
+Every Claude call is metered and charged against a **per-workspace daily USD
+cap**. When today's spend reaches the cap, further AI calls are refused with a
+clear message and **every deterministic feature keeps working** — prospecting,
+website audits, scoring, the pipeline, documents, email, invoicing. You lose
+research cards, outreach drafts, meeting briefs and the weekly analysis until
+midnight.
+
+### Setting the cap
+
+**Settings → AI budget**. Default is **$2.00/day** per workspace.
+
+Sensible starting points:
+
+| Usage | Cap |
+|---|---|
+| Trying it out | $1/day |
+| One BDR, normal day | $2–3/day |
+| Heavy prospecting week | $5/day |
+
+Set it low first. It is easier to raise a cap that bit than to explain a bill.
+
+### Watching spend
+
+**Analytics → AI usage** shows spend per day, broken down by use case and model.
+Every single call is logged to `ClaudeUsage` with its token counts and computed
+cost.
+
+### What controls cost
+
+The system is built to be frugal, and these properties are enforced in code:
+
+- **No AI on page load or save.** Every call is a manual trigger.
+- **Haiku by default.** Sonnet only for research cards, outreach drafts, meeting
+  briefs and the weekly analysis.
+- **Results are cached.** Re-opening a lead does not re-run its research.
+
+If spend surprises you, look at **Analytics → AI usage** grouped by use case
+before raising the cap — it is usually one workflow, not general drift.
+
+### When the cap is hit
+
+You get: `Claude daily budget reached for workspace … AI calls resume tomorrow.`
+
+You can raise the cap and retry immediately. The counter resets at midnight UTC.
+
+---
+
+## 6. Backup verification
+
+Backups run nightly at 03:30 via cron (`DEPLOY.md` step 8). The script already
+verifies each dump is readable before it counts it. That is not the same as
+knowing you can restore — **verify quarterly**.
+
+### Monthly: is it running?
+
+```bash
+ls -lht /var/backups/ventureos/ | head -20
+tail -30 /var/log/ventureos-backup.log
+```
+
+You should see roughly 14 pairs of files, the newest from last night, and a log
+ending in `done — N database backup(s) retained`.
+
+Red flags:
+
+- Newest file older than 48 hours → cron is not firing. Check `crontab -l`.
+- Database dump under ~50 KB → the dump is probably empty. Investigate now.
+- `FAILED:` anywhere in the log → read the line above it.
+
+### Quarterly: restore drill
+
+The only real test is restoring somewhere that is not production. On a scratch
+machine with Docker:
+
+```bash
+# 1. Copy the newest dump off the server
+scp root@SZERVER_IP:/var/backups/ventureos/db-*.dump ./
+
+# 2. Throwaway Postgres
+docker run -d --name restore-test \
+  -e POSTGRES_PASSWORD=test -e POSTGRES_DB=ventureos \
+  -e POSTGRES_USER=venture -p 55432:5432 postgres:16-alpine
+
+# 3. Restore into it
+cat db-20260812-033001.dump | docker exec -i restore-test \
+  pg_restore -U venture -d ventureos --no-owner
+
+# 4. Does it hold real data?
+docker exec restore-test psql -U venture -d ventureos -c \
+  "SELECT (SELECT count(*) FROM workspaces) AS workspaces,
+          (SELECT count(*) FROM leads)      AS leads,
+          (SELECT count(*) FROM documents)  AS documents;"
+
+# 5. Clean up
+docker rm -f restore-test
+```
+
+Counts should match production within a day's activity. Write down the date you
+last did this.
+
+### What is and is not backed up
+
+| Backed up | Not backed up |
+|---|---|
+| Database (all tenants) | TLS certificates (Caddy re-issues them automatically) |
+| `/data/files`: PDFs, screenshots, exports | The `.env` file |
+| | Redis queue state (in-flight jobs; they re-queue) |
+
+> ⚠️ **Keep a copy of `.env` somewhere safe and separate.** It is deliberately
+> excluded from backups, and without it a restored database is not a running
+> system. A password manager entry is fine.
+
+> ⚠️ **Backups live on the same server as the data.** Pull them down weekly, or
+> enable Vultr snapshots. A single-machine loss otherwise takes both.
+
+---
+
+## 7. GDPR erasure procedure
+
+A data subject has the right to have their personal data deleted. This system
+completes the live deletion **well within 72 hours** and hard-deletes — it does
+not flag rows as hidden.
+
+### Executing an erasure request
+
+Owner only. **Settings → Data & privacy → Erase lead data**.
+
+1. Select the lead.
+2. Type the confirmation phrase exactly as shown.
+3. Confirm.
+
+This queues an erasure job that hard-deletes the lead and cascades through every
+derived record: activities, messages, calls, meetings, audit results and their
+share links, campaign recipients, quote acceptances, email logs, and generated
+documents (subject to the document-retention setting below). Completion is
+written to the audit log.
+
+Verify it landed:
+
+```bash
+docker compose -f docker-compose.prod.yml logs worker | grep -i erasure
+```
+
+### Before you erase: legal retention
+
+Hungarian accounting law requires issued invoices to be retained for eight
+years. **An invoice is not erasable personal data you may delete on request.**
+
+**Settings → Data & privacy → `eraseDocumentsOnErasure`** controls whether
+generated documents are destroyed along with the lead. Decide this deliberately,
+with your accountant:
+
+- **Off (recommended)** — invoices and signed contracts survive erasure, meeting
+  the statutory retention obligation. Everything else goes.
+- **On** — documents are destroyed too. Only appropriate for leads that never
+  reached an invoice.
+
+If a data subject with issued invoices requests erasure, erase everything else
+and tell them the invoices are retained under a legal obligation (GDPR Art.
+17(3)(b)). That is a valid and expected answer.
+
+### Backups and erasure
+
+Erasure cannot rewrite already-written backup archives without corrupting them.
+Instead, erasure is satisfied by **expiry**: every backup is permanently deleted
+within the 14-day rotation, so personal data in a pre-erasure snapshot is gone
+at most 14 days later.
+
+This is why `RETENTION_DAYS` must stay at 14. Raising it lengthens the window in
+which erased data still exists, and breaks the stated policy. Full reasoning:
+[`backup-erasure-policy.md`](backup-erasure-policy.md).
+
+### Automatic anonymization
+
+Separately from requests, a monthly job pseudonymizes person-level fields on
+leads with **no activity for 12 months**, while keeping aggregate statistics
+intact. Your win-rate history survives; the individual's name and contact
+details do not.
+
+Adjust the window in **Settings → Data & privacy → `anonymizeAfterDays`**
+(default 365). The job is idempotent — re-running it changes nothing.
+
+### Data export (subject access requests)
+
+Requires the `exports.run` grant. **Settings → Data & privacy → Run export**
+produces a CSV bundle written to `/data/files/exports/`, downloadable through
+the authenticated file route. Every export is audit-logged.
+
+### Where the data lives
+
+All data is on your EU server (Vultr Frankfurt/Amsterdam) and in Mailgun's EU
+region (`MAILGUN_EU=true`, enforced at boot). Claude API calls send prompt
+content to Anthropic for processing; they are not used for training. Note this
+in your privacy policy.
+
+---
+
+## Quick reference
+
+| Task | Where |
+|---|---|
+| Change your password / 2FA | Settings → security |
+| Sign out other devices | Settings → security |
+| Grant a capability | Settings → users & grants |
+| Add a person | Settings → workspace → add member |
+| New workspace | Settings → workspaces → create workspace |
+| Edit a template | Templates → pick type + language → save → activate |
+| Change AI cap | Settings → AI budget |
+| See AI spend | Analytics → AI usage |
+| Draft outreach | Outreach → pick a lead → ✦ Draft with Claude |
+| Erase a lead | Settings → Data & privacy → Erase lead data |
+| Run an export | Settings → Data & privacy → Run export |
+| Check backups | `ls -lht /var/backups/ventureos/` |
+| Restore a backup | [`DEPLOY.md`](DEPLOY.md) → Troubleshooting §4 |
+
+### Audited actions
+
+These are permanently recorded with actor and timestamp:
+
+- grant changes
+- data exports
+- lead erasures
+- DRAFT watermark removal (document finalization)
+- invoice submissions to Számlázz.hu
+- password changes, 2FA enable/disable, and bulk session revocations
+
+The audit log cannot be edited from the UI.

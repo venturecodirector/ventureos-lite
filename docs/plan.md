@@ -123,8 +123,8 @@ Sequencing advice: **Phases 1–2 already produce a money-making tool** (prospec
 | Audit false positives (flagging fine sites) | Thresholds tuned in Phase 0 on real sites; verdict is advisory, human decides |
 | Mailgun deliverability | EU region, verified subdomain, SPF/DKIM/DMARC at setup, transactional-only keeps reputation clean |
 | Scope creep from the extended set | Feature flags + phase exit criteria; extended modules only after Lite is in daily use |
-| **Cold email legal exposure (2008. évi XLVIII. tv.)** | Module disabled by default; hard gate on recorded counsel sign-off; unsubscribe + instant suppression; separate domain protects transactional mail if reputation is hit |
-| **Cold-domain deliverability collapse** | Dedicated domain, warm-up ramp, daily caps, plain-text-first, bounce-rate circuit breaker pauses campaigns automatically |
+| **Cold email legal exposure (2008. évi XLVIII. tv.)** | Module disabled by default; hard gate on recorded counsel sign-off; unsubscribe + instant suppression |
+| **Cold-domain deliverability collapse** | Dedicated domain (cold.ventureco.agency) isolates transactional mail entirely; warm-up ramp, daily caps, audit-score recipient gate, plain-text-first, circuit breaker (bounce >3% or complaint pauses the campaign), weekly reputation check in the Friday report |
 | **Wrong data submitted to Számlázz.hu** | Registry-enriched partner data, mandatory human confirm with diff view, invoice prepared-not-issued state, full payload logged |
 | **Registry API cost/contract lock-in** | Provider chosen at build on quote; adapter interface so Opten ↔ Céginformáció are swappable |
 

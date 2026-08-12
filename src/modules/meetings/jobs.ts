@@ -1,6 +1,7 @@
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getWorkspaceClient, prismaUnsafe } from "../../lib/db";
+import { appLink } from "../../lib/public-links";
 import { renderHtmlToPdf } from "../../lib/pdf";
 import { callClaude } from "../../lib/ai/call-claude";
 import {
@@ -133,10 +134,9 @@ export async function processMeetingBrief(data: BriefJobData): Promise<void> {
           where: { userId: meeting.hostUserId },
         });
         if (cred) {
-          const appUrl = process.env.APP_URL ?? "";
           const note =
             `Venture meeting brief\n\n${briefToText(brief)}\n\n` +
-            (appUrl ? `Full brief: ${appUrl}/meetings/${data.meetingId}` : "");
+            `Full brief: ${appLink(`/meetings/${data.meetingId}`)}`;
           const cal = getCalendarProvider();
           const { refreshed } = await cal.updateEventDescription(
             {

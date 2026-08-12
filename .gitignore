@@ -30,3 +30,8 @@ next-env.d.ts
 .DS_Store
 *.pem
 npm-debug.log*
+
+# Local secrets — never commit
+.env.production
+
+e2e/.auth/

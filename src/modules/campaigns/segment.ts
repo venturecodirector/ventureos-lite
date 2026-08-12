@@ -1,4 +1,5 @@
 import type { WorkspaceClient } from "../../lib/db";
+import { auditShareLink, bookingLink } from "../../lib/public-links";
 import { scoreBand } from "../analytics/taxonomy";
 
 /**
@@ -73,7 +74,6 @@ export async function previewSegment(
 export async function slotsForLead(
   db: WorkspaceClient,
   leadId: string,
-  appUrl: string,
 ): Promise<Record<string, string>> {
   const lead = await db.lead.findUnique({
     where: { id: leadId },
@@ -83,13 +83,19 @@ export async function slotsForLead(
   const audit = company?.audits[0] ?? null;
   const flags = Array.isArray(audit?.flags) ? (audit!.flags as string[]) : [];
   const shareSlug = audit?.shares[0]?.slug ?? null;
+  // The booking host is per workspace, never a hardcoded slug.
+  const bookingPage = await db.bookingPage.findFirst({
+    where: { active: true },
+    select: { slug: true },
+    orderBy: { createdAt: "asc" },
+  });
   return {
     company: company?.name ?? "",
     city: company?.city ?? "",
     audit_score: audit ? String(audit.score) : "",
     audit_finding: flags[0] ?? "",
-    audit_link: shareSlug ? `${appUrl}/share/${shareSlug}` : "",
-    booking_link: `${appUrl.replace(/^https?:\/\//, "https://meet.")}/tamas`,
+    audit_link: shareSlug ? auditShareLink(shareSlug) : "",
+    booking_link: bookingPage ? bookingLink(bookingPage.slug) : "",
     scoreBand: audit ? scoreBand(audit.score) : "",
   };
 }

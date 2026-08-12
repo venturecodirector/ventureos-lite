@@ -4,7 +4,18 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { switchWorkspace, type WorkspaceOption } from "@/modules/workspaces/actions";
 
-export function WorkspaceSwitcher({ workspaces }: { workspaces: WorkspaceOption[] }) {
+export function WorkspaceSwitcher({
+  workspaces,
+  testId = "active-workspace",
+}: {
+  workspaces: WorkspaceOption[];
+  /**
+   * The shell renders one switcher in the sidebar and one in the phone header.
+   * Both are always in the DOM (CSS decides which is visible), so they must not
+   * share a test id or selectors resolve to two elements.
+   */
+  testId?: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -35,7 +46,7 @@ export function WorkspaceSwitcher({ workspaces }: { workspaces: WorkspaceOption[
           {(active?.name ?? "V").charAt(0).toUpperCase()}
         </div>
         <div className="min-w-0 leading-tight">
-          <b className="block truncate text-left text-[12.5px]" data-testid="active-workspace">
+          <b className="block truncate text-left text-[12.5px]" data-testid={testId}>
             {active?.name ?? "No workspace"}
           </b>
           <span className="block text-[10px] uppercase tracking-[0.08em] text-muted">workspace</span>

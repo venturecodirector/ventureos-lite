@@ -1,31 +1,27 @@
 import { prismaUnsafe } from "./db";
-import { getActiveContext } from "./session";
+import { tryGetActiveContext } from "./session";
+import { GrantError, grantAllowed } from "./grants";
+
+// Re-exported so existing callers keep importing them from here.
+export { GrantError, grantAllowed };
 
 /**
  * Grant checks (CLAUDE.md hard rule #7): documents.* / templates.* capabilities
  * are per user per workspace, default Owner-only. Checked server-side on every
  * mutation. Owner/Admin roles carry all grants implicitly.
+ *
+ * Deliberately uses the NON-redirecting context. Authorization answers a
+ * question ("may this user do X?") and its callers wrap it in try/catch to turn
+ * a denial into a friendly message. If this path redirected, `redirect()`'s
+ * NEXT_REDIRECT signal would be swallowed by those catch blocks. No session
+ * simply means no membership, which means no grant — a safe denial. Pages use
+ * `getActiveContext()`, which redirects to /login.
  */
-export class GrantError extends Error {
-  readonly grant: string;
-  constructor(grant: string) {
-    super(`Missing capability: ${grant}`);
-    this.name = "GrantError";
-    this.grant = grant;
-    Object.setPrototypeOf(this, GrantError.prototype);
-  }
-}
-
-/** Pure grant resolution — Owner/Admin carry everything; others need the grant. */
-export function grantAllowed(role: string, grants: string[], grant: string): boolean {
-  if (role === "OWNER" || role === "ADMIN") return true;
-  return grants.includes(grant);
-}
-
 async function membershipOf() {
-  const { workspaceId, userId } = await getActiveContext();
+  const ctx = await tryGetActiveContext();
+  if (!ctx) return null;
   return prismaUnsafe.membership.findUnique({
-    where: { userId_workspaceId: { userId, workspaceId } },
+    where: { userId_workspaceId: { userId: ctx.userId, workspaceId: ctx.workspaceId } },
     select: { role: true, grants: true },
   });
 }

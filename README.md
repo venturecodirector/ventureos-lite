@@ -39,6 +39,18 @@ Common scripts:
 | `npm run test:e2e` | Playwright critical-flow tests |
 | `npm run worker` | BullMQ background worker |
 
+### Signing in
+
+Seeded accounts ship with no usable password — the app cannot be logged into
+until you set one:
+
+```bash
+npm run db:seed
+npm run set-password -- director@ventureco.group
+```
+
+Two-factor (TOTP) is opt-in per user under **Settings → security**.
+
 ## Full stack in Docker
 
 `docker-compose.yml` defines `app`, `db` / `db-mysql`, `redis`, `worker`

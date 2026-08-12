@@ -1,0 +1,100 @@
+# =============================================================================
+# Venture OS Lite — production reverse proxy.
+#
+# Domain layout (CLAUDE.md):
+#   ventureco.agency          the app, at the ROOT
+#   www.ventureco.agency      permanent redirect to the root
+#   audit.ventureco.agency    public website-audit reports
+#   quote.ventureco.agency    public quote acceptance
+#   meet.ventureco.agency     public booking page
+#
+# Every hostname comes from the environment (.env → docker-compose.prod.yml),
+# so nothing here is hardcoded. Caddy obtains and renews Let's Encrypt
+# certificates for all five names automatically over HTTP-01/TLS-ALPN, which is
+# why ports 80 and 443 must both be open.
+#
+# The three public sites map a bare slug onto the app route that renders it and
+# stamp X-Public-Surface, which src/middleware.ts honours (middleware runs in
+# the edge runtime where env is inlined at build time, so the header — not env —
+# is how it learns the real hostnames).
+# =============================================================================
+
+{
+	email {$ACME_EMAIL}
+	# Trust only the immediate proxy hop (none here — Caddy is the edge), so
+	# X-Forwarded-For cannot be spoofed by a client. Quote acceptance records
+	# the client IP as contractual evidence, so this matters.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# ---- shared behaviour --------------------------------------------------------
+(common) {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+(app_upstream) {
+	reverse_proxy app:3000 {
+		health_uri /api/health
+		health_interval 30s
+		health_timeout 5s
+	}
+}
+
+# ---- the app, at the root ----------------------------------------------------
+{$APP_HOST} {
+	import common
+
+	# A client must never be able to pretend it arrived on a public surface.
+	request_header -X-Public-Surface
+
+	import app_upstream
+}
+
+# ---- www → root --------------------------------------------------------------
+{$WWW_HOST} {
+	import common
+	redir https://{$APP_HOST}{uri} permanent
+}
+
+# ---- public surfaces ---------------------------------------------------------
+# audit.<domain>/<slug> → /share/<slug>
+{$PUBLIC_AUDIT_HOST} {
+	import common
+	request_header X-Public-Surface "audit"
+	@slug path_regexp slug ^/([^/.]+)$
+	rewrite @slug /share/{http.regexp.slug.1}
+	import app_upstream
+}
+
+# quote.<domain>/<slug> → /accept/<slug>
+{$PUBLIC_QUOTE_HOST} {
+	import common
+	request_header X-Public-Surface "quote"
+	@slug path_regexp slug ^/([^/.]+)$
+	rewrite @slug /accept/{http.regexp.slug.1}
+	import app_upstream
+}
+
+# meet.<domain>/<slug> → /book/<slug>
+{$PUBLIC_MEET_HOST} {
+	import common
+	request_header X-Public-Surface "meet"
+	@slug path_regexp slug ^/([^/.]+)$
+	rewrite @slug /book/{http.regexp.slug.1}
+	import app_upstream
+}

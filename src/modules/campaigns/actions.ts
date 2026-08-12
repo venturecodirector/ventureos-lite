@@ -22,7 +22,6 @@ import {
 import { previewSegment, describeSegment, type SegmentQuery } from "./segment";
 import { suppressAddress, runCampaignSend, ColdGateError } from "./send";
 
-const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
 
 async function loadWs(workspaceId: string) {
   return prismaUnsafe.workspace.findUnique({
@@ -234,7 +233,6 @@ export async function sendNow(id: string): Promise<{ ok: true; sent: number } | 
       workspaceId,
       featureFlags: ws?.featureFlags,
       mailgunConfig: ws?.mailgunConfig,
-      appUrl: APP_URL,
       nowMs: Date.now(),
     });
     revalidatePath("/campaigns");

@@ -1,7 +1,20 @@
 /**
  * Mail provider adapter (spec §4.11). Mailgun EU in production; a mock in dev.
- * Transactional only — no bulk/campaign sending in Lite (CLAUDE.md hard rule #2).
+ *
+ * Two strictly separated streams (CLAUDE.md → Domain layout):
+ *   - "transactional" → MAILGUN_DOMAIN (mg.ventureco.group), MAILGUN_API_KEY
+ *   - "cold"          → MAILGUN_COLD_DOMAIN (cold.ventureco.agency),
+ *                       MAILGUN_COLD_API_KEY
+ *
+ * The separation is enforced HERE, not in configuration: a cold send can never
+ * fall back to the transactional domain or borrow the transactional key, and a
+ * transactional send can never leak onto the cold domain. Both directions throw.
  */
+import { coldMailDomain, transactionalMailDomain } from "../../lib/env";
+
+/** Which reputation pool a message belongs to. Defaults to transactional. */
+export type MailStream = "transactional" | "cold";
+
 export interface MailAttachment {
   filename: string;
   content: Buffer;
@@ -10,6 +23,8 @@ export interface MailAttachment {
 
 export interface MailMessage {
   domain: string;
+  /** Omit for transactional mail; cold campaigns MUST pass "cold". */
+  stream?: MailStream;
   to: string;
   from: string;
   replyTo?: string;
@@ -24,12 +39,66 @@ export interface MailProvider {
   send(msg: MailMessage): Promise<{ id: string }>;
 }
 
+/** Raised when a message would go out on the wrong sending domain or key. */
+export class MailStreamError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MailStreamError";
+  }
+}
+
+/**
+ * Gate every outbound message on the stream/domain pair before it can reach a
+ * provider. Runs for the mock too, so tests and dev catch a mis-routed send.
+ * Returns the API-key env var name that stream is allowed to use.
+ */
+export function assertStreamDomain(msg: MailMessage): "MAILGUN_API_KEY" | "MAILGUN_COLD_API_KEY" {
+  const stream: MailStream = msg.stream ?? "transactional";
+  const domain = msg.domain.trim().toLowerCase();
+  const tx = transactionalMailDomain();
+  const cold = coldMailDomain();
+
+  if (!domain) {
+    throw new MailStreamError("Refusing to send: no sending domain resolved.");
+  }
+  if (tx && cold && tx === cold) {
+    throw new MailStreamError(
+      `Refusing to send: MAILGUN_DOMAIN and MAILGUN_COLD_DOMAIN are both "${tx}". ` +
+        "Cold outreach must have its own sending domain.",
+    );
+  }
+
+  if (stream === "cold") {
+    // The invariant: cold traffic never touches the transactional reputation.
+    // A workspace may run its own cold domain (Workspace.featureFlags →
+    // coldEmail.coldDomain), so the domain need not equal MAILGUN_COLD_DOMAIN —
+    // it must simply never be the transactional one, and it must be resolved,
+    // never guessed (resolveColdIdentity refuses to invent a fallback).
+    if (tx && domain === tx) {
+      throw new MailStreamError(
+        `Refusing to send cold mail on the transactional domain "${domain}". ` +
+          "Cold campaigns send only from a dedicated cold domain (cold.*).",
+      );
+    }
+    // Cold always bills to its own credentials — never the transactional key.
+    return "MAILGUN_COLD_API_KEY";
+  }
+
+  if (cold && domain === cold) {
+    throw new MailStreamError(
+      `Refusing to send transactional mail on the cold domain "${domain}".`,
+    );
+  }
+  return "MAILGUN_API_KEY";
+}
+
 class MailgunProvider implements MailProvider {
   readonly name = "mailgun";
 
   async send(msg: MailMessage): Promise<{ id: string }> {
-    const key = process.env.MAILGUN_API_KEY;
-    if (!key) throw new Error("MAILGUN_API_KEY is not set");
+    const keyVar = assertStreamDomain(msg);
+    const key = process.env[keyVar];
+    if (!key) throw new Error(`${keyVar} is not set`);
     const base =
       process.env.MAILGUN_EU === "true"
         ? "https://api.eu.mailgun.net"
@@ -64,6 +133,9 @@ class MailgunProvider implements MailProvider {
 class MockMailProvider implements MailProvider {
   readonly name = "mock";
   async send(msg: MailMessage): Promise<{ id: string }> {
+    // The mock enforces the same stream/domain rule so a mis-routed cold send
+    // fails in dev and in tests, not first in production.
+    assertStreamDomain(msg);
     // eslint-disable-next-line no-console
     console.log(`[mail:mock] to=${msg.to} subject="${msg.subject}" (${msg.attachments?.length ?? 0} attachment)`);
     return { id: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };

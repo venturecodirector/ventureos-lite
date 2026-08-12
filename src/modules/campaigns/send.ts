@@ -1,5 +1,6 @@
 import type { WorkspaceClient } from "../../lib/db";
-import { getMailProvider } from "../mail/provider";
+import { getMailProvider, MailStreamError } from "../mail/provider";
+import { coldUnsubscribeLink } from "../../lib/public-links";
 import { resolveColdIdentity } from "./identity";
 import { slotsForLead } from "./segment";
 import {
@@ -78,7 +79,6 @@ export interface SendContext {
   workspaceId: string;
   featureFlags: unknown;
   mailgunConfig: unknown;
-  appUrl: string;
   nowMs: number;
 }
 
@@ -133,13 +133,14 @@ export async function runCampaignSend(
     const stepIndex = r.stepSent; // next step (0-based)
     const step = campaign.steps[stepIndex];
     const coldStep: ColdStep = { stepNumber: step.stepNumber, subject: step.subject, body: step.body };
-    const slots = r.leadId ? await slotsForLead(db, r.leadId, ctx.appUrl) : {};
-    const unsubUrl = `${ctx.appUrl}/api/cold/unsubscribe/${r.id}`;
+    const slots = r.leadId ? await slotsForLead(db, r.leadId) : {};
+    const unsubUrl = coldUnsubscribeLink(r.id);
     const [rendered] = buildRecipientSends(coldStep, [{ address: r.email, slots, unsubUrl }]);
 
     try {
       const { id } = await mail.send({
         domain: identity.domain,
+        stream: "cold", // pins the cold key + cold domain; provider rejects any drift
         to: r.email,
         from: identity.from,
         subject: rendered.subject,
@@ -154,7 +155,10 @@ export async function runCampaignSend(
         data: { workspaceId: ctx.workspaceId, leadId: r.leadId ?? undefined, to: r.email, subject: rendered.subject, mailgunId: id, status: "QUEUED" },
       });
       sent += 1;
-    } catch {
+    } catch (e) {
+      // A stream/domain violation is a misconfiguration, not a flaky network:
+      // swallowing it would retry a forbidden send forever. Abort the run.
+      if (e instanceof MailStreamError) throw e;
       /* transient send failure — retried next run */
     }
   }

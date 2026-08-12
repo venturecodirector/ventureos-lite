@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/app-shell";
 import { SettingsGrants } from "@/components/settings-grants";
+import { SecurityPanel } from "@/components/security-panel";
 import { ProposalQueue } from "@/components/proposal-queue";
 import { GdprPanel } from "@/components/gdpr-panel";
 import { WorkspaceAdmin } from "@/components/workspace-admin";
@@ -8,14 +9,21 @@ import { SzamlazzKey } from "@/components/szamlazz-key";
 import { getColdStatus } from "@/modules/campaigns/actions";
 import { hasSzamlazzKey } from "@/modules/invoicing/actions";
 import { listMembers } from "@/modules/settings/actions";
+import { getSecurityStatus } from "@/modules/auth/actions";
 import { listProposals } from "@/modules/signal/actions";
 import { getRetention, listErasableLeads } from "@/modules/gdpr/actions";
 import { isOwner, hasGrant } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPage() {
-  const [members, owner, proposals, retention, leads, canExport, coldStatus] = await Promise.all([
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ security?: string }>;
+}) {
+  const { security } = await searchParams;
+  const [members, owner, proposals, retention, leads, canExport, coldStatus, securityStatus] =
+    await Promise.all([
     listMembers(),
     isOwner(),
     listProposals(),
@@ -23,11 +31,13 @@ export default async function SettingsPage() {
     listErasableLeads(),
     hasGrant("exports.run"),
     getColdStatus(),
+    getSecurityStatus(),
   ]);
   const szamlazzKeySet = await hasSzamlazzKey();
   return (
     <AppShell activePath="/settings">
       <div className="grid gap-4">
+        <SecurityPanel status={securityStatus} focusPassword={security === "password"} />
         <WorkspaceAdmin isOwner={owner} />
         <ColdSignoff status={coldStatus} isOwner={owner} />
         <SzamlazzKey hasKey={szamlazzKeySet} isOwner={owner} />

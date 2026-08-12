@@ -65,7 +65,8 @@ export const SAMPLE_DATA: Record<string, unknown> = {
     date: "2026. 10. 15.",
     deliverables: "10 oldalas weboldal, SEO beállítás, betanítás.",
   },
-  document: { link: "https://quote.ventureco.group/q-2026-014" },
+  // Overwritten per-render with the real quote origin (see sampleData()).
+  document: { link: "" },
   items_table:
     "<table style='width:100%;border-collapse:collapse'>" +
     "<tr><td>Weboldal fejlesztés</td><td style='text-align:right'>1 820 000 Ft</td></tr>" +
@@ -73,3 +74,12 @@ export const SAMPLE_DATA: Record<string, unknown> = {
     "<tr><td>Hosting &amp; fotó</td><td style='text-align:right'>207 000 Ft</td></tr>" +
     "</table>",
 };
+
+/**
+ * Preview sample data. The document link is passed in by the server so the
+ * preview shows the real public quote origin (PUBLIC_QUOTE_URL) — this module
+ * is imported by a client component and must never resolve a host itself.
+ */
+export function sampleData(documentLink: string): Record<string, unknown> {
+  return { ...SAMPLE_DATA, document: { link: documentLink } };
+}

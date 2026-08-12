@@ -1,13 +1,15 @@
 "use server";
 
 import { z } from "zod";
-import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import type { Role } from "@prisma/client";
 import { prismaUnsafe, getWorkspaceClient } from "@/lib/db";
-import { getActiveContext, WORKSPACE_COOKIE } from "@/lib/session";
+import { getActiveContext } from "@/lib/session";
+import { setSessionWorkspace } from "@/lib/auth/sessions";
 import { requireOwner } from "@/lib/authz";
 import { GRANTS, OWNER_GRANTS, type Grant } from "@/lib/grants";
+import { NO_PASSWORD } from "@/lib/auth/password";
+import { getBudgetStatus, type BudgetStatus } from "@/lib/ai/budget-status";
 
 // ---- reads (shell + settings) ---------------------------------------------
 
@@ -23,6 +25,8 @@ export interface ShellContext {
   activeWorkspaceId: string;
   workspaces: WorkspaceOption[];
   role: string;
+  /** Today's real Claude spend vs this workspace's cap — drives the shell meter. */
+  budget: BudgetStatus;
 }
 
 function initials(name: string): string {
@@ -52,6 +56,7 @@ export async function getShellContext(): Promise<ShellContext> {
     active: m.workspace.id === workspaceId,
   }));
   const role = memberships.find((m) => m.workspaceId === workspaceId)?.role ?? "BDR";
+  const budget = await getBudgetStatus(workspaceId);
   return {
     user: {
       id: userId,
@@ -62,6 +67,7 @@ export async function getShellContext(): Promise<ShellContext> {
     activeWorkspaceId: workspaceId,
     workspaces,
     role,
+    budget,
   };
 }
 
@@ -69,19 +75,24 @@ export async function listMyWorkspaces(): Promise<WorkspaceOption[]> {
   return (await getShellContext()).workspaces;
 }
 
-// ---- switch (membership-validated cookie) ---------------------------------
+// ---- switch (membership-validated, stored server-side) --------------------
 
+/**
+ * The active workspace lives on the session ROW, not in a cookie: a
+ * client-writable value would be a tenancy control the client owns. Membership
+ * is re-checked here and again in getActiveContext, so a stale or tampered
+ * session can never read another tenant.
+ */
 export async function switchWorkspace(
   workspaceId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { userId } = await getActiveContext();
+  const { userId, sessionId } = await getActiveContext();
   const member = await prismaUnsafe.membership.findUnique({
     where: { userId_workspaceId: { userId, workspaceId } },
     select: { id: true },
   });
   if (!member) return { ok: false, error: "You are not a member of that workspace." };
-  const c = await cookies();
-  c.set(WORKSPACE_COOKIE, workspaceId, { httpOnly: true, sameSite: "lax", path: "/" });
+  await setSessionWorkspace(sessionId, workspaceId);
   revalidatePath("/", "layout");
   return { ok: true };
 }
@@ -158,7 +169,15 @@ export async function addMember(
   const user = await prismaUnsafe.user.upsert({
     where: { email },
     update: {},
-    create: { email, name: name || email.split("@")[0], passwordHash: "SET_IN_AUTH_PHASE" },
+    // No usable password: NO_PASSWORD cannot satisfy bcrypt, so the account
+    // exists but cannot be signed into until an Owner sets one. That is the
+    // intended flow — invites do not ship credentials.
+    create: {
+      email,
+      name: name || email.split("@")[0],
+      passwordHash: NO_PASSWORD,
+      mustChangePassword: true,
+    },
   });
 
   await prismaUnsafe.membership.upsert({

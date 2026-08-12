@@ -1,4 +1,5 @@
 import { Worker } from "bullmq";
+import { checkEnvAtBoot } from "../lib/env";
 import {
   getRedisConnection,
   wakeupsQueue,
@@ -29,6 +30,13 @@ import { processSignalEngine, processDailyInsight } from "../modules/signal/jobs
  * Processes follow-up automations and the daily Not-now wake-up sweep.
  */
 async function main(): Promise<void> {
+  // Same boot gate as the app (src/instrumentation.ts): a misconfigured worker
+  // would happily render PDFs with localhost links and send cold mail on the
+  // wrong domain, so it must refuse to start instead.
+  if (process.env.SKIP_ENV_VALIDATION !== "1") {
+    checkEnvAtBoot("worker");
+  }
+
   const connection = getRedisConnection();
 
   // eslint-disable-next-line no-console

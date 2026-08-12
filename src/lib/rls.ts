@@ -95,7 +95,27 @@ function statements(): string[] {
     out.push(...businessTablePolicy(table));
   }
 
-  // 4. Tenancy-mapping tables: a user sees only their own memberships and the
+  // 4. Auth tables. `sessions` and `login_attempts` are global (no
+  //    workspace_id) and hold session tokens, emails and IPs. The app role must
+  //    reach them to sign users in, but a session row is only ever readable by
+  //    its owner — so a compromised tenant query cannot harvest other users'
+  //    sessions. `login_attempts` stays app-writable but unreadable per-user:
+  //    the throttle counts rows via the same role, keyed by email/ip, and no
+  //    UI ever selects from it.
+  out.push(
+    `ALTER TABLE sessions ENABLE ROW LEVEL SECURITY`,
+    `ALTER TABLE sessions FORCE ROW LEVEL SECURITY`,
+    `DROP POLICY IF EXISTS session_self ON sessions`,
+    // The login path runs before a user context exists, so an unset GUC must
+    // still be able to insert/lookup; once set, a session row is owner-only.
+    `CREATE POLICY session_self ON sessions USING (
+       ${CURRENT_USER} IS NULL OR ${CURRENT_USER} = '' OR user_id = ${CURRENT_USER}
+     ) WITH CHECK (
+       ${CURRENT_USER} IS NULL OR ${CURRENT_USER} = '' OR user_id = ${CURRENT_USER}
+     )`,
+  );
+
+  // 5. Tenancy-mapping tables: a user sees only their own memberships and the
   //    workspaces they belong to.
   out.push(
     `ALTER TABLE memberships ENABLE ROW LEVEL SECURITY`,

@@ -1,0 +1,234 @@
+name: ventureos
+
+# =============================================================================
+# Venture OS Lite — production stack for a single 4 GB / 2 vCPU Vultr instance.
+#
+#   caddy    edge: TLS for ventureco.agency + www + audit/quote/meet
+#   app      Next.js standalone (no published port — reachable only via caddy)
+#   worker   BullMQ jobs + Playwright (audits, PDFs, digests, sweeps)
+#   migrate  one-shot: prisma migrate deploy + RLS, must finish before app/worker
+#   db       Postgres 16, named volume, no published port
+#   redis    queue backend, no published port
+#
+# Memory limits below total ~2.9 GB, leaving room for the kernel and page cache.
+# Only caddy is exposed to the internet; db and redis are on the internal
+# network only.
+#
+# Start:  docker compose -f docker-compose.prod.yml up -d --build
+# =============================================================================
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+# `.env` is the single source of truth; the overrides below swap host-facing
+# values for in-network ones.
+#
+# TENANCY (CLAUDE.md hard rule #1): app and worker connect as `app_user`, a
+# NOSUPERUSER NOBYPASSRLS role created by scripts/apply-rls.ts. A superuser
+# silently bypasses every row-level-security policy, so connecting the app as
+# ${POSTGRES_USER} would quietly reduce tenancy to guard-only. Only the one-shot
+# `migrate` service — which needs DDL — uses the superuser.
+x-app-env: &app-env
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:?set APP_DB_PASSWORD}@db:5432/${POSTGRES_DB:?set POSTGRES_DB}?schema=public
+    REDIS_URL: redis://redis:6379
+    FILES_DIR: /data/files
+
+x-migrate-env: &migrate-env
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:?set POSTGRES_DB}?schema=public
+    REDIS_URL: redis://redis:6379
+    FILES_DIR: /data/files
+
+services:
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    <<: *logging
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL — Let's Encrypt expiry notices}
+      APP_HOST: ${APP_HOST:?set APP_HOST, e.g. ventureco.agency}
+      WWW_HOST: ${WWW_HOST:?set WWW_HOST, e.g. www.ventureco.agency}
+      PUBLIC_AUDIT_HOST: ${PUBLIC_AUDIT_HOST:?set PUBLIC_AUDIT_HOST}
+      PUBLIC_QUOTE_HOST: ${PUBLIC_QUOTE_HOST:?set PUBLIC_QUOTE_HOST}
+      PUBLIC_MEET_HOST: ${PUBLIC_MEET_HOST:?set PUBLIC_MEET_HOST}
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates — back this up, or renew from scratch
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ventureos-app:latest
+    restart: unless-stopped
+    <<: [*app-env, *logging]
+    expose:
+      - "3000"
+    volumes:
+      - files:/data/files
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 640M
+
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: ventureos-worker:latest
+    restart: unless-stopped
+    <<: [*app-env, *logging]
+    volumes:
+      - files:/data/files
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'src/worker/index.ts' > /dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    # Chromium is the memory-hungry part of the stack (audit screenshots and
+    # every PDF render). shm must be raised or headless Chrome crashes on
+    # larger pages.
+    shm_size: 512mb
+    deploy:
+      resources:
+        limits:
+          memory: 1280M
+
+  # ---------------------------------------------------------------------------
+  # One-shot. Runs to completion on every `up`; app and worker wait for it.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: ventureos-worker:latest
+    restart: "no"
+    <<: [*migrate-env, *logging]
+    command: >
+      sh -c "npx prisma migrate deploy &&
+             npx tsx scripts/apply-rls.ts"
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      # Deterministic collation so index ordering survives a restore.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    # Tuned for a 4 GB box shared with the app, worker and Chromium.
+    command:
+      - postgres
+      - -c
+      - max_connections=60
+      - -c
+      - shared_buffers=160MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 640M
+
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    <<: *logging
+    # Queue state is durable enough with AOF; the cap keeps a runaway queue from
+    # taking the box down with it.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 128mb
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+volumes:
+  db-data:
+  redis-data:
+  files:
+  caddy-data:
+  caddy-config:

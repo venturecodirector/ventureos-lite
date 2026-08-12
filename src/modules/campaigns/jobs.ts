@@ -2,7 +2,6 @@ import { prismaUnsafe, getWorkspaceClient } from "../../lib/db";
 import { coldEmailAllowed } from "./logic";
 import { runCampaignSend, ColdGateError } from "./send";
 
-const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
 
 /**
  * Daily cold-email send sweep (spec §4.16). Per workspace with a recorded
@@ -26,7 +25,6 @@ export async function processColdSends(nowMs: number = Date.now()): Promise<numb
           workspaceId: ws.id,
           featureFlags: ws.featureFlags,
           mailgunConfig: ws.mailgunConfig,
-          appUrl: APP_URL,
           nowMs,
         });
         total += res.sent;

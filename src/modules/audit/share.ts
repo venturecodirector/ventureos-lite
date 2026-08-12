@@ -18,6 +18,9 @@ export function isShareExpired(expiresAt: Date, now: Date): boolean {
   return now.getTime() >= expiresAt.getTime();
 }
 
-export function shareUrl(base: string, slug: string): string {
-  return `${base.replace(/\/+$/, "")}/share/${slug}`;
-}
+/**
+ * Public URL of a share. Delegates to the central link builder so the host
+ * comes from PUBLIC_AUDIT_URL (audit.ventureco.agency) and never from a
+ * caller-supplied or hardcoded base.
+ */
+export { auditShareLink as shareUrl } from "../../lib/public-links";

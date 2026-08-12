@@ -122,7 +122,7 @@ Funnel, trends vs. 30/60/90 targets, per-source performance (Prospector vs Linke
 ### 4.16 Cold Email — NEW (compliance-gated)
 Second outreach channel beside LinkedIn, especially for Prospector-sourced leads.
 - Campaigns: audience from a saved segment (e.g. "no-website plumbers, Budapest, audited ≥70"), sequence of 2–3 steps with stop-on-reply, per-lead personalization slots (audit findings, company facts) rendered from data — **Claude drafts the frame once per campaign, not per recipient** (credit rule).
-- Sending: Mailgun, but on a **separate sending domain from transactional mail** (deliverability isolation), warmed-up volume ramp, daily send caps, mandatory unsubscribe link + suppression sync, plain-text-first templates.
+- Sending: Mailgun on the **dedicated cold domain `cold.ventureco.agency`** — fully separated from transactional mail (`mg.ventureco.group`), so a cold-campaign incident cannot affect quote/contract deliverability. Guardrails: warm-up ramp, daily send caps (start 10/day, ramping with domain age), recipient quality gate (audit score ≥ threshold or a verified trigger signal), mandatory unsubscribe + instant suppression, plain-text-first templates, circuit breaker (bounce rate >3% or spam complaint auto-pauses the campaign and notifies the Owner).
 - Replies: forwarded into the Inbox module via Mailgun routes → same qualification flow as LinkedIn replies.
 - **Compliance gate — hard requirement:** Hungarian law (2008. évi XLVIII. tv.) treats unsolicited electronic advertising strictly, including B2B. The module ships **disabled per workspace** and can only be enabled after counsel sign-off is recorded in Settings (who/when/scope). Practical guardrails built in: company role addresses vs. named personal addresses are distinguished; legitimate-interest documentation fields per campaign; instant-suppress on any objection. *This spec is not legal advice; the gate exists precisely because the legal answer must come first.*
 
@@ -236,7 +236,7 @@ ClaudeUsage(id, workspace_id, use_case, model, tokens_in, tokens_out, cost, at)
 | Google Places API | Core (Prospector) | Text Search + Details; budgeted, cached |
 | Google PageSpeed Insights | Core (Auditor) | Free API |
 | Headless renderer | Auditor screenshots | Playwright server-side |
-| Mailgun | Transactional + cold email | EU region, **separate domains per purpose**, routes for inbound replies, webhooks |
+| Mailgun | Transactional + cold email | EU region, **two domains: mg.ventureco.group (transactional) and cold.ventureco.agency (cold)** — reputation fully isolated; routes for inbound replies, webhooks |
 | Opten / Céginformáció API | Registry enrichment & dedupe | Adószám as dedupe key; subscription cost to be priced at build |
 | Számlázz.hu Számla Agent | Invoice handoff | Per-workspace key, human confirm before submit |
 | LinkedIn | Assistive only | Extension reads user-viewed pages; deep links; no scraping/sending |

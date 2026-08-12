@@ -1,4 +1,4 @@
-import { getActiveContext } from "@/lib/session";
+import { tryGetActiveContextOrThrow } from "@/lib/session";
 
 /**
  * Start the Google Calendar OAuth flow (spec §4.8). Redirects the host to
@@ -14,7 +14,7 @@ const SCOPES = [
 
 export async function GET() {
   try {
-    await getActiveContext();
+    await tryGetActiveContextOrThrow();
   } catch {
     return new Response("Unauthorized", { status: 401 });
   }

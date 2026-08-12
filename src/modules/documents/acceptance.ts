@@ -7,6 +7,7 @@ import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { requireGrant } from "@/lib/authz";
 import { generateSlug } from "@/modules/audit/share";
+import { quoteAcceptLink } from "@/lib/public-links";
 import { getMailProvider } from "@/modules/mail/provider";
 import { resolveSendingIdentity } from "@/modules/mail/identity";
 import { computeLineTotal, formatHuf, type QuoteItem } from "./quote-math";
@@ -39,16 +40,15 @@ export async function publishQuoteAcceptance(
   });
   if (!doc || doc.type !== "QUOTE") throw new Error("Quote not found");
 
-  const base = process.env.APP_URL ?? "http://localhost:3000";
   if (doc.acceptSlug) {
-    return { slug: doc.acceptSlug, url: `${base}/accept/${doc.acceptSlug}` };
+    return { slug: doc.acceptSlug, url: quoteAcceptLink(doc.acceptSlug) };
   }
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const slug = generateSlug();
     try {
       await db.document.update({ where: { id: documentId }, data: { acceptSlug: slug } });
       revalidatePath("/documents");
-      return { slug, url: `${base}/accept/${slug}` };
+      return { slug, url: quoteAcceptLink(slug) };
     } catch (e) {
       if (attempt === 3) throw e;
     }

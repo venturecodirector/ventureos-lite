@@ -50,3 +50,8 @@ DB_FLAVOR=postgres|mysql, DATABASE_URL, REDIS_URL, NEXTAUTH_SECRET, NEXTAUTH_URL
 
 ## Definition of done for any task
 Type-checks clean, lint clean, relevant tests pass, works at 390px width, no cross-workspace data access possible (guard + isolation test), no unbudgeted Claude call introduced, runs inside `docker compose up`.
+
+## Domain layout (owner decision)
+- App at the ROOT of ventureco.agency; public pages on subdomains: audit.ventureco.agency, quote.ventureco.agency, meet.ventureco.agency — all A-records to the same server, routed by Caddy.
+- Transactional Mailgun domain: mg.ventureco.group (already verified). Cold-email Mailgun domain: cold.ventureco.agency — fully separate reputation; never send cold mail from the transactional domain.
+- Cold guardrails remain strict: daily cap starting 10/day, recipient quality gate (audit score or verified signal), plain-text-first, instant suppression, circuit breaker on bounce >3% or any complaint.

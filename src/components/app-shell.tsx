@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { getShellContext } from "@/modules/workspaces/actions";
+import type { BudgetStatus } from "@/lib/ai/budget-status";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { MobileNav, type MobileNavItem } from "./mobile-nav";
 import {
   DashboardIcon,
   ProspectorIcon,
@@ -18,6 +20,8 @@ import {
   ContentIcon,
   AnalyticsIcon,
   SettingsIcon,
+  OutreachIcon,
+  MoreIcon,
 } from "./nav-icons";
 
 type NavItem = {
@@ -35,6 +39,7 @@ const NAV: NavItem[] = [
   { label: "Lead Engine", icon: <SearchIcon />, href: "/leads" },
   { label: "Site Audit", icon: <AuditIcon />, href: "/audit" },
   { label: "Pipeline", icon: <PipelineIcon />, href: "/pipeline" },
+  { label: "Outreach", icon: <OutreachIcon />, href: "/outreach" },
   { label: "Inbox", icon: <InboxIcon />, href: "/inbox" },
   { label: "Calls", icon: <CallsIcon />, href: "/calls" },
   { label: "Meetings", icon: <MeetingsIcon />, href: "/meetings" },
@@ -46,10 +51,19 @@ const NAV: NavItem[] = [
   { label: "Analytics", icon: <AnalyticsIcon />, href: "/analytics" },
 ];
 
+const SETTINGS_ITEM: NavItem = { label: "Settings", icon: <SettingsIcon />, href: "/settings" };
+
+/**
+ * The four screens the daily loop runs through (spec §11.10) get a permanent
+ * tab; everything else lives behind "More".
+ */
+const PRIMARY_MOBILE = ["Dashboard", "Pipeline", "Inbox", "Calls"];
+
 function NavRow({ item, activePath }: { item: NavItem; activePath?: string }) {
   const active = item.href ? item.href === activePath : false;
   const className = [
-    "flex items-center gap-2.5 rounded-[10px] border px-2.5 py-2 font-medium transition-colors",
+    // min-h-[44px] keeps the sidebar usable on a touch laptop/tablet too.
+    "flex min-h-[44px] items-center gap-2.5 rounded-[10px] border px-2.5 py-2 font-medium transition-colors",
     active
       ? "border-line bg-panel-2 text-ink [&_svg]:text-accent-2"
       : "cursor-pointer border-transparent text-muted hover:bg-panel hover:text-ink",
@@ -75,6 +89,66 @@ function NavRow({ item, activePath }: { item: NavItem; activePath?: string }) {
   );
 }
 
+/**
+ * Claude budget meter. Real spend for today against this workspace's cap
+ * (CLAUDE.md hard rule #3) — the same figures the enforcement path uses, so the
+ * bar and the block can never disagree. Turns amber past 80% and red once AI
+ * calls are actually refused.
+ */
+function BudgetMeter({
+  budget,
+  compact = false,
+}: {
+  budget: BudgetStatus;
+  compact?: boolean;
+}) {
+  // Same reasoning as the workspace switcher: both variants are in the DOM.
+  const testId = compact ? "budget-meter-mobile" : "budget-meter";
+  const tone = budget.exhausted ? "bg-neg" : budget.pct >= 80 ? "bg-warn" : "bg-grad";
+  const label = `Claude budget: ${budget.spentLabel} of ${budget.capLabel} used today`;
+
+  if (compact) {
+    return (
+      <div
+        className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted"
+        title={label}
+        data-testid={testId}
+      >
+        <span aria-hidden>✦</span>
+        <span className={budget.exhausted ? "text-neg" : "text-ink"}>{budget.spentLabel}</span>
+        <span aria-hidden>/</span>
+        <span>{budget.capLabel}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-auto border-t border-line px-2.5 pb-3 pt-2.5" data-testid={testId}>
+      <div className="mb-2 flex justify-between text-[10.5px] text-muted">
+        <span>✦ Claude budget</span>
+        <b className={`font-semibold tabular-nums ${budget.exhausted ? "text-neg" : "text-ink"}`}>
+          {budget.spentLabel} / {budget.capLabel}
+        </b>
+      </div>
+      <div
+        className="h-[3px] overflow-hidden rounded-[3px] bg-line"
+        role="progressbar"
+        aria-valuenow={budget.pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={label}
+      >
+        <i className={`block h-full rounded-[3px] ${tone}`} style={{ width: `${budget.pct}%` }} />
+      </div>
+      {budget.exhausted && (
+        <p className="mt-1.5 text-[10.5px] leading-snug text-neg">
+          Cap reached — AI calls resume at midnight UTC. Everything else keeps working.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export async function AppShell({
   children,
   activePath,
@@ -84,10 +158,25 @@ export async function AppShell({
 }) {
   const shell = await getShellContext();
   const active = shell.workspaces.find((w) => w.active);
+  const firstName = shell.user.name.split(" ")[0].toLowerCase();
+
+  const allItems = [...NAV, SETTINGS_ITEM];
+  const icons: Record<string, ReactNode> = Object.fromEntries([
+    ...allItems.map((i) => [i.label, i.icon] as const),
+    ["More", <MoreIcon key="more" />] as const,
+  ]);
+  const primary: MobileNavItem[] = PRIMARY_MOBILE.map((label) => {
+    const item = allItems.find((i) => i.label === label);
+    return { label, href: item?.href, locked: item?.locked };
+  });
+  const secondary: MobileNavItem[] = allItems
+    .filter((i) => !PRIMARY_MOBILE.includes(i.label))
+    .map((i) => ({ label: i.label, href: i.href, locked: i.locked }));
+
   return (
-    <div className="relative z-10 grid h-screen grid-cols-[228px_1fr]">
-      {/* ---------- sidebar ---------- */}
-      <aside className="flex flex-col gap-1.5 border-r border-line bg-canvas/60 px-3.5 py-5">
+    <div className="relative z-10 flex min-h-screen flex-col nav:grid nav:h-screen nav:grid-cols-[228px_1fr]">
+      {/* ---------- sidebar (nav: and up) ---------- */}
+      <aside className="hidden flex-col gap-1.5 overflow-y-auto border-r border-line bg-canvas/60 px-3.5 py-5 nav:flex">
         <WorkspaceSwitcher workspaces={shell.workspaces} />
 
         <div className="px-2.5 pb-5 pt-0 font-display text-[22px] tracking-display">
@@ -105,29 +194,19 @@ export async function AppShell({
           <div className="px-2.5 pb-1.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
             System
           </div>
-          <NavRow
-            item={{ label: "Settings", icon: <SettingsIcon />, href: "/settings" }}
-            activePath={activePath}
-          />
+          <NavRow item={SETTINGS_ITEM} activePath={activePath} />
         </nav>
 
-        {/* Claude budget meter */}
-        <div className="mt-auto border-t border-line px-2.5 pb-3 pt-2.5">
-          <div className="mb-2 flex justify-between text-[10.5px] text-muted">
-            <span>✦ Claude budget</span>
-            <b className="font-semibold text-ink tabular-nums">$0.84 / $2.00</b>
-          </div>
-          <div className="h-[3px] overflow-hidden rounded-[3px] bg-line">
-            <i className="block h-full rounded-[3px] bg-grad" style={{ width: "42%" }} />
-          </div>
-        </div>
+        <BudgetMeter budget={shell.budget} />
 
         <div className="flex items-center gap-2.5 border-t border-line p-2.5">
           <div className="grid h-[30px] w-[30px] place-items-center rounded-full bg-grad text-[12px] font-bold">
             {shell.user.initials || "U"}
           </div>
           <div className="min-w-0 leading-tight">
-            <b className="block truncate text-[13px]" data-testid="active-user">{shell.user.name}</b>
+            <b className="block truncate text-[13px]" data-testid="active-user">
+              {shell.user.name}
+            </b>
             <span className="block truncate text-[11px] text-muted">
               {shell.role} · {active?.name ?? ""}
             </span>
@@ -137,27 +216,47 @@ export async function AppShell({
 
       {/* ---------- main ---------- */}
       <div className="flex min-w-0 flex-col">
-        <header className="flex items-center gap-4 border-b border-line px-7 py-4">
+        {/* Phone header: workspace + budget only. The greeting and the desktop
+            actions are dropped here — at 390px the screen belongs to content. */}
+        <header className="flex items-center gap-2 border-b border-line px-4 py-3 nav:hidden">
+          <div className="min-w-0 flex-1">
+            <WorkspaceSwitcher
+              workspaces={shell.workspaces}
+              testId="active-workspace-mobile"
+            />
+          </div>
+          <BudgetMeter budget={shell.budget} compact />
+        </header>
+
+        <header className="hidden items-center gap-4 border-b border-line px-7 py-4 nav:flex">
           <h1 className="font-display text-[26px] font-extrabold lowercase tracking-display">
-            good morning, {shell.user.name.split(" ")[0].toLowerCase()}
+            good morning, {firstName}
           </h1>
           <div className="ml-auto flex w-[260px] items-center gap-2 rounded-[10px] border border-line bg-panel px-3 py-2 text-[13px] text-muted">
             <SearchIcon className="h-3.5 w-3.5" />
             <span>Search leads, companies…</span>
-            <span className="ml-auto rounded-[5px] border border-line px-1.5 text-[11px]">
-              /
-            </span>
+            <span className="ml-auto rounded-[5px] border border-line px-1.5 text-[11px]">/</span>
           </div>
-          <button className="rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] font-semibold text-ink hover:bg-panel-2">
+          <button className="min-h-[44px] rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] font-semibold text-ink hover:bg-panel-2">
             Import CSV
           </button>
-          <button className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background:linear-gradient(var(--tw-gradient-stops))] [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box]">
+          <button className="min-h-[44px] rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background:linear-gradient(var(--tw-gradient-stops))] [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box]">
             + New lead
           </button>
         </header>
 
-        <main className="flex-1 overflow-auto p-7">{children}</main>
+        {/* pb-24 clears the fixed tab bar; it collapses away at nav:. */}
+        <main className="flex-1 overflow-x-hidden p-4 pb-24 nav:overflow-auto nav:p-7 nav:pb-7">
+          {children}
+        </main>
       </div>
+
+      <MobileNav
+        primary={primary}
+        secondary={secondary}
+        activePath={activePath}
+        icons={icons}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { getActiveContext } from "@/lib/session";
+import { tryGetActiveContextOrThrow } from "@/lib/session";
 import { resolveFileWorkspace } from "@/lib/file-owner";
 
 /**
@@ -25,7 +25,7 @@ export async function GET(
 ) {
   let workspaceId: string;
   try {
-    ({ workspaceId } = await getActiveContext());
+    ({ workspaceId } = await tryGetActiveContextOrThrow());
   } catch {
     return new Response("Unauthorized", { status: 401 });
   }

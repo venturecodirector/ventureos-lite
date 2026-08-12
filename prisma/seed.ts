@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { OWNER_GRANTS } from "../src/lib/grants";
+import { NO_PASSWORD } from "../src/lib/auth/password";
 import { BASE_TEMPLATES } from "../src/modules/templates/seed-data";
 import { extractVariables } from "../src/modules/templates/render";
 import {
@@ -30,8 +31,10 @@ const DEFAULT_TARGETS = [
   { metric: "meetings_booked", period: "monthly", value: 10 },
 ];
 
-// Passwords + 2FA are set in the auth phase; placeholder hash until then.
-const PLACEHOLDER_HASH = "SET_IN_AUTH_PHASE";
+// Seeded accounts get no usable password. `NO_PASSWORD` can never satisfy
+// bcrypt, so a fresh install cannot be logged into until an Owner sets a real
+// password with `npm run set-password` (see docs/DEPLOY.md).
+const PLACEHOLDER_HASH = NO_PASSWORD;
 
 async function main() {
   let workspace = await prisma.workspace.findFirst({
@@ -56,11 +59,13 @@ async function main() {
     },
   });
 
+  // The first Owner's address is deployment-specific (see docs/DEPLOY.md).
+  const ownerEmail = process.env.SEED_OWNER_EMAIL ?? "director@ventureco.group";
   const tamas = await prisma.user.upsert({
-    where: { email: "director@ventureco.group" },
+    where: { email: ownerEmail },
     update: {},
     create: {
-      email: "director@ventureco.group",
+      email: ownerEmail,
       name: "Tamas",
       passwordHash: PLACEHOLDER_HASH,
     },

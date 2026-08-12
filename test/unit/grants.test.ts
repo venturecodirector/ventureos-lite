@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { grantAllowed } from "../../src/lib/authz";
+import { grantAllowed } from "../../src/lib/grants";
 
 describe("grantAllowed (server-side grant denial)", () => {
   it("Owner and Admin carry every grant implicitly", () => {

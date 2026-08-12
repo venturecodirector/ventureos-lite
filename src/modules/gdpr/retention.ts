@@ -6,7 +6,7 @@
 export interface RetentionPolicy {
   anonymizeAfterDays: number; // inactivity window before pseudonymization
   eraseDocumentsOnErasure: boolean; // purge legal docs on lead erasure vs. retain
-  backupRotationDays: number; // documented in DEPLOY.md; backups expire within this
+  backupRotationDays: number; // documented in docs/backup-erasure-policy.md; backups expire within this
 }
 
 export const DEFAULT_RETENTION: RetentionPolicy = {

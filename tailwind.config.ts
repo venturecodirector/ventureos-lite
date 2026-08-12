@@ -9,6 +9,12 @@ const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      screens: {
+        // CLAUDE.md → Responsive: "<700px → bottom tab bar". `nav` is the one
+        // breakpoint that flips the shell from bottom tabs to the sidebar, so
+        // it is named for the decision rather than for a device size.
+        nav: "700px",
+      },
       colors: {
         canvas: "#00051D",
         panel: "rgba(239,241,248,0.04)",

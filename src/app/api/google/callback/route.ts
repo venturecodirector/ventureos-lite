@@ -1,5 +1,6 @@
 import { prismaUnsafe } from "@/lib/db";
-import { getActiveContext } from "@/lib/session";
+import { appLink } from "@/lib/public-links";
+import { tryGetActiveContextOrThrow } from "@/lib/session";
 
 /**
  * Google Calendar OAuth callback (spec §4.8). Exchanges the auth code for
@@ -11,7 +12,7 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 export async function GET(req: Request) {
   let userId: string;
   try {
-    ({ userId } = await getActiveContext());
+    ({ userId } = await tryGetActiveContextOrThrow());
   } catch {
     return new Response("Unauthorized", { status: 401 });
   }
@@ -19,7 +20,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const err = url.searchParams.get("error");
-  if (err) return Response.redirect(`${appUrl()}/meetings?google=denied`, 302);
+  if (err) return Response.redirect(appLink("/meetings?google=denied"), 302);
   if (!code) return new Response("Missing code", { status: 400 });
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -42,7 +43,7 @@ export async function GET(req: Request) {
     body,
   });
   if (!res.ok) {
-    return Response.redirect(`${appUrl()}/meetings?google=error`, 302);
+    return Response.redirect(appLink("/meetings?google=error"), 302);
   }
   const tok = (await res.json()) as {
     access_token: string;
@@ -70,9 +71,7 @@ export async function GET(req: Request) {
     },
   });
 
-  return Response.redirect(`${appUrl()}/meetings?google=connected`, 302);
+  return Response.redirect(appLink("/meetings?google=connected"), 302);
 }
 
-function appUrl(): string {
-  return process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "";
-}
+

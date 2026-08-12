@@ -9,7 +9,7 @@ import {
   type TemplateEditorData,
 } from "@/modules/templates/actions";
 import { renderTemplate, extractVariables } from "@/modules/templates/render";
-import { VARIABLE_CATALOG, SAMPLE_DATA, isKnownVariable } from "@/modules/templates/catalog";
+import { VARIABLE_CATALOG, sampleData, isKnownVariable } from "@/modules/templates/catalog";
 
 const TYPES: TemplateType[] = ["QUOTE", "CONTRACT", "CERTIFICATE", "EMAIL"];
 const LANGS: Lang[] = ["HU", "EN"];
@@ -26,9 +26,12 @@ function openVarPrefix(textBeforeCaret: string): string | null {
 export function TemplateEditor({
   initial,
   canEdit,
+  sampleDocumentLink,
 }: {
   initial: TemplateEditorData;
   canEdit: boolean;
+  /** Example public quote URL, resolved server-side from PUBLIC_QUOTE_URL. */
+  sampleDocumentLink: string;
 }) {
   const [data, setData] = useState(initial);
   const [type, setType] = useState<TemplateType>(initial.type);
@@ -40,7 +43,8 @@ export function TemplateEditor({
   const [caret, setCaret] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  const preview = useMemo(() => renderTemplate(body, SAMPLE_DATA), [body]);
+  const sample = useMemo(() => sampleData(sampleDocumentLink), [sampleDocumentLink]);
+  const preview = useMemo(() => renderTemplate(body, sample), [body, sample]);
   const unknownVars = useMemo(
     () => extractVariables(body).filter((v) => !isKnownVariable(v)),
     [body],

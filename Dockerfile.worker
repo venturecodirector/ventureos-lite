@@ -1,10 +1,40 @@
-# ---- worker: BullMQ jobs + Playwright (audits, PDF rendering) ----
-# Playwright's image ships a matching Node + headless Chromium already installed.
+# =============================================================================
+# Venture OS Lite — worker image (BullMQ jobs + Playwright).
+#
+# Playwright's image ships a matching Node and a headless Chromium that is
+# already installed and patched, which is what the website auditor and the PDF
+# pipeline (audits, quotes, contracts, certificates, briefs) both drive.
+#
+# This image also serves as the one-shot `migrate` service: it carries the full
+# dependency tree, so the Prisma CLI and tsx are available for
+# `prisma migrate deploy` and `scripts/apply-rls.ts`.
+# =============================================================================
 FROM mcr.microsoft.com/playwright:v1.48.0-jammy
+
 WORKDIR /app
 ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+# NOTE: no SKIP_ENV_VALIDATION here — the worker must run its own boot gate
+# (src/worker/index.ts) and die on a bad configuration.
+
+# procps provides pgrep for the healthcheck below.
+RUN apt-get update && apt-get install -y --no-install-recommends procps \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install with dev dependencies present: the Prisma CLI and tsx are devDeps and
+# are required both to migrate and to run the TypeScript worker entrypoint.
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci && npm cache clean --force
+
 COPY . .
 RUN npx prisma generate
+
+# Shared file volume, same path as the app.
+RUN mkdir -p /data/files
+
+# `pgrep node` is enough: the worker has no HTTP surface, so liveness means the
+# process is up and BullMQ has not crashed the event loop.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD pgrep -f "src/worker/index.ts" > /dev/null || exit 1
+
 CMD ["npm", "run", "worker"]

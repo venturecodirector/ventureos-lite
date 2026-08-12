@@ -170,17 +170,23 @@ enum InsightKind {
 // ============================================================================
 
 model User {
-  id           String       @id @default(cuid())
-  email        String       @unique
-  name         String
-  passwordHash String       @map("password_hash")
-  totpSecret   String?      @map("totp_secret")
-  totpEnabled  Boolean      @default(false) @map("totp_enabled")
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
-  memberships  Membership[]
-  sessions     Session[]
-  googleCredential GoogleCredential?
+  id                 String            @id @default(cuid())
+  email              String            @unique
+  name               String
+  passwordHash       String            @map("password_hash")
+  totpSecret         String?           @map("totp_secret") // base32, set at enrollment
+  totpEnabled        Boolean           @default(false) @map("totp_enabled")
+  /// Consumed TOTP step, so a code cannot be replayed inside its 30s window.
+  totpLastStep       Int?              @map("totp_last_step")
+  lockedUntil        DateTime?         @map("locked_until")
+  lastLoginAt        DateTime?         @map("last_login_at")
+  /// Forces a password change on next login (seeded/reset accounts).
+  mustChangePassword Boolean           @default(false) @map("must_change_password")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+  memberships        Membership[]
+  sessions           Session[]
+  googleCredential   GoogleCredential?
 
   @@map("users")
 }
@@ -201,16 +207,41 @@ model GoogleCredential {
   @@map("google_credentials")
 }
 
+/// Server-side session (CLAUDE.md → Auth). The browser cookie only carries an
+/// opaque token; the row here is authoritative, so a session can be revoked
+/// server-side and survives no client state. `token` stores a SHA-256 hash —
+/// a database leak must not hand out usable sessions.
 model Session {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
-  token     String   @unique
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  token       String    @unique // sha256(opaque token), never the token itself
+  workspaceId String?   @map("workspace_id") // active workspace for this session
+  ip          String?
+  userAgent   String?   @map("user_agent")
+  expiresAt   DateTime  @map("expires_at")
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([expiresAt])
   @@map("sessions")
+}
+
+/// Login attempt ledger, used for rate limiting and lockout (CLAUDE.md → Auth:
+/// "rate-limited login"). Keyed by email AND by IP so neither a single account
+/// nor a single source can be hammered. Pruned by the retention sweep.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String?
+  ok        Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_attempts")
 }
 
 model Membership {
@@ -252,25 +283,25 @@ model Workspace {
 // ============================================================================
 
 model Company {
-  id          String        @id @default(cuid())
-  workspaceId String        @map("workspace_id")
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
   name        String
   domain      String?
   website     String?
   industry    String?
-  sizeBand    String?       @map("size_band")
+  sizeBand    String?  @map("size_band")
   phone       String?
   address     String?
   city        String?
-  taxId       String?       @map("tax_id") // adószám — dedupe key within a workspace
-  notes       String?       @db.Text
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+  taxId       String?  @map("tax_id") // adószám — dedupe key within a workspace
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  leads        Lead[]
-  audits       AuditResult[]
-  registry     RegistryData?
-  referrers    Referrer[]
+  leads     Lead[]
+  audits    AuditResult[]
+  registry  RegistryData?
+  referrers Referrer[]
 
   @@unique([workspaceId, taxId])
   @@index([workspaceId])
@@ -278,33 +309,33 @@ model Company {
 }
 
 model Lead {
-  id             String        @id @default(cuid())
-  workspaceId    String        @map("workspace_id")
-  companyId      String?       @map("company_id")
-  referrerId     String?       @map("referrer_id")
-  contactName    String?       @map("contact_name")
+  id             String     @id @default(cuid())
+  workspaceId    String     @map("workspace_id")
+  companyId      String?    @map("company_id")
+  referrerId     String?    @map("referrer_id")
+  contactName    String?    @map("contact_name")
   title          String?
   email          String?
   phone          String?
-  linkedinUrl    String?       @map("linkedin_url")
-  source         LeadSource    @default(MANUAL)
-  stage          Stage         @default(RESEARCHED)
-  stageEnteredAt DateTime      @default(now()) @map("stage_entered_at")
-  stageReason    String?       @map("stage_reason")
-  icpScore       Int?          @map("icp_score")
-  scoreBreakdown Json?         @map("score_breakdown")
-  signals        Json          @default("[]") // string[] of trigger signals
-  qualification  Json?         // { authority, history, budget, timeline } booleans
-  escalatedAt    DateTime?     @map("escalated_at")
-  notes          String?       @db.Text
-  wakeUpAt       DateTime?     @map("wake_up_at")
-  lastActivityAt DateTime?     @map("last_activity_at")
-  anonymizedAt   DateTime?     @map("anonymized_at")
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
+  linkedinUrl    String?    @map("linkedin_url")
+  source         LeadSource @default(MANUAL)
+  stage          Stage      @default(RESEARCHED)
+  stageEnteredAt DateTime   @default(now()) @map("stage_entered_at")
+  stageReason    String?    @map("stage_reason")
+  icpScore       Int?       @map("icp_score")
+  scoreBreakdown Json?      @map("score_breakdown")
+  signals        Json       @default("[]") // string[] of trigger signals
+  qualification  Json? // { authority, history, budget, timeline } booleans
+  escalatedAt    DateTime?  @map("escalated_at")
+  notes          String?    @db.Text
+  wakeUpAt       DateTime?  @map("wake_up_at")
+  lastActivityAt DateTime?  @map("last_activity_at")
+  anonymizedAt   DateTime?  @map("anonymized_at")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
 
-  company    Company?    @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  referrer   Referrer?   @relation(fields: [referrerId], references: [id], onDelete: SetNull)
+  company    Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  referrer   Referrer?     @relation(fields: [referrerId], references: [id], onDelete: SetNull)
   activities Activity[]
   messages   Message[]
   calls      Call[]
@@ -335,19 +366,25 @@ model Activity {
 }
 
 model Message {
-  id           String           @id @default(cuid())
-  workspaceId  String           @map("workspace_id")
-  leadId       String           @map("lead_id")
-  direction    MessageDirection
-  channel      MessageChannel   @default(LINKEDIN)
-  kind         String? // connection | fu1 | fu2 | reply ...
-  body         String           @db.Text
-  aiDrafted    Boolean          @default(false) @map("ai_drafted")
-  humanEdited  Boolean          @default(false) @map("human_edited")
-  analysis     Json?            // Haiku reply analysis (intent, objection, suggestions)
-  status       MessageStatus    @default(DRAFT)
-  sentAt       DateTime?        @map("sent_at")
-  createdAt    DateTime         @default(now()) @map("created_at")
+  id          String           @id @default(cuid())
+  workspaceId String           @map("workspace_id")
+  leadId      String           @map("lead_id")
+  direction   MessageDirection
+  channel     MessageChannel   @default(LINKEDIN)
+  kind        String? // connection | fu1 | fu2 | reply ...
+  body        String           @db.Text
+  aiDrafted   Boolean          @default(false) @map("ai_drafted")
+  /// The EXACT text Claude produced. Kept alongside `body` so "was this really
+  /// edited by a human?" is answered by comparison, not by trusting a flag the
+  /// client could set (CLAUDE.md hard rule #6).
+  aiDraftBody String?          @map("ai_draft_body") @db.Text
+  humanEdited Boolean          @default(false) @map("human_edited")
+  /// Claude's critique of the current draft (spec §4.6), shown beside it.
+  critique    String?          @db.Text
+  analysis    Json? // Haiku reply analysis (intent, objection, suggestions)
+  status      MessageStatus    @default(DRAFT)
+  sentAt      DateTime?        @map("sent_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
 
   lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
@@ -375,20 +412,20 @@ model Frame {
 }
 
 model Meeting {
-  id            String    @id @default(cuid())
-  workspaceId   String    @map("workspace_id")
-  leadId        String?   @map("lead_id")
-  hostUserId    String?   @map("host_user_id")
-  scheduledAt   DateTime  @map("scheduled_at")
-  durationMin   Int       @default(30) @map("duration_min")
+  id            String   @id @default(cuid())
+  workspaceId   String   @map("workspace_id")
+  leadId        String?  @map("lead_id")
+  hostUserId    String?  @map("host_user_id")
+  scheduledAt   DateTime @map("scheduled_at")
+  durationMin   Int      @default(30) @map("duration_min")
   type          String?
-  googleEventId String?   @map("google_event_id")
-  eventUrl      String?   @map("event_url")
-  brief         String?   @db.Text
-  briefStatus   String    @default("none") @map("brief_status")
-  briefPdfPath  String?   @map("brief_pdf_path")
+  googleEventId String?  @map("google_event_id")
+  eventUrl      String?  @map("event_url")
+  brief         String?  @db.Text
+  briefStatus   String   @default("none") @map("brief_status")
+  briefPdfPath  String?  @map("brief_pdf_path")
   outcome       String?
-  createdAt     DateTime  @default(now()) @map("created_at")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   lead Lead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
 
@@ -499,20 +536,20 @@ model ProspectSearch {
 }
 
 model AuditResult {
-  id           String        @id @default(cuid())
-  workspaceId  String        @map("workspace_id")
-  companyId    String?       @map("company_id")
+  id           String       @id @default(cuid())
+  workspaceId  String       @map("workspace_id")
+  companyId    String?      @map("company_id")
   url          String
-  status       String        @default("queued") // queued | running | done | error
-  score        Int           @default(0)
-  verdict      AuditVerdict  @default(SKIP)
-  checks       Json?         @map("checks_json")
-  flags        Json          @default("[]")
-  pitchSummary String?       @map("pitch_summary") @db.Text
-  screenshots  Json          @default("[]")
-  pdfPath      String?       @map("pdf_path")
-  createdAt    DateTime      @default(now()) @map("created_at")
-  expiresAt    DateTime      @map("expires_at")
+  status       String       @default("queued") // queued | running | done | error
+  score        Int          @default(0)
+  verdict      AuditVerdict @default(SKIP)
+  checks       Json?        @map("checks_json")
+  flags        Json         @default("[]")
+  pitchSummary String?      @map("pitch_summary") @db.Text
+  screenshots  Json         @default("[]")
+  pdfPath      String?      @map("pdf_path")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  expiresAt    DateTime     @map("expires_at")
 
   company Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
   shares  AuditShare[]
@@ -523,15 +560,15 @@ model AuditResult {
 }
 
 model AuditShare {
-  id           String    @id @default(cuid())
-  workspaceId  String    @map("workspace_id")
-  auditId      String    @map("audit_id")
-  leadId       String?   @map("lead_id")
-  slug         String    @unique
+  id            String    @id @default(cuid())
+  workspaceId   String    @map("workspace_id")
+  auditId       String    @map("audit_id")
+  leadId        String?   @map("lead_id")
+  slug          String    @unique
   firstOpenedAt DateTime? @map("first_opened_at")
-  openCount    Int       @default(0) @map("open_count")
-  expiresAt    DateTime  @map("expires_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
+  openCount     Int       @default(0) @map("open_count")
+  expiresAt     DateTime  @map("expires_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
 
   audit AuditResult @relation(fields: [auditId], references: [id], onDelete: Cascade)
 
@@ -609,16 +646,16 @@ model EmailLog {
 }
 
 model Call {
-  id          String      @id @default(cuid())
-  workspaceId String      @map("workspace_id")
-  leadId      String      @map("lead_id")
-  outcome     CallOutcome
-  note        String?     @db.Text
-  duration     Int? // seconds
-  callbackAt   DateTime?   @map("callback_at")
-  callbackDoneAt DateTime? @map("callback_done_at")
-  byUserId     String?     @map("by_user_id")
-  at          DateTime    @default(now())
+  id             String      @id @default(cuid())
+  workspaceId    String      @map("workspace_id")
+  leadId         String      @map("lead_id")
+  outcome        CallOutcome
+  note           String?     @db.Text
+  duration       Int? // seconds
+  callbackAt     DateTime?   @map("callback_at")
+  callbackDoneAt DateTime?   @map("callback_done_at")
+  byUserId       String?     @map("by_user_id")
+  at             DateTime    @default(now())
 
   lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
@@ -628,18 +665,18 @@ model Call {
 }
 
 model Campaign {
-  id             String             @id @default(cuid())
-  workspaceId    String             @map("workspace_id")
-  frameId        String?            @map("frame_id")
+  id             String         @id @default(cuid())
+  workspaceId    String         @map("workspace_id")
+  frameId        String?        @map("frame_id")
   name           String
-  segmentQuery   Json?              @map("segment_query")
-  status         CampaignStatus     @default(DRAFT)
-  complianceNote String?            @map("compliance_note") @db.Text
-  dailyCap       Int                @default(20) @map("daily_cap")
-  startedAt      DateTime?          @map("started_at")
-  createdAt      DateTime           @default(now()) @map("created_at")
+  segmentQuery   Json?          @map("segment_query")
+  status         CampaignStatus @default(DRAFT)
+  complianceNote String?        @map("compliance_note") @db.Text
+  dailyCap       Int            @default(20) @map("daily_cap")
+  startedAt      DateTime?      @map("started_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
 
-  frame      Frame?               @relation(fields: [frameId], references: [id], onDelete: SetNull)
+  frame      Frame?              @relation(fields: [frameId], references: [id], onDelete: SetNull)
   steps      CampaignStep[]
   recipients CampaignRecipient[]
 
@@ -648,13 +685,13 @@ model Campaign {
 }
 
 model CampaignStep {
-  id          String   @id @default(cuid())
-  workspaceId String   @map("workspace_id")
-  campaignId  String   @map("campaign_id")
-  stepNumber  Int      @map("step_number")
-  delayDays   Int      @default(0) @map("delay_days")
+  id          String  @id @default(cuid())
+  workspaceId String  @map("workspace_id")
+  campaignId  String  @map("campaign_id")
+  stepNumber  Int     @map("step_number")
+  delayDays   Int     @default(0) @map("delay_days")
   subject     String?
-  body        String   @db.Text
+  body        String  @db.Text
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
@@ -698,16 +735,16 @@ model Referrer {
 }
 
 model RegistryData {
-  id           String   @id @default(cuid())
-  workspaceId  String   @map("workspace_id")
-  companyId    String   @unique @map("company_id")
-  taxId        String?  @map("tax_id")
-  regNumber    String?  @map("reg_number")
-  legalName    String?  @map("legal_name")
-  headcountBand String? @map("headcount_band")
-  revenueBand  String?  @map("revenue_band")
-  statusFlags  Json     @default("[]") @map("status_flags")
-  fetchedAt    DateTime @default(now()) @map("fetched_at")
+  id            String   @id @default(cuid())
+  workspaceId   String   @map("workspace_id")
+  companyId     String   @unique @map("company_id")
+  taxId         String?  @map("tax_id")
+  regNumber     String?  @map("reg_number")
+  legalName     String?  @map("legal_name")
+  headcountBand String?  @map("headcount_band")
+  revenueBand   String?  @map("revenue_band")
+  statusFlags   Json     @default("[]") @map("status_flags")
+  fetchedAt     DateTime @default(now()) @map("fetched_at")
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -737,16 +774,16 @@ model DealOutcome {
 // [{ id, label, durationMin }]; config holds working hours, slot step, buffers,
 // notice, horizon, timezone.
 model BookingPage {
-  id            String   @id @default(cuid())
-  workspaceId   String   @map("workspace_id")
-  hostUserId    String   @map("host_user_id")
-  slug          String   @unique
-  title         String?
-  meetingTypes  Json     @default("[]") @map("meeting_types_json")
-  config        Json?
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(cuid())
+  workspaceId  String   @map("workspace_id")
+  hostUserId   String   @map("host_user_id")
+  slug         String   @unique
+  title        String?
+  meetingTypes Json     @default("[]") @map("meeting_types_json")
+  config       Json?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@index([workspaceId])
   @@map("booking_pages")

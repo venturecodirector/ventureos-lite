@@ -93,8 +93,6 @@ export async function publishShare(
   });
   if (!audit) throw new Error("Audit not found");
 
-  const base = process.env.APP_URL ?? "http://localhost:3000";
-
   // Idempotent: reuse a non-expired share for this audit.
   const existing = await db.auditShare.findFirst({
     where: { auditId, expiresAt: { gt: new Date() } },
@@ -103,7 +101,7 @@ export async function publishShare(
   if (existing) {
     return {
       slug: existing.slug,
-      url: shareUrl(base, existing.slug),
+      url: shareUrl(existing.slug),
       expiresAt: existing.expiresAt.toISOString(),
     };
   }
@@ -132,7 +130,7 @@ export async function publishShare(
         },
       });
       revalidatePath("/audit");
-      return { slug, url: shareUrl(base, slug), expiresAt: expiresAt.toISOString() };
+      return { slug, url: shareUrl(slug), expiresAt: expiresAt.toISOString() };
     } catch (e) {
       if (attempt === 3) throw e; // exhausted slug retries
     }
