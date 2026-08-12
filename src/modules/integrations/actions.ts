@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
+import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { requireOwner } from "@/lib/authz";
 import { encryptSecret, maskSecret, CredentialCryptoError } from "@/lib/crypto";
@@ -168,7 +168,9 @@ async function audit(
   action: string,
   key: string,
 ): Promise<void> {
-  await prismaUnsafe.auditLog.create({
+  // audit_logs is a tenant table — write it through the guarded client so the
+  // workspace scope is enforced rather than merely supplied (hard rule #1).
+  await getWorkspaceClient(workspaceId).auditLog.create({
     data: {
       workspaceId,
       actorUserId,

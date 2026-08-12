@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { prismaUnsafe } from "@/lib/db";
+import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { hashPassword, validatePassword } from "@/lib/auth/password";
 import { revokeAllUserSessions } from "@/lib/auth/sessions";
 
@@ -88,7 +88,7 @@ export async function consumeResetToken(
     select: { workspaceId: true },
   });
   if (membership) {
-    await prismaUnsafe.auditLog.create({
+    await getWorkspaceClient(membership.workspaceId).auditLog.create({
       data: {
         workspaceId: membership.workspaceId,
         actorUserId: row.userId,

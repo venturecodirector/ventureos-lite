@@ -4,7 +4,7 @@ import { z } from "zod";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { prismaUnsafe } from "@/lib/db";
+import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { signIn, signOut } from "@/lib/auth";
 import { attemptLogin } from "@/lib/auth/login";
 import {
@@ -129,7 +129,7 @@ export async function changePassword(
   });
   const revoked = await revokeAllUserSessions(userId, { exceptSessionId: sessionId });
 
-  await prismaUnsafe.auditLog.create({
+  await getWorkspaceClient(workspaceId).auditLog.create({
     data: { workspaceId, actorUserId: userId, action: "auth.password_changed" },
   });
   revalidatePath("/settings");
@@ -170,7 +170,7 @@ export async function changeOwnEmail(
   if (clash) return { ok: false, error: "Another account already uses that email address." };
 
   await prismaUnsafe.user.update({ where: { id: userId }, data: { email: parsed.data.email } });
-  await prismaUnsafe.auditLog.create({
+  await getWorkspaceClient(workspaceId).auditLog.create({
     data: {
       workspaceId,
       actorUserId: userId,
@@ -248,7 +248,7 @@ export async function confirmTotpEnrollment(
     // Enrolling satisfies a reset an Owner forced (mustEnrollTotp).
     data: { totpEnabled: true, totpLastStep: result.step, mustEnrollTotp: false },
   });
-  await prismaUnsafe.auditLog.create({
+  await getWorkspaceClient(workspaceId).auditLog.create({
     data: { workspaceId, actorUserId: userId, action: "auth.totp_enabled" },
   });
   revalidatePath("/settings");
@@ -289,7 +289,7 @@ export async function disableTotp(
     where: { id: userId },
     data: { totpEnabled: false, totpSecret: null, totpLastStep: null },
   });
-  await prismaUnsafe.auditLog.create({
+  await getWorkspaceClient(workspaceId).auditLog.create({
     data: { workspaceId, actorUserId: userId, action: "auth.totp_disabled" },
   });
   revalidatePath("/settings");
@@ -362,7 +362,7 @@ export async function getSecurityStatus(): Promise<SecurityStatus> {
 export async function revokeOtherSessions(): Promise<{ ok: true; revoked: number }> {
   const { userId, sessionId, workspaceId } = await getActiveContext();
   const revoked = await revokeAllUserSessions(userId, { exceptSessionId: sessionId });
-  await prismaUnsafe.auditLog.create({
+  await getWorkspaceClient(workspaceId).auditLog.create({
     data: {
       workspaceId,
       actorUserId: userId,

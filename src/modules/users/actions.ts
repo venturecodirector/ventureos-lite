@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import type { Prisma } from "@prisma/client";
-import { prismaUnsafe } from "@/lib/db";
+import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { requireOwner } from "@/lib/authz";
 import { hashPassword, validatePassword, NO_PASSWORD } from "@/lib/auth/password";
@@ -106,7 +106,8 @@ async function audit(input: {
   /** Prisma's Json input type — plain serialisable values only. */
   meta?: Prisma.InputJsonValue;
 }): Promise<void> {
-  await prismaUnsafe.auditLog.create({
+  // audit_logs is a tenant table — guarded client, not the raw one.
+  await getWorkspaceClient(input.workspaceId).auditLog.create({
     data: {
       workspaceId: input.workspaceId,
       actorUserId: input.actorUserId,
