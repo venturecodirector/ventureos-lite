@@ -4,6 +4,7 @@ import { getShellContext } from "@/modules/workspaces/actions";
 import type { BudgetStatus } from "@/lib/ai/budget-status";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { MobileNav, type MobileNavItem } from "./mobile-nav";
+import { GlobalSearch } from "./global-search";
 import {
   DashboardIcon,
   ProspectorIcon,
@@ -232,11 +233,7 @@ export async function AppShell({
           <h1 className="font-display text-[26px] font-extrabold lowercase tracking-display">
             good morning, {firstName}
           </h1>
-          <div className="ml-auto flex w-[260px] items-center gap-2 rounded-[10px] border border-line bg-panel px-3 py-2 text-[13px] text-muted">
-            <SearchIcon className="h-3.5 w-3.5" />
-            <span>Search leads, companies…</span>
-            <span className="ml-auto rounded-[5px] border border-line px-1.5 text-[11px]">/</span>
-          </div>
+          <GlobalSearch className="ml-auto w-[260px] flex-none" />
           <button className="min-h-[44px] rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] font-semibold text-ink hover:bg-panel-2">
             Import CSV
           </button>

@@ -1,0 +1,16 @@
+- generic [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]: ventureos
+        - paragraph [ref=e6]: Sign in to continue
+      - generic [ref=e7]:
+        - generic [ref=e8]:
+          - generic [ref=e9]: Email
+          - textbox "Email" [active] [ref=e10]: director@ventureco.group
+        - generic [ref=e11]:
+          - generic [ref=e12]: Password
+          - textbox "Password" [ref=e13]: e2e-test-password-1
+        - button "Sign in" [ref=e14] [cursor=pointer]
+      - paragraph [ref=e15]: Accounts are created by an Owner in Settings. If you cannot get in, ask them to reset your password.
+  - alert [ref=e16]

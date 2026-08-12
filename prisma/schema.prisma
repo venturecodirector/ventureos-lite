@@ -603,6 +603,10 @@ model Document {
   templateVersionId String?        @map("template_version_id")
   chainParentId     String?        @map("chain_parent_id")
   type              DocumentType
+  /// Human-facing number (Q-2026-014). Denormalised out of `payload` so global
+  /// search can match it — JSON fields are not portably searchable across
+  /// Postgres and MySQL.
+  number            String?
   status            DocumentStatus @default(DRAFT)
   watermark         Boolean        @default(true)
   payload           Json?          @map("payload_json")
@@ -624,6 +628,7 @@ model Document {
 
   @@index([workspaceId])
   @@index([leadId])
+  @@index([workspaceId, number])
   @@map("documents")
 }
 

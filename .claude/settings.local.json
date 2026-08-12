@@ -117,7 +117,10 @@
       "Bash(FILES_DIR=/private/tmp/claude-501/-Users-vezertamasdaniel-Developer-venture-ventureos-lite/776cfc8d-e96e-429d-a7fa-db9adedc65a2/scratchpad/files SKIP_ENV_VALIDATION=1 npx playwright test e2e/auth.spec.ts)",
       "Bash(echo \"  rc=$?\")",
       "Bash(git check-ignore *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(grep -E \"^\\\\.env$|\\\\.env\\\\.caddy|caddy-auth\\\\.conf$|e2e/\\\\.auth\")",
+      "Bash(git push *)",
+      "Bash(gh pr create --base main --head feat/production-readiness --title 'Production readiness: auth, domain layout, deploy, Outreach Studio' --body ' *)"
     ]
   },
   "enableAllProjectMcpServers": true,
