@@ -100,3 +100,12 @@ test("the budget meter shows real spend, not a placeholder", async ({ page }) =>
   await expect(meter).not.toContainText("$0.84");
   await expect(meter).toContainText(/\$\d+\.\d{2}/);
 });
+
+test("the desktop sidebar rail stays absent on a phone", async ({ page }) => {
+  // The rail's scroll container must not appear below the 700px breakpoint —
+  // the bottom tab bar is the navigation there.
+  await page.goto("/");
+  await expect(page.locator("aside").first()).toBeHidden();
+  await expect(page.getByTestId("sidebar-nav")).toBeHidden();
+  await expect(page.getByTestId("mobile-tabbar")).toBeVisible();
+});

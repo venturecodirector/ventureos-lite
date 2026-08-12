@@ -35,3 +35,6 @@ npm-debug.log*
 .env.production
 
 e2e/.auth/
+
+# Debug screenshots from browser verification
+/*.png

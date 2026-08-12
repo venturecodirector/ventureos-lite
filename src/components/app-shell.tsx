@@ -10,6 +10,7 @@ import { AppActionsProvider } from "./app-actions";
 import { AppDialogs } from "./app-dialogs";
 import { TopBarActions } from "./top-bar-actions";
 import { AccountMenu } from "./account-menu";
+import { SidebarNav } from "./sidebar-nav";
 import {
   DashboardIcon,
   ProspectorIcon,
@@ -185,14 +186,19 @@ export async function AppShell({
 
   return (
     <AppActionsProvider>
-    <div className="relative z-10 flex min-h-screen flex-col nav:grid nav:h-screen nav:grid-cols-[228px_1fr]">
+      {/* 100dvh, not 100vh: on a mobile browser vh ignores the collapsing
+          toolbar, leaving the shell taller than the visible area. On desktop
+          the two are identical. A fixed height (not min-height) from `nav:` up
+          clamps the sidebar to the viewport so it scrolls internally instead
+          of extending the page. */}
+    <div className="relative z-10 flex min-h-[100dvh] flex-col nav:grid nav:h-[100dvh] nav:grid-cols-[228px_1fr] nav:overflow-hidden">
       {/* ---------- sidebar (nav: and up) ---------- */}
       {/* min-h-0 is what makes this scroll. A grid item defaults to
           min-height:auto, so the sidebar grew to fit its content — 1041px in an
           800px viewport — and the budget meter and profile block below it were
           simply off-screen and unreachable. Clamping it lets the nav region
           scroll while the header and footer stay pinned. */}
-      <aside className="hidden min-h-0 flex-col border-r border-line bg-canvas/60 px-3.5 py-5 nav:flex">
+      <aside className="hidden h-full min-h-0 flex-col overflow-hidden border-r border-line bg-canvas/60 px-3.5 py-5 nav:flex">
         <div className="flex-none">
           <WorkspaceSwitcher workspaces={shell.workspaces} />
         </div>
@@ -205,7 +211,7 @@ export async function AppShell({
           </em>
         </div>
 
-        <nav className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-1.5 pr-0.5">
+        <SidebarNav>
           {NAV.map((item) => (
             <NavRow key={item.label} item={item} activePath={activePath} />
           ))}
@@ -213,7 +219,7 @@ export async function AppShell({
             System
           </div>
           <NavRow item={SETTINGS_ITEM} activePath={activePath} />
-        </nav>
+        </SidebarNav>
 
         <div className="flex-none">
           <BudgetMeter budget={shell.budget} />

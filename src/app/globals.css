@@ -48,3 +48,70 @@ body::before {
     transition: none !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Brand scrollbar — used by the sidebar nav, the only scroll area inside the
+   chrome. Accent thumb on a transparent track so it reads as part of the rail
+   rather than an OS artefact. Both the standards property (Firefox) and the
+   WebKit pseudo-elements are set; Safari and Chrome only honour the latter.
+   --------------------------------------------------------------------------- */
+.brand-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(116, 39, 198, 0.55) transparent;
+}
+
+.brand-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.brand-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.brand-scroll::-webkit-scrollbar-thumb {
+  background: rgba(116, 39, 198, 0.55);
+  border-radius: 999px;
+}
+
+.brand-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(116, 39, 198, 0.85);
+}
+
+/* Fade masks marking clipped content. Driven by data attributes rather than a
+   static gradient, so the top edge is only softened when something is actually
+   scrolled out of view — a permanent fade would dim the first item at rest. */
+.nav-fade {
+  --nav-fade: 20px;
+}
+
+.nav-fade[data-fade-top="true"][data-fade-bottom="false"] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--nav-fade));
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--nav-fade));
+}
+
+.nav-fade[data-fade-top="false"][data-fade-bottom="true"] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--nav-fade)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--nav-fade)), transparent 100%);
+}
+
+.nav-fade[data-fade-top="true"][data-fade-bottom="true"] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--nav-fade),
+    #000 calc(100% - var(--nav-fade)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--nav-fade),
+    #000 calc(100% - var(--nav-fade)),
+    transparent 100%
+  );
+}

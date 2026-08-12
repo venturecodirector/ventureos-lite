@@ -113,4 +113,77 @@ test.describe("desktop layout", () => {
     });
     expect(escaped).toEqual([]);
   });
+
+  /**
+   * The sidebar rail: pinned header and footer, only the nav list scrolls, and
+   * every item reachable however short the window is.
+   */
+  for (const [w, h] of [
+    [1440, 900],
+    [1280, 800],
+    [1280, 700],
+  ] as const) {
+    test(`sidebar nav scrolls independently at ${w}x${h}`, async ({ page }) => {
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto("/pipeline");
+
+      const m = await page.evaluate(() => {
+        const nav = document.querySelector<HTMLElement>('[data-testid="sidebar-nav"]')!;
+        const aside = document.querySelector("aside")!;
+        const budget = document.querySelector('[data-testid="budget-meter"]')!;
+        const user = document.querySelector('[data-testid="active-user"]')!;
+        const items = [...nav.querySelectorAll("a")];
+
+        nav.scrollTop = 0;
+        const firstVisible =
+          items[0].getBoundingClientRect().top >= nav.getBoundingClientRect().top - 1;
+        nav.scrollTop = nav.scrollHeight;
+        const lastVisible =
+          items[items.length - 1].getBoundingClientRect().bottom <=
+          nav.getBoundingClientRect().bottom + 1;
+        nav.scrollTop = 0;
+
+        return {
+          pageScroll: document.documentElement.scrollHeight - window.innerHeight,
+          asideHeight: aside.getBoundingClientRect().height,
+          viewportHeight: window.innerHeight,
+          firstVisible,
+          lastVisible,
+          budgetBottom: budget.getBoundingClientRect().bottom,
+          userBottom: user.getBoundingClientRect().bottom,
+          navTop: nav.getBoundingClientRect().top,
+          budgetTop: budget.getBoundingClientRect().top,
+        };
+      });
+
+      // The sidebar never makes the page itself scroll.
+      expect(m.pageScroll).toBeLessThanOrEqual(0);
+      expect(m.asideHeight).toBeLessThanOrEqual(m.viewportHeight + 1);
+      // Both ends of the nav list are reachable.
+      expect(m.firstVisible).toBe(true);
+      expect(m.lastVisible).toBe(true);
+      // Footer stays on screen and below the nav — nothing overlaps.
+      expect(m.budgetBottom).toBeLessThanOrEqual(m.viewportHeight);
+      expect(m.userBottom).toBeLessThanOrEqual(m.viewportHeight);
+      expect(m.budgetTop).toBeGreaterThanOrEqual(m.navTop);
+    });
+  }
+
+  test("the fade masks track what is actually clipped", async ({ page }) => {
+    // Short enough that the nav list certainly overflows.
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await page.goto("/");
+    const nav = page.getByTestId("sidebar-nav");
+
+    // At rest: nothing above, something below.
+    await expect(nav).toHaveAttribute("data-fade-top", "false");
+    await expect(nav).toHaveAttribute("data-fade-bottom", "true");
+
+    await nav.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+      el.dispatchEvent(new Event("scroll"));
+    });
+    await expect(nav).toHaveAttribute("data-fade-top", "true");
+    await expect(nav).toHaveAttribute("data-fade-bottom", "false");
+  });
 });
