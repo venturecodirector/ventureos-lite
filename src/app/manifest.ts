@@ -28,17 +28,24 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#00051D",
     theme_color: "#00051D",
     icons: [
+      // Full-bleed brand canvas with the mark inside the maskable safe zone
+      // (~55% of the width), so an aggressive circular crop cannot clip it —
+      // which is what lets one file serve both "any" and "maskable". Listed as
+      // two entries rather than the space-separated `purpose` the spec also
+      // allows, because Next's Manifest type only models single-value purposes.
+      { src: `${base}/icon-192.png`, sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: `${base}/icon-192.png`, sizes: "192x192", type: "image/png", purpose: "maskable" },
+      { src: `${base}/icon-512.png`, sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: `${base}/icon-512.png`, sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: `${base}/favicon.svg`, sizes: "any", type: "image/svg+xml", purpose: "any" },
+      // Flat single-colour cut of the same mark, for surfaces that recolour the
+      // icon themselves (notification badges, monochrome shelves) and would
+      // otherwise flatten the gradient into mud.
       {
-        src: `${base}/icon.svg`,
+        src: `${base}/favicon-solid.svg`,
         sizes: "any",
         type: "image/svg+xml",
-        purpose: "any",
-      },
-      {
-        src: `${base}/icon.svg`,
-        sizes: "any",
-        type: "image/svg+xml",
-        purpose: "maskable",
+        purpose: "monochrome",
       },
     ],
   };

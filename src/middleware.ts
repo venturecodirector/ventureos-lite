@@ -46,7 +46,12 @@ const PUBLIC_PREFIXES = [
   "/accept", // public quote acceptance
   "/book", // public booking pages
   "/manifest.webmanifest",
-  "/icon.svg",
+  "/favicon.svg",
+  "/favicon.ico",
+  "/favicon-solid.svg",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
   "/sw.js",
 ];
 

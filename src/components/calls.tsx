@@ -68,7 +68,7 @@ export function Calls({
       for (const d of items) {
         if (d.due && !notified.current.has(d.callId)) {
           notified.current.add(d.callId);
-          new Notification("Callback due", { body: d.name, icon: "/icon.svg" });
+          new Notification("Callback due", { body: d.name, icon: "/icon-192.png" });
         }
       }
     };
