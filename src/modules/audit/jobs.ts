@@ -19,6 +19,7 @@ import { fetchCrux } from "./crux";
 import { loadComparison } from "./comparison-load";
 import { computeDelta, signalFor } from "./delta";
 import { nextRunFrom } from "./watch";
+import { brandFrom } from "../workspaces/brand";
 import { resolveIntegration } from "@/modules/integrations/resolve";
 import { analyzeAudit } from "./analyze";
 import { auditThresholdsFromConfig } from "./config";
@@ -409,7 +410,28 @@ export async function processPdfRender(data: PdfJobData): Promise<void> {
     checks: a.checks,
     comparison: a.comparison,
   });
-  const html = buildAuditPdfHtml(view, { shots, comparison });
+  // Whose report this is (P2/6). Headless Chrome has no session, so a logo
+  // living behind /api/files is inlined for exactly the reason the screenshots
+  // are — otherwise the letterhead prints as a broken box.
+  const ws = await prismaUnsafe.workspace.findUnique({
+    where: { id: data.workspaceId },
+    select: { brand: true },
+  });
+  const brand = brandFrom(ws?.brand);
+  if (brand.logoUrl && !brand.logoUrl.startsWith("data:")) {
+    try {
+      const rel = brand.logoUrl.replace(/^\/api\/files\//, "");
+      const bytes = await readFile(join(FILES_DIR, rel));
+      const ext = rel.split(".").pop()?.toLowerCase();
+      const mime = ext === "svg" ? "image/svg+xml" : ext === "jpg" || ext === "jpeg" ? "image/jpeg" : "image/png";
+      brand.logoUrl = `data:${mime};base64,${bytes.toString("base64")}`;
+    } catch {
+      // A logo we cannot read is not worth failing a PDF over; the wordmark
+      // takes over.
+      brand.logoUrl = null;
+    }
+  }
+  const html = buildAuditPdfHtml(view, { shots, comparison, brand });
   const pdf = await renderHtmlToPdf(html);
 
   const rel = `audits/${data.auditId}.pdf`;

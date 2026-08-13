@@ -6,6 +6,7 @@ import {
   getPublicAuditStatus,
   type PublicAuditStatus,
 } from "@/modules/public-audit/actions";
+import type { WorkspaceBrand } from "@/modules/workspaces/brand";
 import { JobProgress } from "./job-progress";
 
 /**
@@ -32,7 +33,7 @@ type Phase =
   | { kind: "done"; status: PublicAuditStatus }
   | { kind: "refused"; message: string; friendly: boolean };
 
-export function PublicAuditLanding() {
+export function PublicAuditLanding({ brand }: { brand: WorkspaceBrand }) {
   const [url, setUrl] = useState("");
   const [honeypot, setHoneypot] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -94,8 +95,18 @@ export function PublicAuditLanding() {
     <main className="relative z-10 min-h-screen">
       <div className="mx-auto max-w-[720px] px-5 py-14">
         <div className="mb-10 font-display text-[18px]">
-          <b className="font-extrabold">venture</b>{" "}
-          <span className="font-light text-muted">co.group</span>
+          {brand.logoUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element --
+               a workspace logo behind /api/files, not a static asset */
+            <img src={brand.logoUrl} alt={brand.name} className="max-h-[34px]" />
+          ) : (
+            <>
+              <b className="font-extrabold">{brand.markBold}</b>
+              {brand.markLight ? (
+                <span className="font-light text-muted"> {brand.markLight}</span>
+              ) : null}
+            </>
+          )}
         </div>
 
         <h1 className="mb-3 font-display text-[34px] font-bold lowercase leading-[1.1] tracking-display sm:text-[42px]">

@@ -10,6 +10,7 @@ import {
   projectedWeeklyLoad,
   nextRunFrom,
   shouldAutoWatch,
+  WatchLimitReached,
 } from "./watch";
 
 /**
@@ -66,13 +67,6 @@ export async function listAuditWatches(): Promise<WatchListView> {
     weeklyLoad: projectedWeeklyLoad(rows),
     max: maxWatchesFrom(ws?.auditConfig),
   };
-}
-
-export class WatchLimitReached extends Error {
-  constructor(max: number) {
-    super(`This workspace already watches ${max} companies — the configured maximum.`);
-    this.name = "WatchLimitReached";
-  }
 }
 
 export async function setAuditWatch(raw: unknown): Promise<{ nextRunAt: string }> {

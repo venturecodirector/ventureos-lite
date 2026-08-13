@@ -39,6 +39,20 @@ export function projectedWeeklyLoad(watches: Array<{ frequencyDays: number; enab
   return Math.ceil(perWeek);
 }
 
+/**
+ * Refusing a watch past the cap.
+ *
+ * A class, so a caller can tell "you are over your limit" apart from "this
+ * company has no website" — and it lives here rather than beside the action
+ * because a "use server" module may only export async functions.
+ */
+export class WatchLimitReached extends Error {
+  constructor(max: number) {
+    super(`This workspace already watches ${max} companies — the configured maximum.`);
+    this.name = "WatchLimitReached";
+  }
+}
+
 export function nextRunFrom(now: Date, frequencyDays: number): Date {
   return new Date(now.getTime() + frequencyDays * 86_400_000);
 }

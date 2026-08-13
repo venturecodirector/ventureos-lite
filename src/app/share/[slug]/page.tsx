@@ -5,6 +5,7 @@ import { auditRowToView } from "@/modules/audit/view";
 import { publicCategoryGroups, CATEGORY_LABEL } from "@/modules/audit/categories";
 import { FieldData } from "@/components/field-data";
 import { PublicComparison } from "@/components/public-comparison";
+import { brandFrom, brandGradient } from "@/modules/workspaces/brand";
 import { loadComparison } from "@/modules/audit/comparison-load";
 
 // Public, prospect-facing, no product chrome. Cross-tenant read keyed on the
@@ -28,6 +29,14 @@ export default async function SharePage({
     include: { audit: true },
   });
   if (!share) notFound();
+
+  // Whose report this is (P2/6). A share link is cross-tenant by design, so the
+  // brand has to come from the OWNING workspace rather than from any session.
+  const workspace = await prismaUnsafe.workspace.findUnique({
+    where: { id: share.workspaceId },
+    select: { brand: true },
+  });
+  const brand = brandFrom(workspace?.brand);
 
   const expired = isShareExpired(share.expiresAt, new Date());
 
@@ -68,8 +77,18 @@ export default async function SharePage({
     <main className="relative z-10 min-h-screen">
       <div className="mx-auto max-w-[720px] px-5 py-14">
         <div className="mb-8 font-display text-[18px]">
-          <b className="font-extrabold">venture</b>{" "}
-          <span className="font-light text-muted">co.group</span>
+          {brand.logoUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element --
+               a workspace logo served from /api/files, not a static asset */
+            <img src={brand.logoUrl} alt={brand.name} className="max-h-[34px]" />
+          ) : (
+            <>
+              <b className="font-extrabold">{brand.markBold}</b>
+              {brand.markLight ? (
+                <span className="font-light text-muted"> {brand.markLight}</span>
+              ) : null}
+            </>
+          )}
         </div>
 
         {expired ? (
@@ -78,12 +97,17 @@ export default async function SharePage({
               this report has expired
             </h1>
             <p className="text-[13px] text-muted">
-              Audit share links are available for 60 days. Ask your Venture
-              contact for a fresh one.
+              Audit share links are available for 60 days. Ask your{" "}
+              {brand.name} contact for a fresh one.
             </p>
           </div>
         ) : (
-          <div className="rounded-card border border-line bg-[radial-gradient(500px_300px_at_90%_-10%,rgba(116,39,198,0.18),transparent_60%),rgba(239,241,248,0.02)] p-7 sm:p-9">
+          <div
+            className="rounded-card border border-line p-7 sm:p-9"
+            style={{
+              backgroundImage: `radial-gradient(500px 300px at 90% -10%, ${brand.color}2E, transparent 60%), linear-gradient(rgba(239,241,248,0.02), rgba(239,241,248,0.02))`,
+            }}
+          >
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
               Website opportunity audit
             </div>
@@ -92,7 +116,10 @@ export default async function SharePage({
             </h1>
 
             <div className="flex items-center gap-6 border-b border-line pb-6">
-              <div className="bg-grad bg-clip-text font-display text-[68px] font-extrabold leading-none tracking-[-0.03em] text-transparent">
+              <div
+                className="bg-clip-text font-display text-[68px] font-extrabold leading-none tracking-[-0.03em] text-transparent"
+                style={{ backgroundImage: brandGradient(brand) }}
+              >
                 {view.score}
               </div>
               <div>
@@ -103,7 +130,8 @@ export default async function SharePage({
                   {view.flags.map((f) => (
                     <span
                       key={f}
-                      className="mr-1 mb-1 inline-flex items-center rounded-full border-[1.5px] border-transparent bg-grad px-2.5 py-0.5 text-[11px] font-semibold text-ink"
+                      className="mr-1 mb-1 inline-flex items-center rounded-full border-[1.5px] border-transparent px-2.5 py-0.5 text-[11px] font-semibold text-ink"
+                      style={{ backgroundImage: brandGradient(brand) }}
                     >
                       {f}
                     </span>
@@ -208,7 +236,7 @@ export default async function SharePage({
             )}
 
             <p className="mt-7 text-[10.5px] leading-relaxed text-muted">
-              Az elemzést a Venture CO Group készítette, gépi mérések alapján,
+              Az elemzést {brand.footerIdentity} készítette, gépi mérések alapján,
               {" "}
               {new Date().toISOString().slice(0, 10)}. Kérdés esetén válaszoljon
               erre az e-mailre, és átnézzük együtt.

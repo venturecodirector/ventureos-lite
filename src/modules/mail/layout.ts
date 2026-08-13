@@ -55,6 +55,17 @@ export interface BrandEmailOptions {
   button?: EmailButton;
   /** Small print under the panel, above the wordmark. */
   footNote?: string;
+
+  // ---- Workspace identity (P2/6) -----------------------------------------
+  // All optional and all defaulting to Venture, so every existing call site
+  // keeps sending exactly what it sent before. A caller that knows which
+  // workspace it is sending for passes these instead.
+  /** Signature line on the plain-text part. */
+  brandName?: string;
+  brandMarkBold?: string;
+  brandMarkLight?: string;
+  /** Legal identity line in the footer. */
+  brandFooter?: string;
 }
 
 export function escapeHtml(s: string): string {
@@ -79,7 +90,7 @@ export function brandEmailText(o: BrandEmailOptions): string {
   }
   if (o.button) lines.push(`${o.button.label}: ${o.button.url}`, "");
   if (o.footNote) lines.push(o.footNote, "");
-  lines.push("— Venture CO Group");
+  lines.push(`— ${o.brandName ?? "Venture CO Group"}`);
   return lines.join("\n");
 }
 
@@ -144,7 +155,7 @@ export function brandEmail(o: BrandEmailOptions): string {
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;">
 
       <tr><td style="padding:0 0 18px;font-family:${FONT};font-size:17px;color:${INK};">
-        <span style="font-weight:800;">venture</span><span style="font-weight:300;color:${MUTED};"> co.group</span>
+        <span style="font-weight:800;">${escapeHtml(o.brandMarkBold ?? "venture")}</span><span style="font-weight:300;color:${MUTED};"> ${escapeHtml(o.brandMarkLight ?? "co.group")}</span>
       </td></tr>
 
       <tr><td style="background-color:${PANEL};border:1px solid ${BORDER};border-radius:14px;padding:28px;">
@@ -159,7 +170,7 @@ export function brandEmail(o: BrandEmailOptions): string {
       <tr><td style="padding:14px 4px 0;">
         ${footNote}
         <p style="margin:14px 0 0;font-family:${FONT};font-size:11px;line-height:1.5;color:${MUTED};">
-          Venture CO Group · Budapest · this message was sent because of a
+          ${escapeHtml(o.brandFooter ?? "Venture CO Group · Budapest")} · this message was sent because of a
           direct interaction with us.
         </p>
       </td></tr>
