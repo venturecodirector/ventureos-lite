@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   NullSerpProvider,
   DataForSeoProvider,
@@ -15,6 +15,18 @@ import {
  * it never scrapes, and "not ranking" is null rather than a big number.
  */
 describe("provider selection", () => {
+  // serpProviderFor falls back to SERP_CREDENTIAL, so a developer machine with
+  // a real credential in .env would otherwise make the "no provider" cases
+  // pass a live provider and fail for the wrong reason.
+  let saved: string | undefined;
+  beforeEach(() => {
+    saved = process.env.SERP_CREDENTIAL;
+    delete process.env.SERP_CREDENTIAL;
+  });
+  afterEach(() => {
+    if (saved !== undefined) process.env.SERP_CREDENTIAL = saved;
+  });
+
   it("defaults to the null provider, which is not configured", async () => {
     const p = serpProviderFor(null);
     expect(p.configured).toBe(false);
@@ -26,6 +38,13 @@ describe("provider selection", () => {
   it("refuses a credential that is not login:password", () => {
     expect(serpProviderFor("just-a-token").configured).toBe(false);
     expect(serpProviderFor("user:pass").id).toBe("dataforseo");
+  });
+
+  it("uses the env credential when a workspace has none of its own", () => {
+    process.env.SERP_CREDENTIAL = "env-login:env-pass";
+    expect(serpProviderFor(null).configured).toBe(true);
+    // A workspace's own value still wins over the deployment default.
+    expect(serpProviderFor("just-a-token").configured).toBe(false);
   });
 
   it("prices a real provider per query", () => {
