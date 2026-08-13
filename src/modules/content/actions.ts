@@ -248,19 +248,30 @@ export async function movePost(
     },
   });
 
-  // Approving and publishing are editorial decisions worth a trail.
-  if (parsed.data.to === "APPROVED" || parsed.data.to === "PUBLISHED") {
-    await db.auditLog.create({
-      data: {
-        workspaceId,
-        actorUserId: userId,
-        action: parsed.data.to === "APPROVED" ? "content.approved" : "content.published",
-        entityType: "ContentPost",
-        entityId: post.id,
-        meta: { title: post.title, channel: post.channel },
+  // Every status change is logged, not just the editorial ones. Who sent a
+  // post back to draft, and when, is exactly the question asked after the
+  // fact — and a trail with holes in it is not a trail.
+  const ACTION: Record<string, string> = {
+    APPROVED: "content.approved",
+    PUBLISHED: "content.published",
+    IN_REVIEW: "content.submitted",
+    DRAFT: "content.reopened",
+  };
+  await db.auditLog.create({
+    data: {
+      workspaceId,
+      actorUserId: userId,
+      action: ACTION[parsed.data.to] ?? "content.status_changed",
+      entityType: "ContentPost",
+      entityId: post.id,
+      meta: {
+        title: post.title,
+        channel: post.channel,
+        from: post.status,
+        to: parsed.data.to,
       },
-    });
-  }
+    },
+  });
 
   revalidatePath("/content");
   return { ok: true };

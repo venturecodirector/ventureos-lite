@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   createPost,
@@ -36,18 +36,68 @@ const COLUMN_HINT: Record<ContentStatus, string> = {
   PUBLISHED: "Live — recorded by hand",
 };
 
+/**
+ * How far the pointer may travel between press and release and still count as
+ * a click. Same value and reasoning as the pipeline board: without it, the
+ * drift of starting a drag opens the editor on top of the drag you wanted.
+ */
+const DRAG_THRESHOLD_PX = 5;
+
 export function ContentHub({ board }: { board: ContentBoardView }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [openId, setOpenId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<ContentStatus | null>(null);
+  /**
+   * Optimistic placement while the server decides. A refused move clears it and
+   * the card snaps back to where it came from — the board never shows a state
+   * the server did not agree to.
+   */
+  const [optimistic, setOptimistic] = useState<{ id: string; to: ContentStatus } | null>(null);
+  const draggedRef = useRef(false);
+  const pressRef = useRef<{ x: number; y: number } | null>(null);
+  const [moveMenuFor, setMoveMenuFor] = useState<string | null>(null);
 
   const byStatus = useMemo(() => {
     const map = new Map<ContentStatus, ContentPostView[]>();
     for (const s of CONTENT_STATUSES) map.set(s, []);
-    for (const p of board.posts) map.get(p.status)?.push(p);
+    for (const p of board.posts) {
+      const status = optimistic?.id === p.id ? optimistic.to : p.status;
+      map.get(status)?.push(p);
+    }
     return map;
-  }, [board.posts]);
+  }, [board.posts, optimistic]);
+
+  function moveTo(post: ContentPostView, to: ContentStatus) {
+    if (post.status === to) return;
+    setMsg(null);
+    setMoveMenuFor(null);
+    setOptimistic({ id: post.id, to });
+    startTransition(async () => {
+      const res = await movePost({ id: post.id, to });
+      if (!res.ok) {
+        // Snap back, and say why — a card silently returning is a mystery.
+        setOptimistic(null);
+        setMsg({ kind: "err", text: res.error });
+        return;
+      }
+      // Deliberately do NOT clear the optimistic placement here. router.refresh
+      // is async, so clearing now drops the card back into its old column until
+      // the new data arrives — a visible flash backwards after a move that
+      // actually succeeded. The effect below clears it once the server agrees.
+      router.refresh();
+    });
+  }
+
+  // Retire the optimistic placement only when the refreshed board reports the
+  // same status, so there is no window where the card sits in the old column.
+  useEffect(() => {
+    if (!optimistic) return;
+    const post = board.posts.find((p) => p.id === optimistic.id);
+    if (post && post.status === optimistic.to) setOptimistic(null);
+  }, [board.posts, optimistic]);
 
   const open = board.posts.find((p) => p.id === openId) ?? null;
 
@@ -112,6 +162,7 @@ export function ContentHub({ board }: { board: ContentBoardView }) {
       <div
         className="grid snap-x snap-mandatory auto-cols-[82vw] grid-flow-col items-start gap-3 overflow-x-auto pb-3 nav:auto-cols-fr nav:grid-flow-row nav:grid-cols-4 nav:overflow-visible"
         data-testid="content-board"
+        data-pending={pending}
       >
         {CONTENT_STATUSES.map((status) => {
           const posts = byStatus.get(status) ?? [];
@@ -119,7 +170,27 @@ export function ContentHub({ board }: { board: ContentBoardView }) {
             <section
               key={status}
               data-testid={`content-col-${status}`}
-              className="min-h-[160px] snap-start rounded-card border border-line bg-panel p-2.5"
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(status);
+              }}
+              onDragLeave={() => setDragOver((s) => (s === status ? null : s))}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(null);
+                // One move at a time. A second drop while the first is still
+                // in flight is judged by the server against the OLD status and
+                // refused, which looks to the user like the board rejecting a
+                // legal move.
+                if (pending) return;
+                const post = board.posts.find((c) => c.id === dragId);
+                if (post) moveTo(post, status);
+              }}
+              className={`min-h-[160px] snap-start rounded-card border bg-panel p-2.5 ${
+                dragOver === status
+                  ? "border-accent shadow-[0_0_20px_rgba(116,39,198,0.3)_inset]"
+                  : "border-line"
+              }`}
             >
               <header className="flex items-baseline gap-2 px-1 pb-2.5">
                 <h3 className="text-[12.5px] font-semibold text-ink">{STATUS_LABEL[status]}</h3>
@@ -134,15 +205,50 @@ export function ContentHub({ board }: { board: ContentBoardView }) {
               )}
 
               {posts.map((p) => (
-                <button
+                <div
                   key={p.id}
-                  type="button"
+                  draggable
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open ${p.title}`}
                   data-testid="content-card"
-                  onClick={() => setOpenId(p.id)}
-                  className="mb-2 w-full rounded-[11px] border border-line bg-panel-2 p-2.5 text-left transition-shadow hover:border-accent-soft hover:shadow-[0_0_16px_rgba(116,39,198,0.25)]"
+                  onDragStart={() => {
+                    draggedRef.current = true;
+                    setDragId(p.id);
+                  }}
+                  onDragEnd={() => setDragId(null)}
+                  onPointerDown={(e) => {
+                    pressRef.current = { x: e.clientX, y: e.clientY };
+                    draggedRef.current = false;
+                  }}
+                  onClick={(e) => {
+                    // The Move to… control handles itself.
+                    if ((e.target as HTMLElement).closest("button")) return;
+                    if (draggedRef.current) return;
+                    const start = pressRef.current;
+                    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > DRAG_THRESHOLD_PX) {
+                      return;
+                    }
+                    setOpenId(p.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setOpenId(p.id);
+                    }
+                  }}
+                  className={`mb-2 w-full cursor-pointer rounded-[11px] border bg-panel-2 p-2.5 text-left transition-shadow hover:border-accent-soft hover:shadow-[0_0_16px_rgba(116,39,198,0.25)] focus:outline-none focus-visible:border-accent ${
+                    dragId === p.id ? "border-accent opacity-60" : "border-line"
+                  }`}
                 >
+                  <span className="mb-1 inline-block rounded-full bg-panel px-2 py-0.5 text-[10px] font-semibold text-muted">
+                    {STATUS_LABEL[p.status]}
+                  </span>
                   <b className="block text-[13px] text-ink">{p.title}</b>
-                  <span className="mt-0.5 block line-clamp-2 text-[11.5px] text-muted">
+                  {/* No `block` here: line-clamp needs display:-webkit-box, and `block`
+                      overrides it — which is why the excerpt was never actually
+                      clamped. */}
+                  <span className="mt-0.5 line-clamp-2 text-[11.5px] text-muted">
                     {p.body || "No text yet."}
                   </span>
                   <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10.5px] text-muted">
@@ -157,7 +263,46 @@ export function ContentHub({ board }: { board: ContentBoardView }) {
                     {p.overLimit && <span className="text-neg">over limit</span>}
                     {p.publishedAt && <span>{p.publishedAt.slice(0, 10)}</span>}
                   </span>
-                </button>
+
+                  {/*
+                    Touch fallback: dragging between columns is awkward on a
+                    phone, where the columns are a swipeable carousel and a
+                    horizontal drag means "scroll".
+                  */}
+                  <div className="mt-2 nav:hidden">
+                    {moveMenuFor === p.id ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {allowedTransitions(p.status, board.isApprover).map((tr) => (
+                          <button
+                            key={tr.to}
+                            type="button"
+                            data-testid={`move-to-${tr.to}`}
+                            onClick={() => moveTo(p, tr.to)}
+                            className="min-h-[36px] rounded-full border border-accent-soft px-3 text-[11.5px] font-semibold text-accent-ink"
+                          >
+                            {tr.label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setMoveMenuFor(null)}
+                          className="min-h-[36px] rounded-full border border-line px-3 text-[11.5px] text-muted"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid="move-to-open"
+                        onClick={() => setMoveMenuFor(p.id)}
+                        className="min-h-[36px] rounded-full border border-line px-3 text-[11.5px] text-muted"
+                      >
+                        Move to…
+                      </button>
+                    )}
+                  </div>
+                </div>
               ))}
             </section>
           );
