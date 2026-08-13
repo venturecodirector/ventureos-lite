@@ -76,6 +76,15 @@
 {$PUBLIC_AUDIT_HOST} {
 	import common
 	request_header X-Public-Surface "audit"
+
+	# The bilingual landing pages (P12). These MUST be rewritten before the
+	# slug rule below, which would otherwise match /hu and /en as report slugs
+	# and hand them to /share/hu — a 404 on the most public URL we have.
+	# Safe to order this way: after the rewrite the path has two segments and
+	# no longer matches the single-segment slug pattern.
+	@locale path /hu /en
+	rewrite @locale /public-audit{uri}
+
 	@slug path_regexp slug ^/([^/.]+)$
 	rewrite @slug /share/{http.regexp.slug.1}
 	import app_upstream

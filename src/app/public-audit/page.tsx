@@ -18,5 +18,12 @@ export default async function PublicAuditRootPage() {
     cookie: c.get(LOCALE_COOKIE)?.value,
     acceptLanguage: h.get("accept-language"),
   });
-  redirect(`/public-audit/${locale}`);
+
+  // On the audit domain the short `/hu` is the real public URL, and Caddy
+  // rewrites it back to this route. Anywhere else — local development, the e2e
+  // suite, a direct path — only the full route exists, so redirecting to `/hu`
+  // there would 404. The surface header is what Caddy stamps to say which of
+  // the two we are in.
+  const onAuditHost = h.get("x-public-surface") === "audit";
+  redirect(onAuditHost ? `/${locale}` : `/public-audit/${locale}`);
 }
