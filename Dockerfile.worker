@@ -9,7 +9,11 @@
 # dependency tree, so the Prisma CLI and tsx are available for
 # `prisma migrate deploy` and `scripts/apply-rls.ts`.
 # =============================================================================
-FROM mcr.microsoft.com/playwright:v1.48.0-jammy
+# The tag MUST track the `playwright` version in package-lock.json. The image
+# ships pre-installed browser builds keyed to its own release, so a mismatch
+# fails at runtime with "Executable doesn't exist at /ms-playwright/..." —
+# invisible locally, where browsers live on the host.
+FROM mcr.microsoft.com/playwright:v1.62.1-jammy
 
 WORKDIR /app
 ENV NODE_ENV=production
@@ -31,6 +35,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends procps \
 # healthy and made the stack look fine.
 COPY package.json package-lock.json* ./
 RUN npm ci --include=dev && npm cache clean --force
+
+# Self-heal any residual drift between the package and the image's browsers:
+# a no-op when the versions match, a download when they do not, so the image
+# can never ship without the Chromium the installed Playwright expects.
+RUN npx playwright install chromium
 
 COPY . .
 RUN npx prisma generate
