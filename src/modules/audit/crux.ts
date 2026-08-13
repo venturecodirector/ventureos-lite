@@ -138,13 +138,16 @@ export async function fetchCrux(
     return null;
   }
 
-  const query = async (formFactor: "PHONE" | "ALL"): Promise<CruxData | null> => {
+  const query = async (
+    forOrigin: string,
+    formFactor: "PHONE" | "ALL",
+  ): Promise<CruxData | null> => {
     try {
       const res = await doFetch(`${ENDPOINT}?key=${encodeURIComponent(key)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          origin,
+          origin: forOrigin,
           ...(formFactor === "PHONE" ? { formFactor: "PHONE" } : {}),
         }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -157,7 +160,31 @@ export async function fetchCrux(
     }
   };
 
-  return (await query("PHONE")) ?? (await query("ALL"));
+  const found =
+    (await query(origin, "PHONE")) ?? (await query(origin, "ALL"));
+  if (found) return found;
+
+  // https://telekom.hu and https://www.telekom.hu are DIFFERENT origins to
+  // CrUX, and a site's traffic is usually recorded under only one of them.
+  // Checking the counterpart is what stops a busy site being reported as
+  // having "not enough traffic" — which is how this was found: the bare
+  // domain returned nothing while www returned a full record.
+  const other = counterpartOrigin(origin);
+  if (!other) return null;
+  return (await query(other, "PHONE")) ?? (await query(other, "ALL"));
+}
+
+/** The same origin with www added or removed, or null when it has neither form. */
+export function counterpartOrigin(origin: string): string | null {
+  try {
+    const u = new URL(origin);
+    u.hostname = u.hostname.startsWith("www.")
+      ? u.hostname.slice(4)
+      : `www.${u.hostname}`;
+    return u.origin;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

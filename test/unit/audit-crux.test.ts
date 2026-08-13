@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   fetchCrux,
+  counterpartOrigin,
   parseCruxResponse,
   toMetric,
   verdictFor,
@@ -130,9 +131,48 @@ describe("fetchCrux", () => {
     expect(JSON.parse(bodies[1]!)).toEqual({ origin: "https://nagy.hu" });
   });
 
+  it("falls back to the www counterpart when the bare origin has no data", async () => {
+    // Found live: https://telekom.hu returns nothing, https://www.telekom.hu
+    // returns a full record. They are different origins to CrUX.
+    const origins: string[] = [];
+    const fake = (async (_u: unknown, init?: RequestInit) => {
+      const origin = JSON.parse(String(init?.body)).origin as string;
+      origins.push(origin);
+      return origin.includes("www.") ? ok(record()) : new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const d = await fetchCrux("https://telekom.hu/valami", "KEY", fake);
+    expect(d).not.toBeNull();
+    expect(origins).toContain("https://www.telekom.hu");
+  });
+
+  it("falls back the other way too, from www to the bare domain", async () => {
+    const origins: string[] = [];
+    const fake = (async (_u: unknown, init?: RequestInit) => {
+      const origin = JSON.parse(String(init?.body)).origin as string;
+      origins.push(origin);
+      return origin.includes("www.") ? new Response("", { status: 404 }) : ok(record());
+    }) as unknown as typeof fetch;
+
+    const d = await fetchCrux("https://www.pelda.hu/", "KEY", fake);
+    expect(d).not.toBeNull();
+    expect(origins).toContain("https://pelda.hu");
+  });
+
   it("returns null for a site below the traffic threshold", async () => {
     const fake = (async () => new Response("", { status: 404 })) as unknown as typeof fetch;
     expect(await fetchCrux("https://apro-fogaszat.hu/", "KEY", fake)).toBeNull();
+  });
+
+  it("gives up after both origins, not indefinitely", async () => {
+    let calls = 0;
+    const fake = (async () => {
+      calls += 1;
+      return new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+    expect(await fetchCrux("https://apro.hu/", "KEY", fake)).toBeNull();
+    // origin PHONE + origin ALL + counterpart PHONE + counterpart ALL.
+    expect(calls).toBe(4);
   });
 
   it("returns null rather than throwing when the API is unreachable", async () => {
@@ -192,5 +232,20 @@ describe("plain language", () => {
     expect(fieldSummaryHu(null)).toContain("Nincs elegendő forgalmi adat");
     expect(fieldSummaryHu(null)).not.toMatch(/gyors/i);
     expect(fieldSummaryEn(null)).toContain("No field data");
+  });
+});
+
+describe("counterpartOrigin", () => {
+  it("adds and removes www", () => {
+    expect(counterpartOrigin("https://telekom.hu")).toBe("https://www.telekom.hu");
+    expect(counterpartOrigin("https://www.telekom.hu")).toBe("https://telekom.hu");
+  });
+
+  it("leaves a subdomain's own www prefix alone", () => {
+    expect(counterpartOrigin("https://shop.pelda.hu")).toBe("https://www.shop.pelda.hu");
+  });
+
+  it("returns null for something that is not a URL", () => {
+    expect(counterpartOrigin("nonsense")).toBeNull();
   });
 });
