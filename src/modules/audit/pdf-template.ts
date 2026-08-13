@@ -2,6 +2,7 @@ import type { AuditView } from "./types";
 import { scoreByCategory, ungroupedChecks, CATEGORY_LABEL } from "./categories";
 import { analyzeStructure } from "./structure";
 import { formatMetric, verdictFor, fieldSummaryEn } from "./crux";
+import type { ComparisonTable } from "./comparison";
 
 /**
  * Branded audit one-pager (spec §4.4). A self-contained HTML doc — no external
@@ -31,6 +32,8 @@ function fmtDate(d: Date): string {
 export interface AuditDocOptions {
   brandName?: string;
   generatedAt?: Date;
+  /** Competitor side-by-side (P2/3) — named, because this is the sales PDF. */
+  comparison?: ComparisonTable | null;
 }
 
 /**
@@ -46,8 +49,57 @@ export interface InlineShots {
   mobile?: string | null;
 }
 
+/**
+ * Competitor side-by-side, named (P2/3).
+ *
+ * The sales PDF is ours. The public share page renders the anonymised version
+ * of the same table — see anonymizeComparison — and never this one.
+ */
+function comparisonSection(table: ComparisonTable | null | undefined): string {
+  if (!table || table.subjects.length < 2) return "";
+  const head = table.subjects
+    .map(
+      (s, i) =>
+        `<th>${esc(
+          i === 0 ? "This site" : (s.name ?? s.url.replace(/^https?:\/\//, "").replace(/\/$/, "")),
+        )}</th>`,
+    )
+    .join("");
+
+  const rows = table.rows
+    .map(
+      (r) => `<tr>
+        <td>${esc(r.en)}</td>
+        ${r.values
+          .map(
+            (v, i) =>
+              `<td class="num${i === 0 ? ` d-${r.direction}` : ""}">${v === null ? "&mdash;" : v}</td>`,
+          )
+          .join("")}
+      </tr>`,
+    )
+    .join("");
+
+  const takeaways = table.rows
+    .map((r) => `<div class="muted">${esc(r.takeawayHu)}</div>`)
+    .join("");
+
+  return `
+    <div class="eyebrow">Versenytárs-összehasonlítás</div>
+    <table class="cmp">
+      <thead><tr><th>Metric</th>${head}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="takeaways">${takeaways}</div>
+  `;
+}
+
 /** Shared report body (used by both the PDF and the public share page). */
-export function auditReportBody(view: AuditView, shots: InlineShots = {}): string {
+export function auditReportBody(
+  view: AuditView,
+  shots: InlineShots = {},
+  comparison: ComparisonTable | null = null,
+): string {
   const flags = view.flags
     .map(
       (f) =>
@@ -129,6 +181,7 @@ export function auditReportBody(view: AuditView, shots: InlineShots = {}): strin
     ${speedSection(view)}
     <div class="eyebrow">Findings</div>
     <div class="checks">${checks}${other}</div>
+    ${comparisonSection(comparison)}
     ${structureSection(view)}
     ${shotsHtml}
     ${pitch}
@@ -345,6 +398,19 @@ export function buildAuditPdfHtml(
   .pages th:nth-child(2), .pages td:nth-child(2) { width: 48px; }
   .pages th:nth-child(4), .pages td:nth-child(4) { width: 56px; }
   .pages th:nth-child(5), .pages td:nth-child(5) { width: 150px; white-space: normal; }
+  .cmp { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .cmp th {
+    text-align: right; font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
+    color: #858CAE; border-bottom: 1px solid rgba(239,241,248,0.09); padding: 4px 6px 4px 0;
+  }
+  .cmp th:first-child, .cmp td:first-child { text-align: left; }
+  .cmp td {
+    padding: 5px 6px 5px 0; color: #C9CEE3; text-align: right;
+    border-bottom: 1px solid rgba(239,241,248,0.05); font-variant-numeric: tabular-nums;
+  }
+  .cmp td.d-better { color: #3DDC97; font-weight: 700; }
+  .cmp td.d-worse { color: #FF5C7A; font-weight: 700; }
+  .takeaways { margin-top: 8px; font-size: 10.5px; line-height: 1.7; }
   .broken { margin-top: 10px; font-size: 10px; }
   .broken b { display: block; margin-bottom: 3px; font-size: 10px; }
   .pitch { margin-top: 26px; border: 1px solid rgba(116,39,198,0.4); background: rgba(116,39,198,0.10); border-radius: 12px; padding: 16px 18px; }
@@ -354,7 +420,7 @@ export function buildAuditPdfHtml(
 <body>
   <div class="brand"><b>venture</b><span>co.group</span></div>
   <div class="kicker">Website Opportunity Audit</div>
-  ${auditReportBody(view, opts.shots ?? {})}
+  ${auditReportBody(view, opts.shots ?? {}, opts.comparison ?? null)}
   <div class="foot">Prepared by ${esc(brand)} · ${date} · High score = weak site = strong opportunity.</div>
 </body></html>`;
 }

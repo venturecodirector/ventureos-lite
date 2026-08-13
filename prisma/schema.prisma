@@ -328,6 +328,10 @@ model Company {
   address     String?
   city        String?
   taxId       String?  @map("tax_id") // adószám — dedupe key within a workspace
+  /// How this company entered the workspace, when it was not a prospect we
+  /// chose: "competitor_audit" for one pulled in by a comparison (P2/3). Null
+  /// for everything created the ordinary way.
+  source      String?
   notes       String?  @db.Text
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -664,6 +668,11 @@ model AuditResult {
   /// Chrome UX Report field data (P2/2). Null when the origin has too little
   /// traffic for Google to report on — the common case for a micro-SMB site.
   crux         Json?        @map("crux_json")
+  /// Competitor side-by-side (P2/3): the audit ids this one is compared with.
+  /// Lives on the prospect's audit because the same competitor audit is reused
+  /// across several comparisons — a parent pointer on the competitor would be
+  /// wrong the second time it is cited.
+  comparison   Json?        @map("comparison_json")
   pdfPath      String?      @map("pdf_path")
   createdAt    DateTime     @default(now()) @map("created_at")
   expiresAt    DateTime     @map("expires_at")

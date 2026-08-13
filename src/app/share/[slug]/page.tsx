@@ -4,6 +4,8 @@ import { isShareExpired } from "@/modules/audit/share";
 import { auditRowToView } from "@/modules/audit/view";
 import { publicCategoryGroups, CATEGORY_LABEL } from "@/modules/audit/categories";
 import { FieldData } from "@/components/field-data";
+import { PublicComparison } from "@/components/public-comparison";
+import { loadComparison } from "@/modules/audit/comparison-load";
 
 // Public, prospect-facing, no product chrome. Cross-tenant read keyed on the
 // unguessable slug — a deliberate public surface, not tenant business logic.
@@ -51,6 +53,16 @@ export default async function SharePage({
   }
 
   const view = auditRowToView(share.audit);
+  // Anonymised inside PublicComparison — the loader returns the named table,
+  // and nothing named ever reaches the markup (P2/3).
+  const comparison = await loadComparison(prismaUnsafe, {
+    id: share.audit.id,
+    url: share.audit.url,
+    status: share.audit.status,
+    score: share.audit.score,
+    checks: share.audit.checks,
+    comparison: share.audit.comparison,
+  });
 
   return (
     <main className="relative z-10 min-h-screen">
@@ -150,6 +162,8 @@ export default async function SharePage({
               lang="hu"
               labDetail={view.checks.find((c) => c.key === "psiPerformance")?.detail ?? null}
             />
+
+            <PublicComparison table={comparison} />
 
             {/*
               FACTS ONLY on the public route (P1/3b). Two things used to render

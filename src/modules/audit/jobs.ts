@@ -16,6 +16,7 @@ import { crawlSite } from "./crawl";
 import { analyzeStructure } from "./structure";
 import { fetchPsi } from "./psi";
 import { fetchCrux } from "./crux";
+import { loadComparison } from "./comparison-load";
 import { resolveIntegration } from "@/modules/integrations/resolve";
 import { analyzeAudit } from "./analyze";
 import { auditThresholdsFromConfig } from "./config";
@@ -253,7 +254,16 @@ export async function processPdfRender(data: PdfJobData): Promise<void> {
       // A missing capture must not fail the whole PDF.
     }
   }
-  const html = buildAuditPdfHtml(view, { shots });
+  // The sales PDF names competitors; the public page never does (P2/3).
+  const comparison = await loadComparison(db, {
+    id: a.id,
+    url: a.url,
+    status: a.status,
+    score: a.score,
+    checks: a.checks,
+    comparison: a.comparison,
+  });
+  const html = buildAuditPdfHtml(view, { shots, comparison });
   const pdf = await renderHtmlToPdf(html);
 
   const rel = `audits/${data.auditId}.pdf`;

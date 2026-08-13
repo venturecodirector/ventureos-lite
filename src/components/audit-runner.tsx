@@ -5,6 +5,7 @@ import type { AuditView } from "@/modules/audit/types";
 import { JobProgress } from "./job-progress";
 import { SiteStructure } from "./site-structure";
 import { FieldData } from "./field-data";
+import { ComparisonPanel } from "./comparison-panel";
 import {
   startAudit,
   getAudit,
@@ -385,6 +386,8 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
                 }
               />
             )}
+
+            {view.status === "done" && <ComparisonPanel auditId={view.id} />}
 
             {view.crawl && <SiteStructure crawl={view.crawl} />}
 
