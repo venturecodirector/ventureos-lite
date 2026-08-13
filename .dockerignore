@@ -1,10 +1,22 @@
 node_modules
 .next
 .git
+
+# EVERY env file, whatever it is called. Dockerfile.worker does a bare
+# `COPY . .`, so a real secrets file sitting in the build context would be
+# baked into an image layer and travel with the image. A bare `.env` pattern
+# matches only that exact name — `.env.production` would have slipped through.
+# Containers get their configuration from the environment (compose `env_file`
+# / `environment:`), never from a file copied into the image.
 .env
-.env.local
+.env.*
+
 /data
 npm-debug.log*
 test-results
 playwright-report
 .DS_Store
+
+# Local tooling debris — no reason to ship it or to bust the build cache.
+.claude
+.playwright-mcp
