@@ -294,15 +294,42 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
                 </div>
               )}
 
+              {/*
+                The captures are real PNGs on the files volume; show them
+                rather than a "✓" placeholder. /api/files checks the session
+                and the owning workspace before serving, so these only load
+                for someone entitled to see them. Clicking opens the full
+                capture — the thumbnail is cropped to the top of the page.
+              */}
               <div className="mt-3.5 grid grid-cols-2 gap-2.5">
-                {(["desktop", "mobile"] as const).map((k) => (
-                  <div
-                    key={k}
-                    className="grid h-[110px] place-items-center rounded-[10px] border border-line bg-panel-2 text-[11px] text-muted"
-                  >
-                    {view.screenshots[k] ? `${k} screenshot ✓` : `${k} screenshot`}
-                  </div>
-                ))}
+                {(["desktop", "mobile"] as const).map((k) => {
+                  const shot = view.screenshots[k];
+                  return (
+                    <div key={k}>
+                      {shot ? (
+                        <a
+                          href={`/api/files/${shot}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block overflow-hidden rounded-[10px] border border-line bg-panel-2 hover:border-accent"
+                          title={`Open the full ${k} capture`}
+                        >
+                          <img
+                            src={`/api/files/${shot}`}
+                            alt={`${k} screenshot`}
+                            loading="lazy"
+                            className="h-[110px] w-full object-cover object-top"
+                          />
+                        </a>
+                      ) : (
+                        <div className="grid h-[110px] place-items-center rounded-[10px] border border-line bg-panel-2 text-[11px] text-muted">
+                          no {k} capture
+                        </div>
+                      )}
+                      <div className="mt-1 text-center text-[10.5px] text-muted">{k}</div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
