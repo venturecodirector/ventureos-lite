@@ -13,9 +13,6 @@ import {
   classifyProspects,
 } from "@/modules/prospector/actions";
 
-// Nominal pre-run estimate (results are unknown until the search runs).
-const NOMINAL_EXPECTED = 40;
-
 function WebsiteChip({ presence }: { presence: ProspectRow["presence"] }) {
   if (presence === "none")
     return (
@@ -55,18 +52,25 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
   const [keyword, setKeyword] = useState("vízvezetékszerelő");
   const [location, setLocation] = useState("Budapest");
   const [radius, setRadius] = useState("15 km");
+  // Google returns 20 per page and at most 3 pages; each page is billed.
+  const [depth, setDepth] = useState(20);
   const [result, setResult] = useState<ProspectSearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<Record<number, "added" | "duplicate">>({});
   const [classifying, setClassifying] = useState(false);
 
-  const estimate = estimateProspectCostUsd({ expectedResults: NOMINAL_EXPECTED });
+  const estimate = estimateProspectCostUsd({ expectedResults: depth });
 
-  async function run(kw = keyword, loc = location, rad = radius) {
+  async function run(kw = keyword, loc = location, rad = radius, max = depth) {
     setError(null);
     setAdded({});
     try {
-      const res = await runProspectSearch({ keyword: kw, location: loc, radius: rad });
+      const res = await runProspectSearch({
+        keyword: kw,
+        location: loc,
+        radius: rad,
+        maxResults: max,
+      });
       setResult(res);
     } catch (e) {
       setResult(null);
@@ -91,7 +95,7 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
     try {
       await classifyProspects(result.searchId);
       // Re-run from cache to pull the merged classifications back.
-      const res = await runProspectSearch({ keyword, location, radius });
+      const res = await runProspectSearch({ keyword, location, radius, maxResults: depth });
       setResult(res);
     } catch (e) {
       setError((e as Error).message);
@@ -134,6 +138,22 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
             placeholder="Radius"
             className={`${input} max-w-[90px]`}
           />
+          {/*
+            Search depth. Google's Text Search hands back 20 results per page
+            and stops after three pages, so 60 is the ceiling — not a setting
+            we chose. Each extra page is a separately billed request, which is
+            why this is an explicit choice rather than always fetching 60.
+          */}
+          <select
+            value={depth}
+            onChange={(e) => setDepth(Number(e.target.value))}
+            title="How many results to fetch — each 20 is one billed Places request"
+            className={`${input} max-w-[130px]`}
+          >
+            <option value={20}>20 results</option>
+            <option value={40}>40 results</option>
+            <option value={60}>60 (max)</option>
+          </select>
           <button
             onClick={() => startTransition(() => run())}
             disabled={pending}
@@ -143,7 +163,8 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
           </button>
         </div>
         <p className="mt-2.5 text-[11.5px] text-muted">
-          Estimated cost: ~${estimate.toFixed(2)} Places API ·{" "}
+          Estimated cost: ~${estimate.toFixed(2)} Places API for {depth} results
+          ({Math.ceil(depth / 20)} request{depth > 20 ? "s" : ""}) ·{" "}
           <b className="text-[#C9CEE3]">0 Claude calls</b> — results come from
           Google directly. Cached 30 days.
         </p>

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
-import { getPlacesClient } from "@/lib/places";
+import { getPlacesClient, PLACES_PAGE_SIZE, PLACES_MAX_RESULTS } from "@/lib/places";
 import { resolveIntegration } from "@/modules/integrations/resolve";
 import { callClaude } from "@/lib/ai/call-claude";
 import {
@@ -24,6 +24,8 @@ const searchSchema = z.object({
   keyword: z.string().min(1),
   location: z.string().min(1),
   radius: z.string().optional(),
+  /** Google pages at 20 and stops at 60; the UI offers 20/40/60. */
+  maxResults: z.number().int().min(1).max(PLACES_MAX_RESULTS).optional(),
 });
 
 function summarize(keyword: string, location: string, rows: ProspectRow[]): string {
@@ -47,13 +49,22 @@ export async function runProspectSearch(raw: unknown): Promise<ProspectSearchRes
   });
   if (cached && isCacheFresh(cached.ranAt, new Date())) {
     const results = (cached.results as ProspectRow[] | null) ?? [];
-    return {
-      fromCache: true,
-      searchId: cached.id,
-      results,
-      summary: summarize(input.keyword, input.location, results),
-      costUsd: 0,
-    };
+    // Serve the cache only if it can satisfy the depth being asked for. A
+    // count that is an exact multiple of the page size means the previous run
+    // stopped at a page boundary and deeper pages were never fetched; a
+    // partial last page means the area is genuinely exhausted, so re-running
+    // would spend money to return the same rows.
+    const want = input.maxResults ?? PLACES_PAGE_SIZE;
+    const exhausted = results.length % PLACES_PAGE_SIZE !== 0;
+    if (results.length >= want || exhausted) {
+      return {
+        fromCache: true,
+        searchId: cached.id,
+        results,
+        summary: summarize(input.keyword, input.location, results),
+        costUsd: 0,
+      };
+    }
   }
 
   // Workspace key if configured, else the env one.
