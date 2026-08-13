@@ -24,6 +24,7 @@ export const AUDIT_CATEGORIES = [
   "conversion",
   "accessibility",
   "performance",
+  "structure",
 ] as const;
 
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number];
@@ -37,7 +38,17 @@ export const CATEGORY_LABEL: Record<AuditCategory, { en: string; hu: string }> =
   conversion: { en: "Analytics & conversion", hu: "Mérés és megkeresés" },
   accessibility: { en: "Accessibility", hu: "Akadálymentesség" },
   performance: { en: "Speed", hu: "Sebesség" },
+  structure: { en: "Site structure", hu: "Oldalszerkezet" },
 };
+
+/**
+ * Categories that only a multi-page crawl can produce (P2/1).
+ *
+ * The crawl is an internal tool: public and self-serve audits stay single-page
+ * for cost control, and the public share page must not show findings the
+ * reader's own single-page report never contained. Filtered out there.
+ */
+export const INTERNAL_ONLY_CATEGORIES: ReadonlySet<AuditCategory> = new Set(["structure"]);
 
 /**
  * Default weight per category, summing to 100. The Owner can retune these in
@@ -45,13 +56,14 @@ export const CATEGORY_LABEL: Record<AuditCategory, { en: string; hu: string }> =
  * the same things.
  */
 export const DEFAULT_CATEGORY_WEIGHTS: Record<AuditCategory, number> = {
-  security: 18,
-  email: 10,
-  legal: 18,
-  seo: 18,
-  conversion: 14,
+  security: 16,
+  email: 8,
+  legal: 16,
+  seo: 16,
+  conversion: 12,
   accessibility: 12,
   performance: 10,
+  structure: 10,
 };
 
 export type CategoryWeights = Record<AuditCategory, number>;
@@ -134,6 +146,17 @@ export const CHECK_META: Record<string, CheckMeta> = {
   pageWeight: { category: "performance", weight: 2 },
   psiPerformance: { category: "performance", weight: 2 },
   copyright: { category: "performance" },
+
+  // site structure — only present on a crawled audit (P2/1)
+  brokenLinks: { category: "structure", weight: 3 },
+  redirectChains: { category: "structure" },
+  pageTitles: { category: "structure", weight: 2 },
+  duplicateTitles: { category: "structure", weight: 2 },
+  pageMetaDescriptions: { category: "structure" },
+  duplicateMetaDescriptions: { category: "structure" },
+  h1Consistency: { category: "structure" },
+  orphanPages: { category: "structure" },
+  pageWeightOutliers: { category: "structure" },
 };
 
 export interface CategoryScore {
@@ -184,6 +207,19 @@ export function scoreByCategory(checks: AuditCheck[]): CategoryScore[] {
 }
 
 /**
+ * What the public share page is allowed to group and show.
+ *
+ * One function rather than a filter written inline in the page, so the rule
+ * that keeps crawl findings off a prospect-facing surface is the thing a test
+ * can pin — a filter in JSX would drift the first time the page is edited.
+ */
+export function publicCategoryGroups(checks: AuditCheck[]): CategoryScore[] {
+  return scoreByCategory(checks).filter(
+    (g) => g.total > 0 && !INTERNAL_ONLY_CATEGORIES.has(g.category),
+  );
+}
+
+/**
  * Checks with no category mapping.
  *
  * Grouping by category would otherwise DROP them from the report entirely, so
@@ -224,4 +260,4 @@ export function overallFromCategories(
  * an older stored audit render wrongly. Reports keep their original version so
  * a cached audit still shows the grouping it was scored under.
  */
-export const AUDIT_SCHEMA_VERSION = 2;
+export const AUDIT_SCHEMA_VERSION = 3;

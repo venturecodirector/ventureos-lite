@@ -1,5 +1,6 @@
 import type { AuditView } from "./types";
 import { scoreByCategory, ungroupedChecks, CATEGORY_LABEL } from "./categories";
+import { analyzeStructure } from "./structure";
 
 /**
  * Branded audit one-pager (spec §4.4). A self-contained HTML doc — no external
@@ -126,9 +127,85 @@ export function auditReportBody(view: AuditView, shots: InlineShots = {}): strin
     </div>
     <div class="eyebrow">Findings</div>
     <div class="checks">${checks}${other}</div>
+    ${structureSection(view)}
     ${shotsHtml}
     ${pitch}
   `;
+}
+
+/**
+ * Per-page detail from the crawl (P2/1) — the sales PDF only.
+ *
+ * The grouped findings above already carry the Site structure verdicts; this
+ * is the evidence behind them, which is what makes the finding usable in a
+ * conversation ("these four pages share one title, here they are").
+ */
+function structureSection(view: AuditView): string {
+  const crawl = view.crawl;
+  if (!crawl || crawl.pages.length === 0) return "";
+  const { rows } = analyzeStructure(crawl);
+
+  const kb = (b: number) => (b > 0 ? `${Math.round(b / 1000)} KB` : "—");
+  const body = rows
+    .map((r) => {
+      const notes: string[] = [];
+      if (r.titleDuplicate) notes.push("duplicate title");
+      if (r.metaDuplicate) notes.push("duplicate meta");
+      if (r.h1Count !== 1) notes.push(r.h1Count === 0 ? "no H1" : `${r.h1Count} H1s`);
+      if (r.redirects.length >= 2) notes.push(`${r.redirects.length} redirects`);
+      if (r.brokenLinksOut > 0) notes.push(`${r.brokenLinksOut} broken links`);
+      if (r.weightOutlier) notes.push("heavy");
+      if (r.deep?.a11y && r.deep.a11y.critical > 0) {
+        notes.push(`${r.deep.a11y.critical} critical a11y`);
+      }
+      return `<tr>
+        <td>${esc(r.path)}</td>
+        <td class="num">${r.status ?? "—"}</td>
+        <td>${esc(r.title ?? "—")}</td>
+        <td class="num">${kb(r.bytes)}</td>
+        <td class="muted">${esc(notes.join(", ") || "—")}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const broken = crawl.brokenLinks.length
+    ? `<div class="broken"><b>Broken links</b>${crawl.brokenLinks
+        .slice(0, 12)
+        .map(
+          (b) =>
+            `<div class="muted">${esc(pathOnly(b.from))} &rarr; ${esc(
+              pathOnly(b.to),
+            )} · ${b.status ?? "unreachable"}</div>`,
+        )
+        .join("")}${
+        crawl.brokenLinks.length > 12
+          ? `<div class="muted">+${crawl.brokenLinks.length - 12} more</div>`
+          : ""
+      }</div>`
+    : "";
+
+  const scope = `${crawl.pages.length} of ${crawl.discovered} pages crawled${
+    crawl.deadlineHit ? " · stopped on time budget" : ""
+  }${crawl.robotsSkipped > 0 ? ` · ${crawl.robotsSkipped} skipped per robots.txt` : ""}`;
+
+  return `
+    <div class="eyebrow">Site structure</div>
+    <div class="muted scope">${esc(scope)}</div>
+    <table class="pages">
+      <thead><tr><th>Page</th><th>Status</th><th>Title</th><th>HTML</th><th>Notes</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+    ${broken}
+  `;
+}
+
+function pathOnly(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.pathname}${u.search}` || "/";
+  } catch {
+    return url;
+  }
 }
 
 export function buildAuditPdfHtml(
@@ -185,6 +262,23 @@ export function buildAuditPdfHtml(
   .ic { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; font-size: 10px; }
   .ic.p { background: rgba(61,220,151,0.15); color: #3DDC97; }
   .ic.f { background: rgba(255,92,122,0.15); color: #FF5C7A; }
+  .scope { font-size: 10px; margin: -6px 0 8px; }
+  .pages { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
+  .pages th {
+    text-align: left; font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
+    color: #858CAE; border-bottom: 1px solid rgba(239,241,248,0.09); padding: 4px 6px 4px 0;
+  }
+  .pages td {
+    padding: 4px 6px 4px 0; color: #C9CEE3; vertical-align: top;
+    border-bottom: 1px solid rgba(239,241,248,0.05);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pages td.num { font-variant-numeric: tabular-nums; }
+  .pages th:nth-child(2), .pages td:nth-child(2) { width: 48px; }
+  .pages th:nth-child(4), .pages td:nth-child(4) { width: 56px; }
+  .pages th:nth-child(5), .pages td:nth-child(5) { width: 150px; white-space: normal; }
+  .broken { margin-top: 10px; font-size: 10px; }
+  .broken b { display: block; margin-bottom: 3px; font-size: 10px; }
   .pitch { margin-top: 26px; border: 1px solid rgba(116,39,198,0.4); background: rgba(116,39,198,0.10); border-radius: 12px; padding: 16px 18px; }
   .pitch p { font-size: 12.5px; line-height: 1.6; color: #E4D3FF; }
   .foot { margin-top: 40px; padding-top: 14px; border-top: 1px solid rgba(239,241,248,0.09); font-size: 10.5px; color: #858CAE; }

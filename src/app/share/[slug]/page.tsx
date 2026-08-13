@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prismaUnsafe } from "@/lib/db";
 import { isShareExpired } from "@/modules/audit/share";
 import { auditRowToView } from "@/modules/audit/view";
-import { scoreByCategory, CATEGORY_LABEL } from "@/modules/audit/categories";
+import { publicCategoryGroups, CATEGORY_LABEL } from "@/modules/audit/categories";
 
 // Public, prospect-facing, no product chrome. Cross-tenant read keyed on the
 // unguessable slug — a deliberate public surface, not tenant business logic.
@@ -102,11 +102,11 @@ export default async function SharePage({
             {/*
               Grouped by category with a per-category count (P1/3d), in
               Hungarian — this is the prospect-facing surface. Categories with
-              nothing measured are left out entirely rather than shown as gaps.
+              nothing measured are left out entirely rather than shown as gaps,
+              and so is Site structure: that comes from the internal multi-page
+              crawl (P2/1), and public audits are single-page by design.
             */}
-            {scoreByCategory(view.checks)
-              .filter((g) => g.total > 0)
-              .map((g) => (
+            {publicCategoryGroups(view.checks).map((g) => (
                 <div key={g.category} className="mt-6">
                   <div className="flex items-baseline gap-2 border-b border-line pb-1.5">
                     <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink">

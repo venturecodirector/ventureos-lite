@@ -1,5 +1,5 @@
 import type { AuditVerdict } from "@prisma/client";
-import type { AuditView, AuditCheck } from "./types";
+import type { AuditView, AuditCheck, CrawlResult } from "./types";
 
 /**
  * Pure mapper AuditResult row -> AuditView, shared by the web action (getAudit),
@@ -16,6 +16,8 @@ interface AuditRowLike {
   screenshots: unknown;
   pitchSummary: string | null;
   pdfPath: string | null;
+  /** Optional so a caller that selected a narrow column set still type-checks. */
+  crawl?: unknown;
 }
 
 export function auditRowToView(a: AuditRowLike): AuditView {
@@ -33,5 +35,11 @@ export function auditRowToView(a: AuditRowLike): AuditView {
         : {},
     pitchSummary: a.pitchSummary ?? null,
     pdfPath: a.pdfPath ?? null,
+    // A crawl is an object with a pages array; anything else (including the
+    // JSON null Prisma stores) is "this audit was single-page".
+    crawl:
+      a.crawl && typeof a.crawl === "object" && Array.isArray((a.crawl as CrawlResult).pages)
+        ? (a.crawl as CrawlResult)
+        : null,
   };
 }

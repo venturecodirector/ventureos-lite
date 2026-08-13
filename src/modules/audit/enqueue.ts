@@ -10,6 +10,12 @@ export interface AuditJobData {
   url: string;
   leadId?: string;
   withPitch: boolean;
+  /**
+   * Multi-page crawl (P2/1). Absent means single page, which is what every
+   * public and self-serve audit gets — the crawl is an internal, sales-PDF
+   * tool, and leaving it off by default keeps that true by construction.
+   */
+  crawl?: { cap: number };
 }
 
 export async function enqueueAudit(data: AuditJobData): Promise<void> {

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AuditView } from "@/modules/audit/types";
 import { JobProgress } from "./job-progress";
+import { SiteStructure } from "./site-structure";
 import {
   startAudit,
   getAudit,
@@ -13,6 +14,8 @@ import {
 
 const POLL_MS = 1500;
 const POLL_TIMEOUT_MS = 45_000;
+/** A crawl adds up to ~75s of paced fetching before the usual stages run. */
+const CRAWL_POLL_TIMEOUT_MS = 180_000;
 
 function VerdictChip({ verdict }: { verdict: string }) {
   const map: Record<string, string> = {
@@ -32,6 +35,8 @@ function VerdictChip({ verdict }: { verdict: string }) {
 export function AuditRunner({ initialUrl }: { initialUrl: string }) {
   const [url, setUrl] = useState(initialUrl);
   const [withPitch, setWithPitch] = useState(false);
+  // Internal-only: public and self-serve audits stay single-page (P2/1).
+  const [withCrawl, setWithCrawl] = useState(false);
   const [auditId, setAuditId] = useState<string | null>(null);
   const [view, setView] = useState<AuditView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +59,7 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
       if (!active) return;
       if (v) setView(v);
       if (v && (v.status === "done" || v.status === "error")) return;
-      if (Date.now() - started > POLL_TIMEOUT_MS) return;
+      if (Date.now() - started > (withCrawl ? CRAWL_POLL_TIMEOUT_MS : POLL_TIMEOUT_MS)) return;
       timer.current = setTimeout(tick, POLL_MS);
     };
     timer.current = setTimeout(tick, 300);
@@ -62,7 +67,7 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
       active = false;
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [auditId]);
+  }, [auditId, withCrawl]);
 
   // Reflect an already-rendered PDF (e.g. a cached audit).
   useEffect(() => {
@@ -79,7 +84,7 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
     setBusy(true);
     setStartedAt(Date.now());
     try {
-      const { auditId: id } = await startAudit({ url, withPitch });
+      const { auditId: id } = await startAudit({ url, withPitch, crawl: withCrawl });
       setAuditId(id);
     } catch (e) {
       setError((e as Error).message);
@@ -164,6 +169,18 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
             <b className="text-[#C9CEE3]">
               {withPitch ? "1 Claude call" : "0 Claude calls"}
             </b>
+          </span>
+        </label>
+        <label className="mt-1.5 flex items-center gap-2 text-[11.5px] text-muted">
+          <input
+            type="checkbox"
+            checked={withCrawl}
+            onChange={(e) => setWithCrawl(e.target.checked)}
+            style={{ accentColor: "#7427C6" }}
+          />
+          Crawl up to 15 pages · finds broken links and duplicate titles
+          <span className="ml-auto">
+            Internal only · adds up to ~75s · 1 request/sec, robots.txt obeyed
           </span>
         </label>
       </div>
@@ -357,6 +374,8 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
                 })}
               </div>
             </div>
+
+            {view.crawl && <SiteStructure crawl={view.crawl} />}
 
             {view.pitchSummary && (
               <div className="mt-3.5 rounded-card border-[1.5px] border-transparent bg-[linear-gradient(rgba(4,8,34,0.92),rgba(4,8,34,0.92))_padding-box,linear-gradient(135deg,#310B59,#7427C6)_border-box] p-[18px] shadow-glow-lg">

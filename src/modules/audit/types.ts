@@ -79,6 +79,66 @@ export interface PageProbe {
   } | null;
 }
 
+/**
+ * What a deep probe adds for a page we did not make the homepage (P2/1).
+ *
+ * The crawl visits up to 25 pages with plain fetches; running Playwright and
+ * axe on every one of them would cost minutes. Only the homepage and the two
+ * heaviest pages get this, and it is evidence for the per-page detail rows —
+ * it deliberately does not feed the opportunity score (see analyzeStructure).
+ */
+export interface DeepPageProbe {
+  mixedContent?: boolean;
+  headingHierarchyOk?: boolean;
+  a11y?: PageProbe["a11y"];
+}
+
+/** One page as the crawler found it. */
+export interface CrawlPage {
+  /** The URL we requested. */
+  url: string;
+  /** Where we ended up, after any redirects. */
+  finalUrl: string;
+  /** null when the request itself failed (DNS, timeout, connection reset). */
+  status: number | null;
+  /** Intermediate hops, excluding the final URL. Two or more is a chain. */
+  redirects: string[];
+  title: string | null;
+  metaDescription: string | null;
+  h1Count: number;
+  bytes: number;
+  /** Same-site absolute URLs linked from this page. */
+  links: string[];
+  deep?: DeepPageProbe;
+}
+
+export interface BrokenLink {
+  from: string;
+  to: string;
+  /** null when the request failed outright rather than answering 4xx/5xx. */
+  status: number | null;
+}
+
+/** The whole crawl, as stored on the audit row and rendered in the report. */
+export interface CrawlResult {
+  startUrl: string;
+  pages: CrawlPage[];
+  brokenLinks: BrokenLink[];
+  /** URLs listed in sitemap.xml, used for the orphan check. */
+  sitemapUrls: string[];
+  /** How many pages we were allowed to visit. */
+  cap: number;
+  /** Same-site URLs we found in total, visited or not. */
+  discovered: number;
+  /** Skipped because robots.txt disallowed them. */
+  robotsSkipped: number;
+  /** True when there were more links to verify than the link-check budget. */
+  linkCheckTruncated: boolean;
+  /** True when the crawl stopped on its deadline rather than running out of pages. */
+  deadlineHit: boolean;
+  elapsedMs: number;
+}
+
 export interface AuditCheck {
   key: string;
   label: string;
@@ -105,4 +165,6 @@ export interface AuditView {
   screenshots: { desktop?: string; mobile?: string };
   pitchSummary: string | null;
   pdfPath: string | null;
+  /** Present only for an internal crawl run; null on single-page audits. */
+  crawl: CrawlResult | null;
 }

@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
@@ -9,6 +10,7 @@ import { auditRowToView } from "./view";
 import { generateSlug, shareExpiryFrom, shareUrl } from "./share";
 import { normalizeDomain } from "../leads/dedupe";
 import { findProspectDuplicate } from "../prospector/dedupe";
+import { DEFAULT_CRAWL_CAP, MAX_CRAWL_CAP } from "./crawl";
 import type { AuditView } from "./types";
 
 const CACHE_TTL_MS = 30 * 86_400_000;
@@ -17,6 +19,9 @@ const startSchema = z.object({
   url: z.string().min(1),
   leadId: z.string().optional(),
   withPitch: z.boolean().optional(),
+  /** Internal multi-page crawl (P2/1). */
+  crawl: z.boolean().optional(),
+  crawlCap: z.number().int().min(1).max(MAX_CRAWL_CAP).optional(),
 });
 
 function normalizeUrl(url: string): string {
@@ -32,10 +37,16 @@ export async function startAudit(
   const url = normalizeUrl(input.url);
 
   // 30-day cache per URL (spec §4.4). Skip the cache when a pitch is requested
-  // and the cached run doesn't have one.
+  // and the cached run doesn't have one — and likewise when a crawl is asked
+  // for and the cached run was single-page, which is most of them.
   if (!input.withPitch) {
     const cached = await db.auditResult.findFirst({
-      where: { url, status: "done", expiresAt: { gt: new Date() } },
+      where: {
+        url,
+        status: "done",
+        expiresAt: { gt: new Date() },
+        ...(input.crawl ? { crawl: { not: Prisma.DbNull } } : {}),
+      },
       orderBy: { createdAt: "desc" },
     });
     if (cached) return { auditId: cached.id, cached: true };
@@ -85,6 +96,9 @@ export async function startAudit(
     url,
     leadId: input.leadId,
     withPitch: !!input.withPitch,
+    ...(input.crawl
+      ? { crawl: { cap: input.crawlCap ?? DEFAULT_CRAWL_CAP } }
+      : {}),
   });
   revalidatePath("/audit");
   return { auditId: rec.id, cached: false };

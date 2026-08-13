@@ -11,12 +11,15 @@ import {
   buildAuditPitchMessage,
 } from "../../lib/ai/prompts/audit-pitch";
 import { computeIcpScore, type IcpBreakdown } from "../leads/scoring";
-import { probeSite, captureScreenshots } from "./probe";
+import { probeSite, captureScreenshots, probePagesDeep } from "./probe";
+import { crawlSite } from "./crawl";
+import { analyzeStructure } from "./structure";
 import { fetchPsi } from "./psi";
 import { resolveIntegration } from "@/modules/integrations/resolve";
 import { analyzeAudit } from "./analyze";
 import { auditThresholdsFromConfig } from "./config";
 import type { AuditJobData, PdfJobData } from "./enqueue";
+import type { AuditCheck } from "./types";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
 
@@ -89,6 +92,50 @@ export async function processAudit(data: AuditJobData): Promise<void> {
       },
     });
 
+    // Stage 1b — multi-page crawl (P2/1), internal runs only.
+    //
+    // Its checks are appended to the single-page ones and its two flags join
+    // the lead's trigger signals, but it deliberately does NOT move the score:
+    // a crawled and an uncrawled audit of the same site must stay comparable,
+    // or the re-audit delta would report a site "getting worse" when all that
+    // changed was the toggle.
+    let structureChecks: AuditCheck[] = [];
+    let structureFlags: string[] = [];
+    if (data.crawl) {
+      try {
+        const crawl = await crawlSite(data.url, { cap: data.crawl.cap });
+
+        // The deep checks are the expensive half, so they run on the homepage
+        // (already probed above) plus the two heaviest crawled pages only.
+        const heaviest = crawl.pages
+          .filter((p) => p.status !== null && p.status < 400 && p.url !== crawl.startUrl)
+          .sort((a, b) => b.bytes - a.bytes)
+          .slice(0, 2)
+          .map((p) => p.url);
+        if (heaviest.length > 0) {
+          // 10s each, so the two of them cannot push the audit past its budget.
+          const deep = await probePagesDeep(heaviest, 10_000);
+          for (const page of crawl.pages) {
+            if (deep[page.url]) page.deep = deep[page.url];
+          }
+        }
+
+        const structure = analyzeStructure(crawl);
+        structureChecks = structure.checks;
+        structureFlags = structure.flags;
+        await db.auditResult.update({
+          where: { id: data.auditId },
+          data: {
+            crawl: crawl as unknown as object,
+            checks: [...analysis.checks, ...structureChecks],
+            flags: [...new Set([...analysis.flags, ...structureFlags])],
+          },
+        });
+      } catch {
+        // A crawl that dies must not cost the audit its single-page result.
+      }
+    }
+
     // Stage 2 — PageSpeed Insights (optional).
     try {
       probe.psi = await fetchPsi(
@@ -101,8 +148,11 @@ export async function processAudit(data: AuditJobData): Promise<void> {
         data: {
           score: analysis.score,
           verdict: analysis.verdict,
-          checks: analysis.checks,
-          flags: analysis.flags,
+          // Re-scoring from the probe rebuilds the check list from scratch, so
+          // the crawl's findings have to be folded back in or the PSI stage
+          // would quietly erase the whole Site structure category.
+          checks: [...analysis.checks, ...structureChecks],
+          flags: [...new Set([...analysis.flags, ...structureFlags])],
         },
       });
     } catch {
@@ -141,7 +191,11 @@ export async function processAudit(data: AuditJobData): Promise<void> {
     }
 
     // Stage 5 — flags → lead trigger signals.
-    if (data.leadId) await attachFlagsToLead(db, data.leadId, analysis.flags);
+    if (data.leadId) {
+      await attachFlagsToLead(db, data.leadId, [
+        ...new Set([...analysis.flags, ...structureFlags]),
+      ]);
+    }
 
     await db.auditResult.update({
       where: { id: data.auditId },

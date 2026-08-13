@@ -163,6 +163,70 @@ export async function probeSite(url: string): Promise<PageProbe> {
   }
 }
 
+/**
+ * Deep checks on a handful of crawled pages (P2/1).
+ *
+ * The crawl itself is plain HTTP — fast, and enough for titles, links and
+ * status codes. This is the expensive half, so it runs on at most a couple of
+ * pages: one browser, one context, visited in turn, hard per-page timeout.
+ * Anything that fails yields no entry rather than a false finding, exactly as
+ * the single-page probe does.
+ */
+export async function probePagesDeep(
+  urls: string[],
+  perPageTimeoutMs = 15_000,
+): Promise<Record<string, { mixedContent?: boolean; headingHierarchyOk?: boolean; a11y?: PageProbe["a11y"] }>> {
+  const out: Record<string, { mixedContent?: boolean; headingHierarchyOk?: boolean; a11y?: PageProbe["a11y"] }> = {};
+  if (urls.length === 0) return out;
+
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    for (const url of urls) {
+      try {
+        const page = await context.newPage();
+        try {
+          await page.goto(url, { waitUntil: "domcontentloaded", timeout: perPageTimeoutMs });
+          const dom = await page.evaluate(() => {
+            return {
+              mixedContent:
+                location.protocol === "https:" &&
+                Array.from(document.querySelectorAll("img,script,link,iframe")).some((el) => {
+                  const src = el.getAttribute("src") ?? el.getAttribute("href") ?? "";
+                  return src.startsWith("http://");
+                }),
+              headingHierarchyOk: (() => {
+                if (document.querySelectorAll("h1").length !== 1) return false;
+                const levels = Array.from(
+                  document.querySelectorAll("h1,h2,h3,h4,h5,h6"),
+                ).map((el) => Number(el.tagName[1]));
+                for (let i = 1; i < levels.length; i++) {
+                  if (levels[i]! - levels[i - 1]! > 1) return false;
+                }
+                return true;
+              })(),
+            };
+          });
+          const a11y = await runAxe(page);
+          out[url] = {
+            mixedContent: dom.mixedContent,
+            headingHierarchyOk: dom.headingHierarchyOk,
+            a11y,
+          };
+        } finally {
+          await page.close().catch(() => {});
+        }
+      } catch {
+        // One unreachable page must not cost us the others.
+      }
+    }
+    await context.close();
+  } finally {
+    await browser.close();
+  }
+  return out;
+}
+
 /** Stage 3: mobile + desktop screenshots written to the files volume. */
 export async function captureScreenshots(
   url: string,
