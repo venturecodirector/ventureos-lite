@@ -338,6 +338,7 @@ model Company {
 
   leads     Lead[]
   audits    AuditResult[]
+  auditWatch AuditWatch?
   registry  RegistryData?
   referrers Referrer[]
 
@@ -673,6 +674,10 @@ model AuditResult {
   /// across several comparisons — a parent pointer on the competitor would be
   /// wrong the second time it is cited.
   comparison   Json?        @map("comparison_json")
+  /// What changed since the previous audit of the same URL (P2/5). Null on a
+  /// first run — there is nothing to compare against, which is not a delta of
+  /// zero.
+  delta        Json?        @map("delta_json")
   pdfPath      String?      @map("pdf_path")
   createdAt    DateTime     @default(now()) @map("created_at")
   expiresAt    DateTime     @map("expires_at")
@@ -693,6 +698,35 @@ model AuditResult {
 /// person is known. Anonymous by construction: we hold the URL, the coarse
 /// client fingerprint needed for abuse control, and a pointer to the audit.
 /// A Lead only appears later, if the visitor submits the report form (P12/1b).
+/// A company whose website we re-audit on a schedule (P2/5).
+///
+/// Watching a prospect is how a second audit ever happens: the first one is a
+/// snapshot, and only the comparison produces a reason to call. One row per
+/// company, so enabling a watch twice is an update rather than a duplicate.
+model AuditWatch {
+  id            String    @id @default(cuid())
+  workspaceId   String    @map("workspace_id")
+  companyId     String    @map("company_id")
+  /// The URL actually audited — a company's website field can change under us.
+  url           String
+  /// 30 | 90 | 180. Anything else is refused at the API layer.
+  frequencyDays Int       @map("frequency_days")
+  enabled       Boolean   @default(true)
+  nextRunAt     DateTime  @map("next_run_at")
+  lastRunAt     DateTime? @map("last_run_at")
+  /// Who or what turned it on, for the audit trail.
+  createdBy     String?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId])
+  @@index([workspaceId])
+  @@index([nextRunAt])
+  @@map("audit_watches")
+}
+
 /// Personal token letting the browser extension post captures on a user's
 /// behalf. The extension runs on linkedin.com, so it cannot use the app's
 /// session cookie — this is the credential instead. Hashed at rest, revocable,

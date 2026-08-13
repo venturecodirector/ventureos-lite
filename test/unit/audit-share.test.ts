@@ -24,6 +24,7 @@ const view: AuditView = {
   screenshots: {},
   crawl: null,
   crux: null,
+  delta: null,
   pitchSummary: "A 4.9-star business losing mobile visitors to a slow site.",
   pdfPath: null,
 };

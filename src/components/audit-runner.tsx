@@ -7,6 +7,7 @@ import { SiteStructure } from "./site-structure";
 import { FieldData } from "./field-data";
 import { ComparisonPanel } from "./comparison-panel";
 import { PriorityMatrixPanel } from "./priority-matrix";
+import { TrendStrip } from "./trend-strip";
 import {
   startAudit,
   getAudit,
@@ -387,6 +388,8 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
                 }
               />
             )}
+
+            <TrendStrip delta={view.delta} />
 
             {view.status === "done" && <PriorityMatrixPanel auditId={view.id} />}
 

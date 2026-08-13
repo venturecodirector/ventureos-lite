@@ -1,6 +1,7 @@
 import type { AuditVerdict } from "@prisma/client";
 import type { AuditView, AuditCheck, CrawlResult } from "./types";
 import type { CruxData } from "./crux";
+import type { AuditDelta } from "./delta";
 
 /**
  * Pure mapper AuditResult row -> AuditView, shared by the web action (getAudit),
@@ -20,6 +21,7 @@ interface AuditRowLike {
   /** Optional so a caller that selected a narrow column set still type-checks. */
   crawl?: unknown;
   crux?: unknown;
+  delta?: unknown;
 }
 
 export function auditRowToView(a: AuditRowLike): AuditView {
@@ -46,6 +48,10 @@ export function auditRowToView(a: AuditRowLike): AuditView {
     crux:
       a.crux && typeof a.crux === "object" && !Array.isArray(a.crux)
         ? (a.crux as CruxData)
+        : null,
+    delta:
+      a.delta && typeof a.delta === "object" && !Array.isArray(a.delta)
+        ? (a.delta as AuditDelta)
         : null,
   };
 }

@@ -1,5 +1,6 @@
 import type { AuditVerdict } from "@prisma/client";
 import type { CruxData } from "./crux";
+import type { AuditDelta } from "./delta";
 
 /**
  * Normalized site probe (produced by the worker's Playwright/fetch/PSI stage).
@@ -170,4 +171,6 @@ export interface AuditView {
   crawl: CrawlResult | null;
   /** Chrome UX field data; null when the origin has too little traffic. */
   crux: CruxData | null;
+  /** What changed since the previous audit; null on a first run (P2/5). */
+  delta: AuditDelta | null;
 }

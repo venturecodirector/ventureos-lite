@@ -12,7 +12,11 @@ import {
   ERASURE_QUEUE,
 } from "../lib/queue";
 import { processFollowup, processWakeupSweep } from "../modules/pipeline/jobs";
-import { processAudit, processPdfRender } from "../modules/audit/jobs";
+import {
+  processAudit,
+  processPdfRender,
+  processAuditWatchSweep,
+} from "../modules/audit/jobs";
 import { processCallbackDue } from "../modules/calls/jobs";
 import { processDocumentPdf } from "../modules/documents/jobs";
 import { processAnalyticsPdf } from "../modules/analytics/export-job";
@@ -148,6 +152,10 @@ async function main(): Promise<void> {
         const n = await processSignalEngine();
         // eslint-disable-next-line no-console
         console.log(`[worker] signal engine ran for ${n} workspace(s)`);
+      } else if (job.name === "audit-watch") {
+        const n = await processAuditWatchSweep();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] audit watch queued ${n} re-audit(s)`);
       } else if (job.name === "daily-insight") {
         const n = await processDailyInsight();
         // eslint-disable-next-line no-console
@@ -212,6 +220,13 @@ async function main(): Promise<void> {
     "signal-weekly",
     {},
     { repeat: { pattern: "0 7 * * 1" }, jobId: "signal-weekly" },
+  );
+  // Daily re-audit sweep — 04:00, before the working day, so a worsening
+  // signal is on the lead by the time anyone opens the queue (P2/5).
+  await wakeupsQueue().add(
+    "audit-watch",
+    {},
+    { repeat: { pattern: "0 4 * * *" }, jobId: "audit-watch" },
   );
   // Daily insight — 06:30, rotates over the weekly digest (one Haiku call/day).
   await wakeupsQueue().add(

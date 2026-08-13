@@ -17,10 +17,12 @@ import { analyzeStructure } from "./structure";
 import { fetchPsi } from "./psi";
 import { fetchCrux } from "./crux";
 import { loadComparison } from "./comparison-load";
+import { computeDelta, signalFor } from "./delta";
+import { nextRunFrom } from "./watch";
 import { resolveIntegration } from "@/modules/integrations/resolve";
 import { analyzeAudit } from "./analyze";
 import { auditThresholdsFromConfig } from "./config";
-import type { AuditJobData, PdfJobData } from "./enqueue";
+import { enqueueAudit, type AuditJobData, type PdfJobData } from "./enqueue";
 import type { AuditCheck } from "./types";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
@@ -60,6 +62,90 @@ async function attachFlagsToLead(
   }
 
   await db.lead.update({ where: { id: leadId }, data });
+}
+
+/**
+ * Compare this run with the previous audit of the same URL (P2/5).
+ *
+ * A first audit has no delta — and that is not a delta of zero, so the column
+ * stays null and the trend strip renders nothing rather than "unchanged".
+ *
+ * A SIGNIFICANT move becomes a lead activity and a trigger signal. Worse means
+ * something broke and they may not know; better means someone else is probably
+ * working on the site, which is a competitive warning rather than good news.
+ * Both are recorded, neither contacts anyone: no automated outreach, ever.
+ */
+async function recordDelta(
+  db: WorkspaceDb,
+  data: AuditJobData,
+  current: { score: number; checks: AuditCheck[] },
+): Promise<void> {
+  try {
+    const previous = await db.auditResult.findFirst({
+      where: {
+        url: data.url,
+        status: "done",
+        id: { not: data.auditId },
+        // Only compare like with like: an audit scored under an older check
+        // set would report changes we made, not changes they made.
+        schemaVersion: AUDIT_SCHEMA_VERSION,
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, createdAt: true, score: true, checks: true },
+    });
+    if (!previous) return;
+
+    const delta = computeDelta(
+      {
+        id: previous.id,
+        createdAt: previous.createdAt,
+        score: previous.score,
+        checks: Array.isArray(previous.checks) ? (previous.checks as unknown as AuditCheck[]) : [],
+      },
+      current,
+    );
+    await db.auditResult.update({
+      where: { id: data.auditId },
+      data: { delta: delta as unknown as object },
+    });
+
+    const signal = signalFor(delta, data.url.replace(/^https?:\/\//, ""));
+    if (!signal) return;
+
+    // Tasks and the notification centre do not exist yet (P3/P6). The signal
+    // lands where the operator already looks — the lead timeline — carrying
+    // the suggested task text, so adopting it later is a read of one field
+    // rather than a second parallel system to unpick.
+    const leadId =
+      data.leadId ??
+      (
+        await db.lead.findFirst({
+          where: { company: { audits: { some: { id: data.auditId } } } },
+          orderBy: { createdAt: "desc" },
+          select: { id: true },
+        })
+      )?.id;
+    if (!leadId) return;
+
+    await db.activity.create({
+      data: {
+        workspaceId: data.workspaceId,
+        leadId,
+        type: signal.type,
+        payload: {
+          auditId: data.auditId,
+          previousAuditId: delta.previousAuditId,
+          scoreFrom: delta.scoreFrom,
+          scoreTo: delta.scoreTo,
+          headline: signal.headlineHu,
+          suggestedTask: signal.suggestedTaskHu,
+        },
+      },
+    });
+    await attachFlagsToLead(db, leadId, [signal.flag]);
+  } catch {
+    // A delta is an extra: never fail a completed audit over it.
+  }
 }
 
 /**
@@ -226,12 +312,72 @@ export async function processAudit(data: AuditJobData): Promise<void> {
       // render an older cached audit the way it was actually scored (P1/3d).
       data: { status: "done", schemaVersion: AUDIT_SCHEMA_VERSION },
     });
+
+    // Stage 6 — what changed since last time (P2/5).
+    await recordDelta(db, data, {
+      score: analysis.score,
+      checks: [...analysis.checks, ...structureChecks],
+    });
   } catch (e) {
     await db.auditResult
       .update({ where: { id: data.auditId }, data: { status: "error" } })
       .catch(() => {});
     throw e;
   }
+}
+
+/**
+ * Daily sweep: re-audit every watch that has come due (P2/5).
+ *
+ * Deliberately dumb about pacing beyond the due date — the audit queue's own
+ * concurrency of 2 is what stops fifty due watches from becoming fifty
+ * simultaneous browsers, and the weekly-load projection in Settings is what
+ * stops fifty watches from existing in the first place.
+ *
+ * Returns how many were queued, for the worker log.
+ */
+export async function processAuditWatchSweep(now: Date = new Date()): Promise<number> {
+  const due = await prismaUnsafe.auditWatch.findMany({
+    where: { enabled: true, nextRunAt: { lte: now } },
+    include: { company: { select: { id: true, leads: { select: { id: true }, take: 1 } } } },
+    take: 200,
+  });
+
+  let queued = 0;
+  for (const watch of due) {
+    const db = getWorkspaceClient(watch.workspaceId);
+    try {
+      const rec = await db.auditResult.create({
+        data: {
+          workspaceId: watch.workspaceId,
+          companyId: watch.companyId,
+          url: watch.url,
+          status: "queued",
+          score: 0,
+          verdict: "SKIP",
+          flags: [],
+          screenshots: {},
+          expiresAt: new Date(now.getTime() + 30 * 86_400_000),
+        },
+      });
+      await enqueueAudit({
+        auditId: rec.id,
+        workspaceId: watch.workspaceId,
+        url: watch.url,
+        leadId: watch.company.leads[0]?.id,
+        withPitch: false,
+      });
+      queued += 1;
+    } finally {
+      // Reschedule even if the enqueue failed: a watch that cannot run must
+      // not spin every minute for the rest of its life.
+      await prismaUnsafe.auditWatch.update({
+        where: { id: watch.id },
+        data: { lastRunAt: now, nextRunAt: nextRunFrom(now, watch.frequencyDays) },
+      });
+    }
+  }
+  return queued;
 }
 
 /** Worker processor: render the branded audit one-pager to PDF via headless Chrome. */

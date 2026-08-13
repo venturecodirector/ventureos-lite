@@ -36,6 +36,7 @@ import {
   type DedupeResult,
 } from "./dedupe";
 import { findByTaxId, normalizeTaxId } from "../registry/dedupe";
+import { autoWatchForStage } from "../audit/watch-actions";
 
 // ---- input schemas (internal — a "use server" file may only export async fns)
 
@@ -364,7 +365,7 @@ export async function moveLeadStage(
   const db = getWorkspaceClient(workspaceId);
   const lead = await db.lead.findUnique({
     where: { id: leadId },
-    select: { icpScore: true, stage: true, qualification: true },
+    select: { icpScore: true, stage: true, qualification: true, companyId: true },
   });
   if (!lead) throw new Error("Lead not found");
 
@@ -422,6 +423,10 @@ export async function moveLeadStage(
       payload: { from: lead.stage, to: toStage, reason: opts?.reason ?? null },
     },
   });
+
+  // Reaching a stage worth working turns on the audit watch (P2/5). Silent and
+  // best-effort: a watch is never a reason a stage move fails.
+  await autoWatchForStage(lead.companyId, toStage);
 
   // Task-level automations (never messaging). Best-effort — never block the move.
   try {
