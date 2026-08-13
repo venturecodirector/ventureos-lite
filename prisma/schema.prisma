@@ -765,6 +765,133 @@ model LogUpload {
   @@map("log_uploads")
 }
 
+// ============================================================================
+// Email sync (playbook-v2 P2). Correspondence lives in a personal mailbox; the
+// CRM only ever saw what someone pasted in. These tables hold the SUBSET that
+// matches a known lead or company — never the mailbox at large.
+// ============================================================================
+
+/// One connected mailbox, and the state of syncing it.
+///
+/// Health is a stored field rather than something inferred at render time, so
+/// Settings can say "reconnect needed" without probing Google on page load —
+/// and so a token that expired at 3am is visible before someone wonders why the
+/// timeline went quiet.
+model MailAccount {
+  id           String    @id @default(cuid())
+  workspaceId  String    @map("workspace_id")
+  userId       String    @map("user_id")
+  /// gmail — the only provider today. IMAP arrives behind the same interface.
+  provider     String    @default("gmail")
+  /// Which mailbox this is, for the UI and to keep reconnects idempotent.
+  accountEmail String    @map("account_email")
+  /// The GoogleCredential carrying the mail scopes (purpose = "MAIL").
+  credentialId String?   @map("credential_id")
+  /// The `after:` boundary the next incremental pass starts from.
+  watermark    DateTime?
+  /// How far the 90-day backfill has walked back, so it can resume.
+  backfillCursor DateTime? @map("backfill_cursor")
+  backfillDone Boolean   @default(false) @map("backfill_done")
+  /// ok | reconnect_needed | rate_limited | error
+  health       String    @default("ok")
+  lastError    String?   @db.Text @map("last_error")
+  lastSyncAt   DateTime? @map("last_sync_at")
+  enabled      Boolean   @default(true)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  threads EmailThread[]
+
+  @@unique([userId, accountEmail])
+  @@index([workspaceId])
+  @@map("mail_accounts")
+}
+
+/// A conversation, matched to a lead or company.
+model EmailThread {
+  id              String   @id @default(cuid())
+  workspaceId     String   @map("workspace_id")
+  accountId       String   @map("account_id")
+  /// Gmail's thread id, so a reply threads correctly for the recipient.
+  providerThreadId String  @map("provider_thread_id")
+  subject         String?  @db.Text
+  leadId          String?  @map("lead_id")
+  companyId       String?  @map("company_id")
+  /// address | domain | manual. Recording HOW it matched is what lets a
+  /// domain guess be corrected without the next sync re-matching it the same
+  /// wrong way.
+  matchType       String   @default("address") @map("match_type")
+  lastMessageAt   DateTime @map("last_message_at")
+  messageCount    Int      @default(0) @map("message_count")
+  unread          Boolean  @default(false)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  account  MailAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  messages EmailMessage[]
+
+  @@unique([accountId, providerThreadId])
+  @@index([workspaceId, lastMessageAt])
+  @@index([leadId])
+  @@map("email_threads")
+}
+
+/// One message. Attachment BYTES are fetched on demand; only metadata lives
+/// here, so a synced mailbox does not become a second copy of every PDF a
+/// client ever sent.
+model EmailMessage {
+  id                String   @id @default(cuid())
+  workspaceId       String   @map("workspace_id")
+  threadId          String   @map("thread_id")
+  providerMessageId String   @map("provider_message_id")
+  /// INBOUND | OUTBOUND, from the mailbox owner's point of view.
+  direction         String
+  fromAddress       String   @map("from_address")
+  fromName          String?  @map("from_name")
+  /// JSON arrays of addresses.
+  toAddresses       Json     @map("to_addresses")
+  ccAddresses       Json?    @map("cc_addresses")
+  subject           String?  @db.Text
+  snippet           String?  @db.Text
+  /// Sanitized on ingest AND rendered in a sandboxed iframe. Email HTML is
+  /// hostile input from strangers; one layer is not enough.
+  bodyHtml          String?  @db.Text @map("body_html")
+  bodyText          String?  @db.Text @map("body_text")
+  hasAttachments    Boolean  @default(false) @map("has_attachments")
+  /// [{ filename, mimeType, sizeBytes, providerAttachmentId, storedPath? }]
+  attachments       Json?
+  sentAt            DateTime @map("sent_at")
+  /// When the Haiku reply analysis ran, if it ever did. Never set by backfill.
+  analyzedAt        DateTime? @map("analyzed_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  thread EmailThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, providerMessageId])
+  @@index([workspaceId, sentAt])
+  @@map("email_messages")
+}
+
+/// A learned address→lead mapping, written when someone links an unmatched
+/// thread by hand.
+///
+/// Without this the unmatched queue is endless manual work: the same person
+/// writing from the same address would need linking every time. One correction
+/// teaches the matcher permanently.
+model AddressLink {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  email       String
+  leadId      String?  @map("lead_id")
+  companyId   String?  @map("company_id")
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId])
+  @@map("address_links")
+}
+
 /// Someone asked for their audit report, and what exactly they agreed to
 /// (P12/1b).
 ///
