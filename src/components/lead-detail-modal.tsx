@@ -9,7 +9,7 @@ import {
   updateLeadDetail,
   type LeadDetail,
 } from "@/modules/leads/detail";
-import { moveLeadStage } from "@/modules/leads/actions";
+import { moveLeadStage, deleteLead } from "@/modules/leads/actions";
 import { PIPELINE_STAGES, SIDE_STAGES, STAGE_LABELS } from "@/modules/pipeline/transitions";
 import { Modal } from "./modal";
 
@@ -38,6 +38,10 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
   const [signalInput, setSignalInput] = useState("");
   const [scoreReason, setScoreReason] = useState("");
   const [scoreDraft, setScoreDraft] = useState<number | null>(null);
+  // Two-step delete. This is a hard erasure across a dozen tables plus files
+  // on disk with no undo, so it does not hang off a single click.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [erasingDocs, setErasingDocs] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -60,6 +64,23 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
 
   function patch(next: Partial<LeadDetail>) {
     setForm((f) => (f ? { ...f, ...next } : f));
+  }
+
+  function remove() {
+    if (!form) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await deleteLead({ leadId: form.id, eraseDocuments: erasingDocs });
+      if (!res.ok) {
+        setConfirmDelete(false);
+        setMsg({ kind: "err", text: res.error });
+        return;
+      }
+      // The lead no longer exists, so the modal must go before anything tries
+      // to re-read it; refresh so the list it was opened from drops the row.
+      onClose();
+      router.refresh();
+    });
   }
 
   function save() {
@@ -215,6 +236,7 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
               <input
                 className={INPUT}
                 placeholder="Domain"
+                data-testid="lead-company-domain"
                 value={form.companyDomain}
                 onChange={(e) => patch({ companyDomain: e.target.value })}
               />
@@ -287,7 +309,61 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
             />
           </section>
 
-          <div className="flex flex-wrap justify-end gap-2">
+          {confirmDelete && (
+            <div
+              className="rounded-[10px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.08)] p-3.5"
+              data-testid="lead-delete-confirm"
+            >
+              <p className="text-[12.5px] font-semibold text-[#FFB3C2]">
+                Delete {form.contactName || "this lead"} permanently?
+              </p>
+              <p className="mt-1 text-[12px] text-muted">
+                Removes the lead and everything derived from it — activities,
+                messages, calls, meetings, email history, audit shares and
+                campaign membership. This cannot be undone from the app, and
+                backups age out within 14 days.
+              </p>
+              <label className="mt-2.5 flex items-center gap-2 text-[12px] text-[#C9CEE3]">
+                <input
+                  type="checkbox"
+                  checked={erasingDocs}
+                  onChange={(e) => setErasingDocs(e.target.checked)}
+                  data-testid="lead-delete-docs"
+                />
+                Also delete issued quotes, contracts and certificates with their
+                PDFs. Leave unticked to keep them for accounting, detached from
+                the person.
+              </label>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={BTN}
+                  onClick={() => setConfirmDelete(false)}
+                >
+                  Keep it
+                </button>
+                <button
+                  type="button"
+                  data-testid="lead-delete-confirmed"
+                  disabled={pending}
+                  className="rounded-[10px] border border-[rgba(255,92,122,0.5)] bg-[rgba(255,92,122,0.12)] px-3.5 py-2 text-[12.5px] font-semibold text-[#FFB3C2] hover:bg-[rgba(255,92,122,0.2)] disabled:opacity-60"
+                  onClick={remove}
+                >
+                  Delete permanently
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              data-testid="lead-delete"
+              className="mr-auto rounded-[10px] border border-line px-3.5 py-2 text-[12.5px] text-[#FF8FA5] hover:border-[rgba(255,92,122,0.5)] hover:bg-[rgba(255,92,122,0.08)]"
+              onClick={() => setConfirmDelete(true)}
+            >
+              Delete lead
+            </button>
             <button type="button" className={BTN} onClick={onClose}>
               Cancel
             </button>

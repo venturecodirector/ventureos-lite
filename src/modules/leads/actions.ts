@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import type { Stage } from "@prisma/client";
 import { prismaUnsafe, getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
+import { requireOwner } from "@/lib/authz";
+import { eraseLeadData } from "@/modules/gdpr/erase";
 import { callClaude } from "@/lib/ai/call-claude";
 import {
   LEAD_RESEARCH_SYSTEM,
@@ -393,4 +395,91 @@ export async function moveLeadStage(
   revalidatePath("/leads");
   revalidatePath("/pipeline");
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// deletion
+// ---------------------------------------------------------------------------
+
+const deleteSchema = z.object({
+  leadId: z.string().min(1),
+  /**
+   * Purge quotes/contracts/certificates and their PDFs too. Off by default:
+   * issued legal documents are usually retained under a separate legal basis,
+   * in which case eraseLeadData detaches them from the person instead.
+   */
+  eraseDocuments: z.boolean().default(false),
+});
+
+export type DeleteLeadResult =
+  | { ok: true; deleted: Record<string, number>; filesRemoved: number }
+  | { ok: false; error: string };
+
+/**
+ * Hard-delete a lead and everything derived from it (CLAUDE.md rule #9 —
+ * erasure inside 72h, cascading to derived data, with backups expiring inside
+ * the 14-day rotation).
+ *
+ * The erasure machinery already existed in modules/gdpr/erase.ts and was only
+ * ever reachable from a background job, so there was no way to delete a lead
+ * from the product at all. This is the operator-facing entry point.
+ *
+ * Owner-only: it removes rows across a dozen tables and unlinks files from
+ * disk, and it cannot be undone from inside the app. Audited either way
+ * (rule #8 — every delete is logged).
+ */
+export async function deleteLead(raw: unknown): Promise<DeleteLeadResult> {
+  const parsed = deleteSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Unknown lead." };
+
+  try {
+    await requireOwner();
+  } catch {
+    return { ok: false, error: "Only an Owner can delete a lead." };
+  }
+
+  const { workspaceId, userId } = await getActiveContext();
+  const db = getWorkspaceClient(workspaceId);
+
+  // Read the identifying details BEFORE erasure so the audit entry still says
+  // who was removed once the rows are gone.
+  const lead = await db.lead.findUnique({
+    where: { id: parsed.data.leadId },
+    select: {
+      id: true,
+      contactName: true,
+      email: true,
+      company: { select: { name: true } },
+    },
+  });
+  if (!lead) return { ok: false, error: "Lead not found." };
+
+  const result = await eraseLeadData(db, lead.id, {
+    eraseDocuments: parsed.data.eraseDocuments,
+  });
+
+  await db.auditLog.create({
+    data: {
+      workspaceId,
+      actorUserId: userId,
+      action: "lead.deleted",
+      entityType: "Lead",
+      entityId: lead.id,
+      meta: {
+        contactName: lead.contactName,
+        company: lead.company?.name ?? null,
+        // The address is the point of a GDPR erasure request, so record that
+        // it was this one that went — the log is the proof the request ran.
+        email: lead.email,
+        erasedDocuments: parsed.data.eraseDocuments,
+        deleted: result.deleted,
+        filesRemoved: result.filesRemoved,
+      },
+    },
+  });
+
+  revalidatePath("/leads");
+  revalidatePath("/pipeline");
+  revalidatePath("/public-pages");
+  return { ok: true, deleted: result.deleted, filesRemoved: result.filesRemoved };
 }

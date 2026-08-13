@@ -23,6 +23,7 @@ import { RiskChip } from "./risk-chip";
 import { Modal } from "./modal";
 import { CsvImport } from "./csv-import";
 import { ManualLeadForm } from "./manual-lead-form";
+import { LeadDetailModal } from "./lead-detail-modal";
 
 export interface LeadRow {
   id: string;
@@ -244,6 +245,9 @@ export function LeadEngine({
   const [paste, setPaste] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
+  // Same modal the pipeline board uses — editing and deletion live in one
+  // place rather than being reimplemented per screen.
+  const [detailFor, setDetailFor] = useState<string | null>(null);
   const [showCsv, setShowCsv] = useState(false);
   const [overrideFor, setOverrideFor] = useState<string | null>(null);
   const [enrichFor, setEnrichFor] = useState<string | null>(null);
@@ -368,7 +372,15 @@ export function LeadEngine({
                     <tr key={l.id} className="hover:[&>td]:bg-panel">
                       <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
                         <span className="flex items-center gap-2">
-                          <b>{l.contactName ?? "Unnamed contact"}</b>
+                          <button
+                            type="button"
+                            onClick={() => setDetailFor(l.id)}
+                            data-testid="lead-open-detail"
+                            title="Open to edit or delete"
+                            className="text-left font-bold hover:text-accent-ink hover:underline"
+                          >
+                            {l.contactName ?? "Unnamed contact"}
+                          </button>
                           {l.riskLabel && <RiskChip label={l.riskLabel} />}
                         </span>
                         <span className="block text-[12px] text-muted">
@@ -450,6 +462,10 @@ export function LeadEngine({
           onAddToPipeline={(id) => startTransition(() => toContacted(id))}
         />
       </div>
+
+      {detailFor && (
+        <LeadDetailModal leadId={detailFor} onClose={() => setDetailFor(null)} />
+      )}
 
       {showManual && (
         <ManualLeadForm

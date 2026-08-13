@@ -314,6 +314,11 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
                           className="block overflow-hidden rounded-[10px] border border-line bg-panel-2 hover:border-accent"
                           title={`Open the full ${k} capture`}
                         >
+                          {/* eslint-disable-next-line @next/next/no-img-element --
+                              next/image cannot help here: these are
+                              session-authenticated blobs behind /api/files, not
+                              optimisable static assets, and the loader would
+                              strip the cookie. */}
                           <img
                             src={`/api/files/${shot}`}
                             alt={`${k} screenshot`}
