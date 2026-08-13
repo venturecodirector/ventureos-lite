@@ -173,7 +173,9 @@
       "Bash(ssh -i *)",
       "Bash(grep -nE 'prismaUnsafe|getWorkspaceClient|\\\\$extends|\\\\$executeRaw|transaction' src/lib/db.ts)",
       "Bash(awk '/^model Report /,/^}/' prisma/schema.prisma)",
-      "Bash(git branch *)"
+      "Bash(git branch *)",
+      "Bash(cp __TRACKED_VAR__/rasterize.mjs ./_rasterize.mjs)",
+      "Bash(node ./_rasterize.mjs)"
     ]
   },
   "enableAllProjectMcpServers": true,

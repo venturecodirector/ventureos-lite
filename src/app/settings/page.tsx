@@ -3,6 +3,7 @@ import { SettingsGrants } from "@/components/settings-grants";
 import { SecurityPanel } from "@/components/security-panel";
 import { SettingsUsers } from "@/components/settings-users";
 import { SettingsIntegrations } from "@/components/settings-integrations";
+import { SettingsExtension } from "@/components/settings-extension";
 import { ProposalQueue } from "@/components/proposal-queue";
 import { GdprPanel } from "@/components/gdpr-panel";
 import { WorkspaceAdmin } from "@/components/workspace-admin";
@@ -14,6 +15,7 @@ import { listMembers } from "@/modules/settings/actions";
 import { getSecurityStatus } from "@/modules/auth/actions";
 import { listWorkspaceUsers } from "@/modules/users/actions";
 import { getIntegrations } from "@/modules/integrations/actions";
+import { listCaptureTokens } from "@/modules/capture/actions";
 import { listProposals } from "@/modules/signal/actions";
 import { getRetention, listErasableLeads } from "@/modules/gdpr/actions";
 import { isOwner, hasGrant } from "@/lib/authz";
@@ -41,10 +43,13 @@ export default async function SettingsPage({
   const managedUsers = owner ? await listWorkspaceUsers() : [];
   const integrations = owner ? await getIntegrations() : null;
   const szamlazzKeySet = await hasSzamlazzKey();
+  // Personal, not workspace-wide: every user manages their own extension tokens.
+  const captureTokens = await listCaptureTokens();
   return (
     <AppShell activePath="/settings">
       <div className="grid gap-4">
         <SecurityPanel status={securityStatus} focusPassword={security === "password"} />
+        <SettingsExtension tokens={captureTokens} />
         {owner && (
           <SettingsUsers
             users={managedUsers}

@@ -18,7 +18,25 @@ extension stays on is that a human is on the page and pressed a button.
 1. `chrome://extensions` → enable Developer mode → **Load unpacked** → pick this
    `extension/` folder.
 2. In Venture OS: **Settings → Extension** → create a capture token (shown once).
-3. Open the extension popup → Settings → paste your Venture OS URL and the token.
+3. Open the extension popup → Settings → enter your Venture OS address and the
+   token → **Save**. Chrome asks for permission to reach that address; that is
+   the only site access the extension ever gets.
+4. **Test connection** confirms the address, token and permission in one go
+   without creating a lead.
+
+## Permissions, and why each exists
+
+| Permission | Why |
+|---|---|
+| `activeTab` | read the profile tab, only when you press the button |
+| `scripting` | inject the reader on that click (no persistent content script) |
+| `storage` | remember your server address and token locally |
+| `optional_host_permissions` | reach YOUR Venture OS — requested when you save it, not at install |
+
+The manifest asks for **no site access up front**: installing it grants nothing
+until you name your server. There is deliberately no `host_permissions` entry
+for linkedin.com — `activeTab` covers the click, so Chrome never shows "read
+your data on linkedin.com".
 
 ## Why a token instead of your session
 
@@ -36,3 +54,14 @@ hotlinking would leak every lead-card view to LinkedIn.
 
 Everything captured is personal data: it joins the GDPR erasure cascade and the
 anonymization job like any other lead field.
+
+## Updating the icons
+
+`icons/mark.svg` is the source. Re-rasterise from the repo root:
+
+```
+node -e "…"   # see the rasterize snippet in the P1/1e commit
+```
+
+The mark sits at ~74% of the tile: edge-to-edge artwork reads as a smudge at
+16px next to other toolbar icons.
