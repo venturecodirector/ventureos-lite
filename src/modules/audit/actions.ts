@@ -41,10 +41,34 @@ export async function startAudit(
     if (cached) return { auditId: cached.id, cached: true };
   }
 
+  // Link the audit to the company it is about. Nothing set companyId before,
+  // so every audit row had a null company and Public Pages rendered "—" for a
+  // company that plainly existed. Prefer the lead we were started from; fall
+  // back to matching the audited domain against known companies.
+  let companyId: string | undefined;
+  if (input.leadId) {
+    const lead = await db.lead.findUnique({
+      where: { id: input.leadId },
+      select: { companyId: true },
+    });
+    companyId = lead?.companyId ?? undefined;
+  }
+  if (!companyId) {
+    const domain = normalizeDomain(url);
+    if (domain) {
+      const match = await db.company.findFirst({
+        where: { OR: [{ domain }, { website: { contains: domain } }] },
+        select: { id: true },
+      });
+      companyId = match?.id;
+    }
+  }
+
   const now = new Date();
   const rec = await db.auditResult.create({
     data: {
       workspaceId,
+      companyId,
       url,
       status: "queued",
       score: 0,

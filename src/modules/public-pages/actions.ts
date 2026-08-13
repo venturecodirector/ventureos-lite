@@ -59,6 +59,15 @@ export interface PublicPagesView {
   bookings: BookingPageRow[];
 }
 
+/** Hostname of an audited URL, without the www. prefix. Null if unparseable. */
+function hostOf(url: string): string | null {
+  try {
+    return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
 export async function getPublicPages(): Promise<PublicPagesView> {
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
@@ -105,7 +114,10 @@ export async function getPublicPages(): Promise<PublicPagesView> {
       id: s.id,
       slug: s.slug,
       url: auditShareLink(s.slug),
-      companyName: s.audit.company?.name ?? "—",
+      // Audits started before companyId was populated (and any run against a
+      // URL we hold no company for) still have something meaningful to show:
+      // the audited host beats a bare dash.
+      companyName: s.audit.company?.name ?? hostOf(s.audit.url) ?? "—",
       auditUrl: s.audit.url,
       score: s.audit.score,
       expiresAt: s.expiresAt.toISOString(),
