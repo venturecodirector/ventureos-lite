@@ -172,7 +172,8 @@
       "Bash(ssh -i ~/.ssh/ventsso -o BatchMode=yes root@140.82.37.190 'set -e *)",
       "Bash(ssh -i *)",
       "Bash(grep -nE 'prismaUnsafe|getWorkspaceClient|\\\\$extends|\\\\$executeRaw|transaction' src/lib/db.ts)",
-      "Bash(awk '/^model Report /,/^}/' prisma/schema.prisma)"
+      "Bash(awk '/^model Report /,/^}/' prisma/schema.prisma)",
+      "Bash(git branch *)"
     ]
   },
   "enableAllProjectMcpServers": true,
