@@ -12,6 +12,7 @@ import {
   type ReplyAnalysis,
 } from "@/lib/ai/prompts/reply-analysis";
 import { getMailProvider } from "@/modules/mail/provider";
+import { brandEmail } from "@/modules/mail/layout";
 import { resolveSendingIdentity } from "@/modules/mail/identity";
 import {
   EMPTY_QUALIFICATION,
@@ -132,7 +133,15 @@ async function notifyOwners(workspaceId: string, leadName: string, reason: strin
       from: identity.from,
       replyTo: identity.replyTo || undefined,
       subject: `Price escalation — ${leadName}`,
-      html: `<p>${leadName} mentioned ${reason}. Money-talk drafting is locked for this thread — please take over.</p>`,
+      html: brandEmail({
+        preheader: `${leadName} — ${reason}`,
+        heading: "A thread needs you",
+        paragraphs: [
+          `${leadName} mentioned ${reason}.`,
+          "Claude drafting is locked for this thread, so nothing will be written on your behalf. Take it over in the Inbox.",
+        ],
+      }),
+      text: `${leadName} mentioned ${reason}. Money-talk drafting is locked for this thread — please take over.`,
     });
   }
 }

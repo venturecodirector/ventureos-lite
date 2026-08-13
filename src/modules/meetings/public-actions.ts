@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { getMailProvider } from "@/modules/mail/provider";
 import { resolveSendingIdentity } from "@/modules/mail/identity";
+import { brandEmail, brandEmailText } from "@/modules/mail/layout";
 import { getBookingHost, getAvailability, type Availability } from "./public-booking";
 import { getCalendarProvider, type CalendarCredentials } from "./calendar";
 import { calendarFailureActivity } from "./logic";
@@ -224,15 +225,38 @@ async function sendConfirmations(p: {
   whenLabel: string;
 }): Promise<void> {
   const mail = getMailProvider();
-  const guestHtml =
-    `<p>Hi ${escapeHtml(p.guestName)},</p>` +
-    `<p>Your ${escapeHtml(p.typeLabel)} with ${escapeHtml(p.hostName)} is confirmed for <b>${escapeHtml(p.whenLabel)}</b>.</p>` +
-    `<p>A calendar invite is on its way. Reply to this email if you need to reschedule.</p>` +
-    `<p>— Venture CO Group</p>`;
-  const hostHtml =
-    `<p>New booking via your page.</p>` +
-    `<p><b>${escapeHtml(p.guestName)}</b> &lt;${escapeHtml(p.guestEmail)}&gt; booked ${escapeHtml(p.typeLabel)} for <b>${escapeHtml(p.whenLabel)}</b>.</p>` +
-    `<p>The meeting brief is being generated.</p>`;
+
+  // Prospect-facing, so it carries the brand rather than browser defaults.
+  const guest = {
+    preheader: `${p.typeLabel} with ${p.hostName} — ${p.whenLabel}`,
+    heading: "Your meeting is confirmed",
+    paragraphs: [
+      `Hi ${p.guestName}, thanks for booking.`,
+      "Reply to this email if you need to move it — it reaches your host directly.",
+    ],
+    rows: [
+      { label: "What", value: p.typeLabel },
+      { label: "When", value: p.whenLabel },
+      { label: "With", value: p.hostName },
+    ],
+  };
+  const guestHtml = brandEmail(guest);
+  const guestText = brandEmailText(guest);
+
+  const host = {
+    preheader: `${p.guestName} booked ${p.typeLabel}`,
+    heading: "New booking from your page",
+    paragraphs: [
+      `${p.guestName} (${p.guestEmail}) booked a ${p.typeLabel}.`,
+      "The meeting brief is being generated and will be on the lead.",
+    ],
+    rows: [
+      { label: "Guest", value: `${p.guestName} <${p.guestEmail}>` },
+      { label: "When", value: p.whenLabel },
+    ],
+  };
+  const hostHtml = brandEmail(host);
+  const hostText = brandEmailText(host);
   try {
     await mail.send({
       domain: p.identity.domain,
@@ -241,6 +265,7 @@ async function sendConfirmations(p: {
       replyTo: p.hostEmail || p.identity.replyTo || undefined,
       subject: `Confirmed: ${p.typeLabel} — ${p.whenLabel}`,
       html: guestHtml,
+      text: guestText,
     });
     if (p.hostEmail) {
       await mail.send({
@@ -249,14 +274,11 @@ async function sendConfirmations(p: {
         from: p.identity.from,
         subject: `New booking: ${p.guestName} — ${p.whenLabel}`,
         html: hostHtml,
+        text: hostText,
       });
     }
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[booking] confirmation email failed", e);
   }
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

@@ -9,6 +9,7 @@ import { requireGrant } from "@/lib/authz";
 import { generateSlug } from "@/modules/audit/share";
 import { quoteAcceptLink } from "@/lib/public-links";
 import { getMailProvider } from "@/modules/mail/provider";
+import { brandEmail } from "@/modules/mail/layout";
 import { resolveSendingIdentity } from "@/modules/mail/identity";
 import { computeLineTotal, formatHuf, type QuoteItem } from "./quote-math";
 import { getAcceptanceProvider } from "./acceptance-provider";
@@ -126,7 +127,15 @@ async function notifyOwners(workspaceId: string, payload: unknown, name: string)
       from: identity.from,
       replyTo: identity.replyTo || undefined,
       subject: `Quote ${number} accepted`,
-      html: `<p>${name} accepted quote ${number}. Contract generation is now unlocked.</p>`,
+      html: brandEmail({
+        preheader: `${name} accepted quote ${number}`,
+        heading: `Quote ${number} accepted`,
+        paragraphs: [
+          `${name} accepted quote ${number}.`,
+          "Contract generation is now unlocked for this deal.",
+        ],
+      }),
+      text: `${name} accepted quote ${number}. Contract generation is now unlocked.`,
     });
   }
 }

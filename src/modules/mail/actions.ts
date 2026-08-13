@@ -13,6 +13,8 @@ import { allowedStatusTransition } from "@/modules/documents/chain";
 import { getMailProvider, type MailAttachment } from "./provider";
 import { resolveSendingIdentity } from "./identity";
 import { isRecipientSuppressed } from "./suppression";
+import { brandEmail } from "./layout";
+import { quoteAcceptLink } from "@/lib/public-links";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
 
@@ -78,7 +80,15 @@ export async function sendDocument(
 
   const doc = await db.document.findUnique({
     where: { id: input.documentId },
-    select: { id: true, leadId: true, pdfUrl: true, type: true, status: true, payload: true },
+    select: {
+      id: true,
+      leadId: true,
+      pdfUrl: true,
+      type: true,
+      status: true,
+      payload: true,
+      acceptSlug: true,
+    },
   });
   if (!doc) throw new Error("Document not found");
 
@@ -113,7 +123,20 @@ export async function sendDocument(
       from: identity.from,
       replyTo: identity.replyTo || undefined,
       subject: input.subject,
-      html: input.body.replace(/\n/g, "<br>"),
+      // The operator writes plain text; wrap it in the brand shell rather than
+      // shipping bare <br>-joined lines. A quote also gets a button straight to
+      // its acceptance page, which previously only appeared as a bare URL in
+      // the body if the sender remembered to paste one.
+      html: brandEmail({
+        preheader: input.subject,
+        heading: input.subject,
+        paragraphs: input.body.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean),
+        button:
+          doc.type === "QUOTE" && doc.acceptSlug
+            ? { label: "Review and accept", url: quoteAcceptLink(doc.acceptSlug) }
+            : undefined,
+        footNote: doc.pdfUrl ? "The signed PDF is attached." : undefined,
+      }),
       text: input.body,
       attachments,
     });
