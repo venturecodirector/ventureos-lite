@@ -79,7 +79,17 @@ export async function getHostBusy(
       await prismaUnsafe.googleCredential.update({ where: { userId: hostUserId }, data: refreshed });
     }
     return busy;
-  } catch {
+  } catch (e) {
+    // Deliberately fail OPEN: an empty busy list means every configured slot
+    // is offered. Losing a prospect to a blank booking page is worse than a
+    // double-booking the host can move. But it must never be silent — this
+    // swallow is why a missing calendar.readonly scope went unnoticed while
+    // availability was quietly wrong.
+    // eslint-disable-next-line no-console
+    console.error(
+      `[booking] freeBusy failed for host ${hostUserId}; offering all slots unchecked:`,
+      e instanceof Error ? e.message : e,
+    );
     return [];
   }
 }

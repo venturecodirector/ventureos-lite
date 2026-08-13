@@ -7,7 +7,13 @@ import { tryGetActiveContextOrThrow } from "@/lib/session";
  */
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const SCOPES = [
+  // Write bookings into the calendar.
   "https://www.googleapis.com/auth/calendar.events",
+  // Read busy periods. calendar.events alone is NOT enough for freeBusy —
+  // Google rejects it with insufficientPermissions, which made every slot
+  // look free and let prospects book over existing meetings. readonly is the
+  // least-privilege scope that satisfies the freeBusy endpoint.
+  "https://www.googleapis.com/auth/calendar.readonly",
   "openid",
   "email",
 ].join(" ");
