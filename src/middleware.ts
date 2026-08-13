@@ -44,6 +44,7 @@ const PUBLIC_PREFIXES = [
   "/api/webhooks", // delivery/bounce webhooks (signature-verified)
   "/api/capture", // browser-extension capture (bearer token, not a session)
   "/share", // public audit reports (legacy path, still served)
+  "/api/share", // screenshots for a public report (slug is the capability)
   "/r", // public audit reports on the audit domain
   "/public-audit", // self-serve audit landing
   "/accept", // public quote acceptance

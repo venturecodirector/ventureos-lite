@@ -1,9 +1,9 @@
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getWorkspaceClient, prismaUnsafe } from "../../lib/db";
 import { callClaude } from "../../lib/ai/call-claude";
 import { renderHtmlToPdf } from "../../lib/pdf";
-import { buildAuditPdfHtml } from "./pdf-template";
+import { buildAuditPdfHtml, type InlineShots } from "./pdf-template";
 import { auditRowToView } from "./view";
 import {
   AUDIT_PITCH_SYSTEM,
@@ -160,7 +160,21 @@ export async function processPdfRender(data: PdfJobData): Promise<void> {
   const a = await db.auditResult.findUnique({ where: { id: data.auditId } });
   if (!a) return;
 
-  const html = buildAuditPdfHtml(auditRowToView(a));
+  // Inline the screenshots: headless Chrome renders this HTML with no session,
+  // so an /api/files URL would come out as two broken boxes (P1/3a).
+  const view = auditRowToView(a);
+  const shots: InlineShots = {};
+  for (const kind of ["desktop", "mobile"] as const) {
+    const rel = view.screenshots[kind];
+    if (!rel) continue;
+    try {
+      const bytes = await readFile(join(FILES_DIR, rel));
+      shots[kind] = `data:image/png;base64,${bytes.toString("base64")}`;
+    } catch {
+      // A missing capture must not fail the whole PDF.
+    }
+  }
+  const html = buildAuditPdfHtml(view, { shots });
   const pdf = await renderHtmlToPdf(html);
 
   const rel = `audits/${data.auditId}.pdf`;

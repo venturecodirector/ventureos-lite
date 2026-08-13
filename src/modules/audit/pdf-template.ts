@@ -30,8 +30,21 @@ export interface AuditDocOptions {
   generatedAt?: Date;
 }
 
+/**
+ * Screenshots as data URIs, read from disk by the caller.
+ *
+ * The PDF is rendered by headless Chrome in the worker, which has no session
+ * and cannot pull /api/files. Inlining the bytes is what makes the images
+ * appear at all — a src pointing at the app would render two broken boxes,
+ * which is exactly how they came to be missing from the PDF.
+ */
+export interface InlineShots {
+  desktop?: string | null;
+  mobile?: string | null;
+}
+
 /** Shared report body (used by both the PDF and the public share page). */
-export function auditReportBody(view: AuditView): string {
+export function auditReportBody(view: AuditView, shots: InlineShots = {}): string {
   const flags = view.flags
     .map(
       (f) =>
@@ -49,6 +62,23 @@ export function auditReportBody(view: AuditView): string {
     )
     .join("");
 
+  const shotPairs: Array<[string, string | null | undefined]> = [
+    ["Asztali nezet", shots.desktop],
+    ["Mobil nezet", shots.mobile],
+  ];
+  const shotsHtml = shotPairs.some(([, src]) => src)
+    ? '<div class="shots">' +
+      shotPairs
+        .filter(([, src]) => src)
+        .map(
+          ([label, src]) =>
+            '<figure><img src="' + src + '" alt="' + esc(label) + '"/><figcaption>' +
+            esc(label) + "</figcaption></figure>",
+        )
+        .join("") +
+      "</div>"
+    : "";
+
   const pitch = view.pitchSummary
     ? `<div class="pitch"><div class="eyebrow">Pitch angle</div><p>${esc(view.pitchSummary)}</p></div>`
     : "";
@@ -64,13 +94,14 @@ export function auditReportBody(view: AuditView): string {
     </div>
     <div class="eyebrow">Findings</div>
     <div class="checks">${checks}</div>
+    ${shotsHtml}
     ${pitch}
   `;
 }
 
 export function buildAuditPdfHtml(
   view: AuditView,
-  opts: AuditDocOptions = {},
+  opts: AuditDocOptions & { shots?: InlineShots } = {},
 ): string {
   const brand = opts.brandName ?? "Venture CO Group";
   const date = fmtDate(opts.generatedAt ?? new Date());
@@ -78,6 +109,15 @@ export function buildAuditPdfHtml(
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><style>
   @page { size: A4; margin: 0; }
+  .shots { display: flex; gap: 12px; margin-top: 18px; }
+  .shots figure { flex: 1; min-width: 0; }
+  .shots img {
+    width: 100%; height: 150px; object-fit: cover; object-position: top;
+    border: 1px solid rgba(239,241,248,0.09); border-radius: 10px;
+  }
+  .shots figcaption {
+    margin-top: 4px; text-align: center; font-size: 9px; color: #858CAE;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -113,7 +153,7 @@ export function buildAuditPdfHtml(
 <body>
   <div class="brand"><b>venture</b><span>co.group</span></div>
   <div class="kicker">Website Opportunity Audit</div>
-  ${auditReportBody(view)}
+  ${auditReportBody(view, opts.shots ?? {})}
   <div class="foot">Prepared by ${esc(brand)} · ${date} · High score = weak site = strong opportunity.</div>
 </body></html>`;
 }

@@ -119,15 +119,53 @@ export default async function SharePage({
               ))}
             </div>
 
-            {view.pitchSummary && (
-              <div className="mt-6 rounded-[12px] border border-[rgba(116,39,198,0.4)] bg-[rgba(116,39,198,0.1)] p-4">
-                <p className="text-[13px] leading-relaxed text-[#E4D3FF]">{view.pitchSummary}</p>
+            {/*
+              FACTS ONLY on the public route (P1/3b). Two things used to render
+              here and must never render again:
+
+                - view.pitchSummary, the Claude-written sales angle. It is
+                  written FOR US, about how to sell to this reader. Showing it
+                  to them is both a bad look and a breach of the internal /
+                  public split the spec draws.
+                - "High score = weak site = strong opportunity", which explains
+                  our scoring in terms of how weak their site is.
+
+              The internal view and the sales PDF keep both. A test asserts the
+              pitch text never appears on this page.
+            */}
+            {(view.screenshots.desktop || view.screenshots.mobile) && (
+              <div className="mt-7">
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+                  Így néz ki az oldal
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {(["desktop", "mobile"] as const).map((kind) =>
+                    view.screenshots[kind] ? (
+                      <figure key={kind}>
+                        {/* eslint-disable-next-line @next/next/no-img-element --
+                            served by a slug-scoped public route, not an
+                            optimisable static asset */}
+                        <img
+                          src={`/api/share/${slug}/shot/${kind}`}
+                          alt={kind === "desktop" ? "Asztali nézet" : "Mobil nézet"}
+                          loading="lazy"
+                          className="w-full rounded-[10px] border border-line object-cover object-top"
+                        />
+                        <figcaption className="mt-1 text-center text-[10.5px] text-muted">
+                          {kind === "desktop" ? "Asztali nézet" : "Mobil nézet"}
+                        </figcaption>
+                      </figure>
+                    ) : null,
+                  )}
+                </div>
               </div>
             )}
 
-            <p className="mt-7 text-[10.5px] text-muted">
-              Prepared by Venture CO Group. High score = weak site = strong
-              opportunity.
+            <p className="mt-7 text-[10.5px] leading-relaxed text-muted">
+              Az elemzést a Venture CO Group készítette, gépi mérések alapján,
+              {" "}
+              {new Date().toISOString().slice(0, 10)}. Kérdés esetén válaszoljon
+              erre az e-mailre, és átnézzük együtt.
             </p>
           </div>
         )}
