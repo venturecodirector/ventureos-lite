@@ -1,3 +1,4 @@
+import { resolveTxt } from "node:dns/promises";
 import { chromium } from "playwright";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -73,12 +74,61 @@ export async function probeSite(url: string): Promise<PageProbe> {
         hasForm,
         hasBooking,
         hasCookieBanner,
+
+        // ---- P1/3c ---------------------------------------------------------
+        // All derived from the page already in memory: no extra request.
+        hasOpenGraph: !!document.querySelector('meta[property^="og:"]'),
+        hasCanonical: !!document.querySelector('link[rel="canonical"]'),
+        hasSchemaOrg:
+          !!document.querySelector('script[type="application/ld+json"]') ||
+          /itemscope|itemtype=/.test(html),
+        // Exactly one h1, and no level skipped on the way down.
+        headingHierarchyOk: (() => {
+          if (document.querySelectorAll("h1").length !== 1) return false;
+          const levels = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6")).map((el) =>
+            Number(el.tagName[1]),
+          );
+          for (let i = 1; i < levels.length; i++) {
+            if (levels[i]! - levels[i - 1]! > 1) return false;
+          }
+          return true;
+        })(),
+        // An http:// subresource on an https page: the browser blocks or warns.
+        mixedContent:
+          location.protocol === "https:" &&
+          Array.from(document.querySelectorAll("img,script,link,iframe")).some((el) => {
+            const src =
+              el.getAttribute("src") ?? el.getAttribute("href") ?? "";
+            return src.startsWith("http://");
+          }),
+        hasAnalytics:
+          /googletagmanager\.com|google-analytics\.com|gtag\(|plausible\.io|matomo|umami/.test(
+            html,
+          ),
+        // Hungarian legal pages are found by their link text or href, which is
+        // how a person finds them too.
+        hasImpresszum: /impresszum|impressum/.test(html),
+        hasPrivacyPolicy:
+          /adatkezel|adatvédelm|privacy[-_ ]?policy|gdpr-tajekoztato/.test(html),
+        hasAszf: /ászf|aszf|általános szerződési|altalanos szerzodesi|terms/.test(html),
+        // Treat it as a webshop only on strong signals; ÁSZF is only expected
+        // of one, and a false positive invents a legal finding.
+        isWebshop:
+          /add[-_ ]?to[-_ ]?cart|kosárba|kosarba|woocommerce|shopify|checkout|pénztár/.test(html),
       };
     });
 
-    const [hasSitemap, hasRobots] = await Promise.all([
+    // Security headers come off the navigation response we already have.
+    const headers = resp?.headers() ?? {};
+    const has = (name: string) => !!headers[name];
+
+    // DNS and the HEAD probes run together: they are independent waits, and
+    // the item's budget is a 45s whole-audit runtime.
+    const [hasSitemap, hasRobots, sitemapUrlCount, mail] = await Promise.all([
       headOk(new URL("/sitemap.xml", finalUrl).toString()),
       headOk(new URL("/robots.txt", finalUrl).toString()),
+      countSitemapUrls(new URL("/sitemap.xml", finalUrl).toString()),
+      lookupMailHygiene(new URL(finalUrl).hostname),
     ]);
 
     await context.close();
@@ -89,7 +139,16 @@ export async function probeSite(url: string): Promise<PageProbe> {
       statusOk: !!resp && resp.ok(),
       hasSitemap,
       hasRobots,
+      sitemapUrlCount,
       pageWeightBytes,
+      // A redirect chain that started on http and ended on https.
+      httpsRedirect: finalUrl.startsWith("https://"),
+      hsts: has("strict-transport-security"),
+      xContentTypeOptions: has("x-content-type-options"),
+      xFrameOptions: has("x-frame-options") || /frame-ancestors/.test(headers["content-security-policy"] ?? ""),
+      csp: has("content-security-policy"),
+      spf: mail.spf,
+      dmarc: mail.dmarc,
       psi: null,
       screenshots: {},
       ...dom,
@@ -130,5 +189,52 @@ export async function captureScreenshots(
     return { desktop: desktopRel, mobile: mobileRel };
   } finally {
     await browser.close();
+  }
+}
+
+/**
+ * SPF and DMARC via DNS (P1/3c).
+ *
+ * Both are TXT lookups and both are allowed to fail: a nameserver timing out
+ * tells us nothing about the domain's mail setup, so we return undefined and
+ * the analysis emits no check rather than a false "missing SPF".
+ */
+async function lookupMailHygiene(
+  hostname: string,
+): Promise<{ spf?: boolean; dmarc?: boolean }> {
+  const bare = hostname.replace(/^www\./, "");
+  const [spf, dmarc] = await Promise.all([
+    resolveTxtSafe(bare).then((rs) =>
+      rs === null ? undefined : rs.some((r) => r.toLowerCase().startsWith("v=spf1")),
+    ),
+    resolveTxtSafe(`_dmarc.${bare}`).then((rs) =>
+      rs === null ? undefined : rs.some((r) => r.toLowerCase().startsWith("v=dmarc1")),
+    ),
+  ]);
+  return { spf, dmarc };
+}
+
+/** Flattened TXT records, or null when the lookup itself failed. */
+async function resolveTxtSafe(name: string): Promise<string[] | null> {
+  try {
+    const records = await resolveTxt(name);
+    return records.map((chunks) => chunks.join(""));
+  } catch (e) {
+    // NXDOMAIN / ENODATA are real answers: the record is genuinely absent.
+    const code = (e as { code?: string }).code;
+    if (code === "ENOTFOUND" || code === "ENODATA") return [];
+    return null;
+  }
+}
+
+/** How many URLs the sitemap lists — depth of the site, cheaply. */
+async function countSitemapUrls(url: string): Promise<number | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    const body = await res.text();
+    return (body.match(/<loc>/gi) ?? []).length;
+  } catch {
+    return null;
   }
 }

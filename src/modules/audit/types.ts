@@ -34,6 +34,49 @@ export interface PageProbe {
   pageWeightBytes: number;
   psi: PsiScores | null;
   screenshots: { desktop?: string; mobile?: string };
+
+  // ---- P1/3c: expanded deterministic signals -----------------------------
+  // Every one is OPTIONAL on purpose. `undefined` means "not measured" — the
+  // analysis then emits no check for it, and its category reports null rather
+  // than counting a failure we never actually observed (a DNS timeout is not
+  // a missing SPF record).
+  httpsRedirect?: boolean;
+  /** Days until the certificate expires; negative when already expired. */
+  sslDaysLeft?: number | null;
+  hsts?: boolean;
+  xContentTypeOptions?: boolean;
+  xFrameOptions?: boolean;
+  csp?: boolean;
+  /** http:// subresources on an https page. */
+  mixedContent?: boolean;
+
+  spf?: boolean;
+  dmarc?: boolean;
+
+  hasImpresszum?: boolean;
+  hasPrivacyPolicy?: boolean;
+  hasAszf?: boolean;
+  /** Drives whether ÁSZF is even applicable. */
+  isWebshop?: boolean;
+
+  hasOpenGraph?: boolean;
+  hasCanonical?: boolean;
+  hasSchemaOrg?: boolean;
+  /** Exactly one h1 and no skipped levels. */
+  headingHierarchyOk?: boolean;
+  sitemapUrlCount?: number | null;
+
+  hasAnalytics?: boolean;
+
+  /** axe-core violation counts by impact. */
+  a11y?: {
+    critical: number;
+    serious: number;
+    moderate: number;
+    minor: number;
+    /** Plain-language descriptions of the worst three. */
+    top: string[];
+  } | null;
 }
 
 export interface AuditCheck {

@@ -66,6 +66,88 @@ export function analyzeAudit(
     },
   ];
 
+  // ---- P1/3c: expanded deterministic checks -------------------------------
+  // Each block is skipped entirely when its signal was not measured, so an
+  // unreachable DNS server or a failed axe run leaves its category as
+  // "not measured" rather than inventing failures.
+  const add = (key: string, label: string, pass: boolean, detail?: string) =>
+    checks.push({ key, label, pass, ...(detail ? { detail } : {}) });
+
+  if (probe.httpsRedirect !== undefined) {
+    add("httpsRedirect", "HTTP redirects to HTTPS", probe.httpsRedirect);
+  }
+  if (probe.sslDaysLeft !== undefined && probe.sslDaysLeft !== null) {
+    add(
+      "sslExpiry",
+      "Certificate not expiring soon",
+      probe.sslDaysLeft >= 30,
+      probe.sslDaysLeft < 0 ? "expired" : `${probe.sslDaysLeft} days left`,
+    );
+  }
+  if (probe.hsts !== undefined) add("hsts", "HSTS header", probe.hsts);
+  if (probe.xContentTypeOptions !== undefined) {
+    add("xcto", "X-Content-Type-Options", probe.xContentTypeOptions);
+  }
+  if (probe.xFrameOptions !== undefined) add("xfo", "Clickjacking protection", probe.xFrameOptions);
+  if (probe.csp !== undefined) add("csp", "Content-Security-Policy", probe.csp);
+  if (probe.mixedContent !== undefined) {
+    add("mixedContent", "No mixed content", !probe.mixedContent);
+  }
+
+  if (probe.spf !== undefined) add("spf", "SPF record", probe.spf);
+  if (probe.dmarc !== undefined) add("dmarc", "DMARC record", probe.dmarc);
+
+  if (probe.hasImpresszum !== undefined) {
+    add("impresszum", "Impresszum", probe.hasImpresszum);
+  }
+  if (probe.hasPrivacyPolicy !== undefined) {
+    add("privacyPolicy", "Adatkezelési tájékoztató", probe.hasPrivacyPolicy);
+  }
+  // ÁSZF is only required of a webshop; on a brochure site its absence is
+  // not a finding, so the check is not emitted at all.
+  if (probe.isWebshop && probe.hasAszf !== undefined) {
+    add("aszf", "ÁSZF (webshop)", probe.hasAszf);
+  }
+
+  if (probe.hasOpenGraph !== undefined) add("openGraph", "Open Graph tags", probe.hasOpenGraph);
+  if (probe.hasCanonical !== undefined) add("canonical", "Canonical URL", probe.hasCanonical);
+  if (probe.hasSchemaOrg !== undefined) add("schemaOrg", "Structured data", probe.hasSchemaOrg);
+  if (probe.headingHierarchyOk !== undefined) {
+    add("headingHierarchy", "Heading structure", probe.headingHierarchyOk);
+  }
+  if (probe.sitemapUrlCount !== undefined && probe.sitemapUrlCount !== null) {
+    // Enrich the existing sitemap check rather than pushing a second one with
+    // the same key — a duplicate would be counted twice by the category
+    // scorer and shown twice in the report.
+    const existing = checks.find((c) => c.key === "sitemap");
+    const detail = `${probe.sitemapUrlCount} URLs`;
+    if (existing) {
+      existing.pass = probe.sitemapUrlCount > 0;
+      existing.detail = detail;
+    } else {
+      add("sitemap", "sitemap.xml", probe.sitemapUrlCount > 0, detail);
+    }
+  }
+
+  if (probe.hasAnalytics !== undefined) add("analytics", "Analytics installed", probe.hasAnalytics);
+  add("clickToCall", "Click-to-call link", probe.hasPhone);
+  add("contactForm", "Contact form", probe.hasForm);
+
+  if (probe.a11y) {
+    add(
+      "a11yCritical",
+      "No critical accessibility violations",
+      probe.a11y.critical === 0,
+      probe.a11y.critical > 0 ? `${probe.a11y.critical} critical` : undefined,
+    );
+    add(
+      "a11ySerious",
+      "No serious accessibility violations",
+      probe.a11y.serious === 0,
+      probe.a11y.serious > 0 ? `${probe.a11y.serious} serious` : undefined,
+    );
+  }
+
   if (probe.psi) {
     checks.push(
       {
