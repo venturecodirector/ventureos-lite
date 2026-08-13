@@ -72,6 +72,14 @@ export const INTEGRATION_GROUPS: IntegrationGroup[] = [
         envVar: "PAGESPEED_API_KEY",
         help: "Same project, with PageSpeed Insights API enabled",
       },
+      {
+        key: "google.cruxApiKey",
+        label: "Chrome UX Report API key (optional)",
+        kind: "secret",
+        envVar: "CRUX_API_KEY",
+        help:
+          "Only needed if the CrUX API lives in a different project — otherwise the PageSpeed key is reused. Enable 'Chrome UX Report API'.",
+      },
     ],
   },
   {

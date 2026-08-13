@@ -1,4 +1,5 @@
 import type { AuditVerdict } from "@prisma/client";
+import type { CruxData } from "./crux";
 
 /**
  * Normalized site probe (produced by the worker's Playwright/fetch/PSI stage).
@@ -167,4 +168,6 @@ export interface AuditView {
   pdfPath: string | null;
   /** Present only for an internal crawl run; null on single-page audits. */
   crawl: CrawlResult | null;
+  /** Chrome UX field data; null when the origin has too little traffic. */
+  crux: CruxData | null;
 }

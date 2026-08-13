@@ -23,6 +23,7 @@ const view: AuditView = {
   flags: ["no mobile", "outdated website"],
   screenshots: {},
   crawl: null,
+  crux: null,
   pitchSummary: "A 4.9-star business losing mobile visitors to a slow site.",
   pdfPath: null,
 };

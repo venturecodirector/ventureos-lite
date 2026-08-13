@@ -661,6 +661,9 @@ model AuditResult {
   /// Multi-page crawl result (P2/1). Null on single-page audits — every
   /// public and self-serve run, and any internal run with the toggle off.
   crawl        Json?        @map("crawl_json")
+  /// Chrome UX Report field data (P2/2). Null when the origin has too little
+  /// traffic for Google to report on — the common case for a micro-SMB site.
+  crux         Json?        @map("crux_json")
   pdfPath      String?      @map("pdf_path")
   createdAt    DateTime     @default(now()) @map("created_at")
   expiresAt    DateTime     @map("expires_at")

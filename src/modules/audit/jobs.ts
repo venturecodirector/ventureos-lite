@@ -15,6 +15,7 @@ import { probeSite, captureScreenshots, probePagesDeep } from "./probe";
 import { crawlSite } from "./crawl";
 import { analyzeStructure } from "./structure";
 import { fetchPsi } from "./psi";
+import { fetchCrux } from "./crux";
 import { resolveIntegration } from "@/modules/integrations/resolve";
 import { analyzeAudit } from "./analyze";
 import { auditThresholdsFromConfig } from "./config";
@@ -136,12 +137,33 @@ export async function processAudit(data: AuditJobData): Promise<void> {
       }
     }
 
-    // Stage 2 — PageSpeed Insights (optional).
+    // Stage 2 — PageSpeed Insights (lab) and Chrome UX Report (field).
+    //
+    // Both are Google, both are free, and they answer different questions:
+    // PSI is one synthetic load, CrUX is what real Chrome users lived through.
+    // They run together because neither depends on the other, and CrUX is
+    // stored separately because it does not feed the score (see crux.ts).
     try {
-      probe.psi = await fetchPsi(
-        probe.finalUrl,
-        await resolveIntegration(data.workspaceId, "google.pagespeedApiKey"),
-      );
+      const psiKey = await resolveIntegration(data.workspaceId, "google.pagespeedApiKey");
+      // The CrUX key is optional: the same project usually serves both, so an
+      // unset override falls back to the PageSpeed key rather than disabling
+      // the feature.
+      const cruxKey =
+        (await resolveIntegration(data.workspaceId, "google.cruxApiKey")) ?? psiKey;
+
+      // Guarded independently: a PageSpeed outage must not also cost us the
+      // field data, and vice versa.
+      const [psi, crux] = await Promise.all([
+        fetchPsi(probe.finalUrl, psiKey).catch(() => null),
+        fetchCrux(probe.finalUrl, cruxKey).catch(() => null),
+      ]);
+      probe.psi = psi;
+      if (crux) {
+        await db.auditResult.update({
+          where: { id: data.auditId },
+          data: { crux: crux as unknown as object },
+        });
+      }
       analysis = analyzeAudit(probe, thresholds);
       await db.auditResult.update({
         where: { id: data.auditId },

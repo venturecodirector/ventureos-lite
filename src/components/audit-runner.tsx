@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AuditView } from "@/modules/audit/types";
 import { JobProgress } from "./job-progress";
 import { SiteStructure } from "./site-structure";
+import { FieldData } from "./field-data";
 import {
   startAudit,
   getAudit,
@@ -374,6 +375,16 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
                 })}
               </div>
             </div>
+
+            {view.status === "done" && (
+              <FieldData
+                crux={view.crux}
+                lang="en"
+                labDetail={
+                  view.checks.find((c) => c.key === "psiPerformance")?.detail ?? null
+                }
+              />
+            )}
 
             {view.crawl && <SiteStructure crawl={view.crawl} />}
 

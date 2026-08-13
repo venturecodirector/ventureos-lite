@@ -3,6 +3,7 @@ import { prismaUnsafe } from "@/lib/db";
 import { isShareExpired } from "@/modules/audit/share";
 import { auditRowToView } from "@/modules/audit/view";
 import { publicCategoryGroups, CATEGORY_LABEL } from "@/modules/audit/categories";
+import { FieldData } from "@/components/field-data";
 
 // Public, prospect-facing, no product chrome. Cross-tenant read keyed on the
 // unguessable slug — a deliberate public surface, not tenant business logic.
@@ -137,6 +138,18 @@ export default async function SharePage({
                   </div>
                 </div>
               ))}
+
+            {/*
+              Field data (P2/2) belongs on the public page: it is a measurement
+              of the reader's own site by their own visitors, which is exactly
+              what "facts only" means. The no-data case says so plainly rather
+              than implying anything.
+            */}
+            <FieldData
+              crux={view.crux}
+              lang="hu"
+              labDetail={view.checks.find((c) => c.key === "psiPerformance")?.detail ?? null}
+            />
 
             {/*
               FACTS ONLY on the public route (P1/3b). Two things used to render

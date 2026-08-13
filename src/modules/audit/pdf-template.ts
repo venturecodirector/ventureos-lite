@@ -1,6 +1,7 @@
 import type { AuditView } from "./types";
 import { scoreByCategory, ungroupedChecks, CATEGORY_LABEL } from "./categories";
 import { analyzeStructure } from "./structure";
+import { formatMetric, verdictFor, fieldSummaryEn } from "./crux";
 
 /**
  * Branded audit one-pager (spec §4.4). A self-contained HTML doc — no external
@@ -125,12 +126,66 @@ export function auditReportBody(view: AuditView, shots: InlineShots = {}): strin
         <div class="flags">${flags}</div>
       </div>
     </div>
+    ${speedSection(view)}
     <div class="eyebrow">Findings</div>
     <div class="checks">${checks}${other}</div>
     ${structureSection(view)}
     ${shotsHtml}
     ${pitch}
   `;
+}
+
+/**
+ * Lab score beside field data (P2/2).
+ *
+ * The lab number is one synthetic load; the field data is what real visitors
+ * lived through over 28 days. Printing them side by side is what makes the
+ * finding hard to wave away — and when there is no field data, saying so
+ * plainly beats implying the site is fine.
+ */
+function speedSection(view: AuditView): string {
+  const psi = view.checks.find((c) => c.key === "psiPerformance");
+  const crux = view.crux ?? null;
+  if (!psi && !crux) return "";
+
+  const rows = crux
+    ? ([
+        ["Betöltés (LCP)", "lcp"],
+        ["Válaszkészség (INP)", "inp"],
+        ["Elrendezés (CLS)", "cls"],
+      ] as const)
+        .map(([label, key]) => {
+          const m = crux[key];
+          if (!m) return "";
+          const v = verdictFor(key, m.p75);
+          return `<tr>
+            <td>${esc(label)}</td>
+            <td class="num">${esc(formatMetric(key, m.p75))}</td>
+            <td class="num">${Math.round(m.good * 100)}%</td>
+            <td class="num">${Math.round(m.needsImprovement * 100)}%</td>
+            <td class="num v-${v ?? "na"}">${Math.round(m.poor * 100)}%</td>
+          </tr>`;
+        })
+        .join("")
+    : "";
+
+  const field = crux
+    ? `<table class="crux">
+         <thead><tr><th>Field data (28 days)</th><th>p75</th><th>good</th><th>needs work</th><th>poor</th></tr></thead>
+         <tbody>${rows}</tbody>
+       </table>
+       <div class="muted scope">${esc(fieldSummaryEn(crux))}${
+         crux.period ? ` · ${esc(crux.period)}` : ""
+       } · ${crux.formFactor === "PHONE" ? "phone traffic" : "all devices"}</div>`
+    : `<div class="muted scope">${esc(fieldSummaryEn(null))}</div>`;
+
+  const lab = psi
+    ? `<div class="lab"><b>Lab (PageSpeed)</b> <span class="muted">${esc(
+        psi.detail ?? (psi.pass ? "pass" : "fail"),
+      )}</span></div>`
+    : "";
+
+  return `<div class="eyebrow">Speed — lab vs. real visitors</div>${lab}${field}`;
 }
 
 /**
@@ -263,6 +318,19 @@ export function buildAuditPdfHtml(
   .ic.p { background: rgba(61,220,151,0.15); color: #3DDC97; }
   .ic.f { background: rgba(255,92,122,0.15); color: #FF5C7A; }
   .scope { font-size: 10px; margin: -6px 0 8px; }
+  .lab { font-size: 11px; margin-bottom: 6px; }
+  .crux { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 4px; }
+  .crux th {
+    text-align: right; font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
+    color: #858CAE; border-bottom: 1px solid rgba(239,241,248,0.09); padding: 4px 6px 4px 0;
+  }
+  .crux th:first-child, .crux td:first-child { text-align: left; }
+  .crux td {
+    padding: 4px 6px 4px 0; color: #C9CEE3; text-align: right;
+    border-bottom: 1px solid rgba(239,241,248,0.05); font-variant-numeric: tabular-nums;
+  }
+  .crux td.v-poor { color: #FF5C7A; }
+  .crux td.v-needs-improvement { color: #F5B841; }
   .pages { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
   .pages th {
     text-align: left; font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
