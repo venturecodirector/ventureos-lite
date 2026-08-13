@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prismaUnsafe } from "@/lib/db";
 import { isShareExpired } from "@/modules/audit/share";
 import { auditRowToView } from "@/modules/audit/view";
+import { scoreByCategory, CATEGORY_LABEL } from "@/modules/audit/categories";
 
 // Public, prospect-facing, no product chrome. Cross-tenant read keyed on the
 // unguessable slug — a deliberate public surface, not tenant business logic.
@@ -98,11 +99,27 @@ export default async function SharePage({
               </div>
             </div>
 
-            <div className="mt-6 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
-              Findings
-            </div>
-            <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
-              {view.checks.map((c) => (
+            {/*
+              Grouped by category with a per-category count (P1/3d), in
+              Hungarian — this is the prospect-facing surface. Categories with
+              nothing measured are left out entirely rather than shown as gaps.
+            */}
+            {scoreByCategory(view.checks)
+              .filter((g) => g.total > 0)
+              .map((g) => (
+                <div key={g.category} className="mt-6">
+                  <div className="flex items-baseline gap-2 border-b border-line pb-1.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink">
+                      {CATEGORY_LABEL[g.category].hu}
+                    </span>
+                    <span className="ml-auto text-[11px] text-muted">
+                      {g.failed === 0
+                        ? "rendben"
+                        : `${g.failed} / ${g.total} javítanivaló`}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+                    {g.checks.map((c) => (
                 <div key={c.key} className="flex items-center gap-2.5 py-1 text-[12.5px] text-[#C9CEE3]">
                   <span
                     className={`grid h-[17px] w-[17px] flex-none place-items-center rounded-full text-[10px] ${
@@ -115,9 +132,11 @@ export default async function SharePage({
                   </span>
                   {c.label}
                   {c.detail ? <span className="text-muted">· {c.detail}</span> : null}
+                        </div>
+                      ))}
+                  </div>
                 </div>
               ))}
-            </div>
 
             {/*
               FACTS ONLY on the public route (P1/3b). Two things used to render

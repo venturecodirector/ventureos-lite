@@ -1,6 +1,7 @@
 import { resolveTxt } from "node:dns/promises";
-import { chromium } from "playwright";
-import { mkdir } from "node:fs/promises";
+import { connect as tlsConnect } from "node:tls";
+import { chromium, type Page } from "playwright";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PageProbe } from "./types";
 
@@ -124,11 +125,13 @@ export async function probeSite(url: string): Promise<PageProbe> {
 
     // DNS and the HEAD probes run together: they are independent waits, and
     // the item's budget is a 45s whole-audit runtime.
-    const [hasSitemap, hasRobots, sitemapUrlCount, mail] = await Promise.all([
+    const [hasSitemap, hasRobots, sitemapUrlCount, mail, sslDaysLeft, a11y] = await Promise.all([
       headOk(new URL("/sitemap.xml", finalUrl).toString()),
       headOk(new URL("/robots.txt", finalUrl).toString()),
       countSitemapUrls(new URL("/sitemap.xml", finalUrl).toString()),
       lookupMailHygiene(new URL(finalUrl).hostname),
+      certificateDaysLeft(new URL(finalUrl).hostname),
+      runAxe(page),
     ]);
 
     await context.close();
@@ -149,6 +152,8 @@ export async function probeSite(url: string): Promise<PageProbe> {
       csp: has("content-security-policy"),
       spf: mail.spf,
       dmarc: mail.dmarc,
+      sslDaysLeft,
+      a11y,
       psi: null,
       screenshots: {},
       ...dom,
@@ -234,6 +239,99 @@ async function countSitemapUrls(url: string): Promise<number | null> {
     if (!res.ok) return null;
     const body = await res.text();
     return (body.match(/<loc>/gi) ?? []).length;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Days until the TLS certificate expires (P1/3c).
+ *
+ * A separate connection because Playwright does not surface the peer
+ * certificate. Cheap, and worth it: an expiring certificate is the single
+ * most urgent finding an audit can produce — the site is days away from
+ * browsers refusing it outright.
+ *
+ * Returns undefined when the check could not be made at all, so the analysis
+ * emits no check rather than a false failure.
+ */
+async function certificateDaysLeft(hostname: string): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v: number | undefined) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
+    };
+    try {
+      const socket = tlsConnect(
+        { host: hostname, port: 443, servername: hostname, timeout: 6000 },
+        () => {
+          const cert = socket.getPeerCertificate();
+          socket.end();
+          if (!cert || !cert.valid_to) return done(undefined);
+          const ms = new Date(cert.valid_to).getTime() - Date.now();
+          done(Number.isFinite(ms) ? Math.floor(ms / 86_400_000) : undefined);
+        },
+      );
+      socket.on("error", () => done(undefined));
+      socket.on("timeout", () => {
+        socket.destroy();
+        done(undefined);
+      });
+    } catch {
+      done(undefined);
+    }
+  });
+}
+
+/**
+ * Accessibility violations via axe-core (P1/3c).
+ *
+ * axe is injected as a source string into the page we already loaded, so the
+ * scan costs no extra navigation. Everything is best-effort: a page that
+ * breaks axe (heavy CSP, exotic framework) yields null, and the analysis then
+ * emits no accessibility check rather than punishing the site for our
+ * tooling's limits.
+ *
+ * Only the counts and the worst three descriptions are kept. The full axe
+ * report is megabytes of JSON, and none of it is actionable in a sales audit.
+ */
+async function runAxe(page: Page): Promise<PageProbe["a11y"]> {
+  try {
+    const source = await readFile(
+      join(process.cwd(), "node_modules", "axe-core", "axe.min.js"),
+      "utf8",
+    );
+    await page.addScriptTag({ content: source });
+    const raw = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe?: { run: (o: unknown) => Promise<unknown> } }).axe;
+      if (!axe) return null;
+      const result = (await axe.run({
+        // Only the rule sets a business actually gets judged on.
+        runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] },
+        resultTypes: ["violations"],
+      })) as { violations?: Array<{ impact?: string; help?: string; nodes?: unknown[] }> };
+      return (result.violations ?? []).map((v) => ({
+        impact: v.impact ?? "minor",
+        help: v.help ?? "",
+        count: (v.nodes ?? []).length,
+      }));
+    });
+    if (!raw) return null;
+
+    const tally = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+    for (const v of raw) {
+      if (v.impact in tally) tally[v.impact as keyof typeof tally] += 1;
+    }
+    const order = ["critical", "serious", "moderate", "minor"];
+    const top = [...raw]
+      .sort((a, b) => order.indexOf(a.impact) - order.indexOf(b.impact) || b.count - a.count)
+      .slice(0, 3)
+      .map((v) => v.help)
+      .filter(Boolean);
+    return { ...tally, top };
   } catch {
     return null;
   }

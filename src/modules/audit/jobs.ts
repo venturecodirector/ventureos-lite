@@ -5,6 +5,7 @@ import { callClaude } from "../../lib/ai/call-claude";
 import { renderHtmlToPdf } from "../../lib/pdf";
 import { buildAuditPdfHtml, type InlineShots } from "./pdf-template";
 import { auditRowToView } from "./view";
+import { AUDIT_SCHEMA_VERSION } from "./categories";
 import {
   AUDIT_PITCH_SYSTEM,
   buildAuditPitchMessage,
@@ -144,7 +145,9 @@ export async function processAudit(data: AuditJobData): Promise<void> {
 
     await db.auditResult.update({
       where: { id: data.auditId },
-      data: { status: "done" },
+      // Stamp the check set this run was scored under, so the report can
+      // render an older cached audit the way it was actually scored (P1/3d).
+      data: { status: "done", schemaVersion: AUDIT_SCHEMA_VERSION },
     });
   } catch (e) {
     await db.auditResult

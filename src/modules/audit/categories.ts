@@ -184,6 +184,18 @@ export function scoreByCategory(checks: AuditCheck[]): CategoryScore[] {
 }
 
 /**
+ * Checks with no category mapping.
+ *
+ * Grouping by category would otherwise DROP them from the report entirely, so
+ * a check added without a registry entry would silently disappear from every
+ * surface. They are rendered in a trailing group and score nothing, which is
+ * visible and harmless — unlike vanishing.
+ */
+export function ungroupedChecks(checks: AuditCheck[]): AuditCheck[] {
+  return checks.filter((c) => !CHECK_META[c.key]);
+}
+
+/**
  * Weighted opportunity score from the category subscores.
  *
  * Only measured categories count, and the divisor shrinks with them — so a

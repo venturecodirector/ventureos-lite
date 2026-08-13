@@ -176,7 +176,8 @@
       "Bash(git branch *)",
       "Bash(cp __TRACKED_VAR__/rasterize.mjs ./_rasterize.mjs)",
       "Bash(node ./_rasterize.mjs)",
-      "Bash('\\) *)"
+      "Bash('\\) *)",
+      "Bash(node -e \"console.log\\('axe-core', require\\('axe-core/package.json'\\).version\\)\")"
     ]
   },
   "enableAllProjectMcpServers": true,

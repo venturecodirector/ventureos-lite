@@ -1,4 +1,5 @@
 import type { AuditView } from "./types";
+import { scoreByCategory, ungroupedChecks, CATEGORY_LABEL } from "./categories";
 
 /**
  * Branded audit one-pager (spec §4.4). A self-contained HTML doc — no external
@@ -52,15 +53,46 @@ export function auditReportBody(view: AuditView, shots: InlineShots = {}): strin
     )
     .join("");
 
-  const checks = view.checks
+  // Grouped by category with a subscore each (P1/3d), so the reader sees
+  // WHERE the site is weak rather than one number. Categories with nothing
+  // measured are omitted entirely — printing "not measured" rows would pad the
+  // report with our own gaps.
+  const grouped = scoreByCategory(view.checks).filter((g) => g.total > 0);
+  const checks = grouped
     .map(
-      (c) => `
-      <div class="check">
-        <span class="ic ${c.pass ? "p" : "f"}">${c.pass ? "&#10003;" : "&#10007;"}</span>
-        <span>${esc(c.label)}${c.detail ? ` <span class="muted">· ${esc(c.detail)}</span>` : ""}</span>
+      (g) => `
+      <div class="cat">
+        <div class="cat-head">
+          <span class="cat-name">${esc(CATEGORY_LABEL[g.category].en)}</span>
+          <span class="cat-score">${g.failed}/${g.total} issues</span>
+        </div>
+        ${g.checks
+          .map(
+            (c) => `
+        <div class="check">
+          <span class="ic ${c.pass ? "p" : "f"}">${c.pass ? "&#10003;" : "&#10007;"}</span>
+          <span>${esc(c.label)}${c.detail ? ` <span class="muted">· ${esc(c.detail)}</span>` : ""}</span>
+        </div>`,
+          )
+          .join("")}
       </div>`,
     )
     .join("");
+
+  const otherChecks = ungroupedChecks(view.checks);
+  const other =
+    otherChecks.length === 0
+      ? ""
+      : `<div class="cat"><div class="cat-head"><span class="cat-name">Other</span></div>` +
+        otherChecks
+          .map(
+            (c) =>
+              `<div class="check"><span class="ic ${c.pass ? "p" : "f"}">${
+                c.pass ? "&#10003;" : "&#10007;"
+              }</span><span>${esc(c.label)}</span></div>`,
+          )
+          .join("") +
+        `</div>`;
 
   const shotPairs: Array<[string, string | null | undefined]> = [
     ["Asztali nezet", shots.desktop],
@@ -93,7 +125,7 @@ export function auditReportBody(view: AuditView, shots: InlineShots = {}): strin
       </div>
     </div>
     <div class="eyebrow">Findings</div>
-    <div class="checks">${checks}</div>
+    <div class="checks">${checks}${other}</div>
     ${shotsHtml}
     ${pitch}
   `;
@@ -109,6 +141,13 @@ export function buildAuditPdfHtml(
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><style>
   @page { size: A4; margin: 0; }
+  .cat { margin-top: 14px; break-inside: avoid; }
+  .cat-head {
+    display: flex; align-items: baseline; gap: 8px; padding-bottom: 4px;
+    border-bottom: 1px solid rgba(239,241,248,0.09); margin-bottom: 6px;
+  }
+  .cat-name { font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+  .cat-score { margin-left: auto; font-size: 10px; color: #858CAE; }
   .shots { display: flex; gap: 12px; margin-top: 18px; }
   .shots figure { flex: 1; min-width: 0; }
   .shots img {

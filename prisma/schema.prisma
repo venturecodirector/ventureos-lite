@@ -668,6 +668,10 @@ model AuditResult {
   @@index([workspaceId])
   @@index([companyId])
   @@map("audit_results")
+  /// Which check set and category mapping this audit was scored under.
+  /// Reports render a cached audit with ITS version, so an older run keeps the
+  /// grouping it was actually scored with instead of being reinterpreted.
+  schemaVersion Int      @default(1) @map("schema_version")
 }
 
 /// A self-serve audit requested from the public landing page, before any

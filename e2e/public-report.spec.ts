@@ -11,6 +11,10 @@ test.use({ storageState: { cookies: [], origins: [] } });
 
 const prisma = new PrismaClient();
 const PITCH = "PITCHLEAK their site is ancient, lead with the mobile failure";
+// beforeAll runs once PER WORKER and the config is fullyParallel, so a
+// timestamp alone collides on the unique slug. Each worker gets its own.
+const RUN = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const AUDIT_URL = `https://pelda-public-${RUN}.hu`;
 let slug = "";
 
 test.beforeAll(async () => {
@@ -18,7 +22,7 @@ test.beforeAll(async () => {
   const audit = await prisma.auditResult.create({
     data: {
       workspaceId: ws!.id,
-      url: "https://pelda-public.hu",
+      url: AUDIT_URL,
       status: "done",
       score: 71,
       verdict: "STRONG",
@@ -35,7 +39,7 @@ test.beforeAll(async () => {
       expiresAt: new Date(Date.now() + 9e10),
     },
   });
-  slug = `e2e-public-${Date.now()}`;
+  slug = `e2e-public-${RUN}`;
   await prisma.auditShare.create({
     data: {
       workspaceId: ws!.id,
@@ -48,7 +52,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await prisma.auditShare.deleteMany({ where: { slug } });
-  await prisma.auditResult.deleteMany({ where: { url: "https://pelda-public.hu" } });
+  await prisma.auditResult.deleteMany({ where: { url: AUDIT_URL } });
   await prisma.$disconnect();
 });
 
@@ -63,7 +67,7 @@ test("the public report never shows the pitch angle or internal framing", async 
   expect(body).not.toMatch(/strong opportunity/i);
 
   // The facts are still there.
-  expect(body).toContain("pelda-public.hu");
+  expect(body).toContain(`pelda-public-${RUN}.hu`);
   expect(body).toMatch(/HTTPS/);
 });
 
