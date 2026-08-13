@@ -51,7 +51,7 @@ describe("share slug + expiry", () => {
   it("builds the public share URL on the audit subdomain", () => {
     process.env.APP_URL = "https://ventureco.agency";
     process.env.PUBLIC_AUDIT_URL = "https://audit.ventureco.agency";
-    expect(shareUrl("abc123")).toBe("https://audit.ventureco.agency/abc123");
+    expect(shareUrl("abc123")).toBe("https://audit.ventureco.agency/r/abc123");
   });
 });
 

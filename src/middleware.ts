@@ -42,7 +42,9 @@ const PUBLIC_PREFIXES = [
   "/api/cold/unsubscribe", // one-click unsubscribe in cold mail
   "/api/mailgun", // inbound mail routes (signature-verified)
   "/api/webhooks", // delivery/bounce webhooks (signature-verified)
-  "/share", // public audit reports
+  "/share", // public audit reports (legacy path, still served)
+  "/r", // public audit reports on the audit domain
+  "/public-audit", // self-serve audit landing
   "/accept", // public quote acceptance
   "/book", // public booking pages
   "/manifest.webmanifest",
@@ -83,9 +85,20 @@ export function middleware(req: NextRequest) {
   // ---- public surfaces: rewrite a bare slug onto its app route -------------
   if (surface) {
     const target = SURFACES[surface];
+
+    // The audit domain root is the self-serve landing page (P12/1a), not the
+    // app. Everything else on that host is a report.
+    if (surface === "audit" && pathname === "/") {
+      const url = req.nextUrl.clone();
+      url.pathname = "/public-audit";
+      return NextResponse.rewrite(url);
+    }
+
     if (
       pathname === "/" ||
       pathname.startsWith(target) ||
+      pathname.startsWith("/public-audit") ||
+      pathname.startsWith("/r/") ||
       pathname.startsWith("/api") ||
       pathname.startsWith("/_next") ||
       pathname.includes(".")
@@ -94,6 +107,15 @@ export function middleware(req: NextRequest) {
     }
     // Only the bare first segment is a slug; anything deeper is not a public page.
     if (pathname.slice(1).includes("/")) return NextResponse.next();
+
+    // Audit reports moved under /r/ when the root became the landing page.
+    // Links already in prospects' inboxes are bare slugs, so redirect them
+    // permanently rather than breaking them.
+    if (surface === "audit") {
+      const url = req.nextUrl.clone();
+      url.pathname = `/r${pathname}`;
+      return NextResponse.redirect(url, 301);
+    }
 
     const url = req.nextUrl.clone();
     url.pathname = `${target}${pathname}`;

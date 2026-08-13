@@ -30,9 +30,20 @@ function build(surfaceOrigin: string, appPath: string, slug: string): string {
     : `${surfaceOrigin}/${encoded}`;
 }
 
-/** Public, unlisted website-audit report — audit.ventureco.agency/<slug>. */
+/**
+ * Public, unlisted website-audit report — audit.ventureco.agency/r/<slug>.
+ *
+ * Moved under /r/ in P12: the root of the audit domain is now the self-serve
+ * landing page, so a bare slug there would collide with it. Links already sent
+ * to prospects keep working — the middleware 301s a bare slug to /r/<slug>.
+ */
 export function auditShareLink(slug: string): string {
-  return build(auditUrl(), SURFACE_PATHS.audit, slug);
+  const app = appUrl();
+  const origin = auditUrl();
+  const encoded = encodeURIComponent(slug);
+  return origin.toLowerCase() === app.toLowerCase()
+    ? `${app}${SURFACE_PATHS.audit}/${encoded}`
+    : `${origin}/r/${encoded}`;
 }
 
 /** Public quote acceptance page — quote.ventureco.agency/<slug>. */

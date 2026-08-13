@@ -656,6 +656,36 @@ model AuditResult {
   @@map("audit_results")
 }
 
+/// A self-serve audit requested from the public landing page, before any
+/// person is known. Anonymous by construction: we hold the URL, the coarse
+/// client fingerprint needed for abuse control, and a pointer to the audit.
+/// A Lead only appears later, if the visitor submits the report form (P12/1b).
+model PublicAudit {
+  id          String   @id @default(cuid())
+  /// Which workspace receives this inbound. Resolved by getPublicIntakeWorkspace().
+  workspaceId String   @map("workspace_id")
+  url         String
+  /// Registrable host, lower-cased — what dedupe and the client blocklist match on.
+  domain      String
+  auditId     String?  @map("audit_id")
+  /// queued | running | done | error | blocked
+  status      String   @default("queued")
+  /// Set when the request was refused, e.g. rate_limited, client_domain, bot.
+  blockedReason String? @map("blocked_reason")
+  /// Truncated to a /24 (IPv4) or /48 (IPv6): enough for rate limiting, not a
+  /// precise location. The full address is only stored on a consent record,
+  /// where it is evidence the visitor asked for something.
+  ipPrefix    String?  @map("ip_prefix")
+  userAgent   String?  @map("user_agent")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([workspaceId, createdAt])
+  @@index([domain])
+  @@index([status])
+  @@map("public_audits")
+}
+
 model AuditShare {
   id            String    @id @default(cuid())
   workspaceId   String    @map("workspace_id")

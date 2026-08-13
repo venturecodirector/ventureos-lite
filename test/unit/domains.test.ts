@@ -125,7 +125,7 @@ describe("public link generation", () => {
 
   it("puts each public page on its own subdomain, app on the root", () => {
     expect(appUrl()).toBe("https://ventureco.agency");
-    expect(auditShareLink("abc")).toBe("https://audit.ventureco.agency/abc");
+    expect(auditShareLink("abc")).toBe("https://audit.ventureco.agency/r/abc");
     expect(quoteAcceptLink("Q-1")).toBe("https://quote.ventureco.agency/Q-1");
     expect(bookingLink("tamas")).toBe("https://meet.ventureco.agency/tamas");
     expect(appLink("/meetings/m1")).toBe("https://ventureco.agency/meetings/m1");
@@ -136,7 +136,7 @@ describe("public link generation", () => {
   });
 
   it("url-encodes slugs", () => {
-    expect(auditShareLink("a/b?c")).toBe("https://audit.ventureco.agency/a%2Fb%3Fc");
+    expect(auditShareLink("a/b?c")).toBe("https://audit.ventureco.agency/r/a%2Fb%3Fc");
   });
 
   it("derives the subdomains from APP_URL when the explicit URLs are unset", () => {
