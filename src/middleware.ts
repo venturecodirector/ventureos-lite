@@ -96,6 +96,16 @@ export function middleware(req: NextRequest) {
       return NextResponse.rewrite(url);
     }
 
+    // /hu and /en on the audit host are the landing in that language. Matched
+    // BEFORE the bare-slug fallback below, so a report slug can never shadow a
+    // language — and kept to an exact match, since a two-letter slug is
+    // theoretically possible even if 9 random bytes make it vanishingly rare.
+    if (surface === "audit" && (pathname === "/hu" || pathname === "/en")) {
+      const url = req.nextUrl.clone();
+      url.pathname = `/public-audit${pathname}`;
+      return NextResponse.rewrite(url);
+    }
+
     if (
       pathname === "/" ||
       pathname.startsWith(target) ||

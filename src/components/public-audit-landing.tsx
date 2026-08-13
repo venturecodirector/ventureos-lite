@@ -1,212 +1,184 @@
-"use client";
-
-import { useEffect, useRef, useState } from "react";
-import {
-  submitPublicAudit,
-  getPublicAuditStatus,
-  type PublicAuditStatus,
-} from "@/modules/public-audit/actions";
+import { CATEGORY_LABEL, AUDIT_CATEGORIES } from "@/modules/audit/categories";
+import { copyFor } from "@/modules/public-audit/copy";
+import { otherLocale, type Locale } from "@/lib/locale";
 import type { WorkspaceBrand } from "@/modules/workspaces/brand";
-import { JobProgress } from "./job-progress";
+import { brandGradient } from "@/modules/workspaces/brand";
+import { AuditRunnerIsland } from "./public-audit-runner";
+import { LocaleSwitch } from "./locale-switch";
 
 /**
- * The self-serve audit landing (P12/1a) at the root of the audit domain.
+ * The public audit landing (P12/1a, expanded to a full page).
  *
- * Prospect-facing and unauthenticated, so it carries the brand but none of the
- * app chrome. One input, one promise, and honest progress while the worker
- * runs — the audit takes tens of seconds and a blank wait is what makes people
- * close the tab.
+ * A server component: everything here is content, and content that only exists
+ * after hydration is content a search engine never sees. The one interactive
+ * region — the URL form, the progress, the teaser and the unlock form — is a
+ * single client island underneath the hero.
+ *
+ * All copy comes from the bilingual dictionary; nothing on this page is a
+ * hardcoded string, which is what keeps the two languages from drifting.
  */
-const POLL_MS = 1500;
-const POLL_TIMEOUT_MS = 120_000;
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+      {children}
+    </div>
+  );
+}
 
-const STAGES = [
-  { key: "queued", label: "Sorban áll" },
-  { key: "running", label: "Betöltjük az oldalt egy böngészőben" },
-  { key: "scoring", label: "Pontozás és képernyőképek" },
-];
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="mb-4 font-display text-[26px] font-bold lowercase leading-[1.15] tracking-display sm:text-[30px]">
+      {children}
+    </h2>
+  );
+}
 
-type Phase =
-  | { kind: "idle" }
-  | { kind: "submitting" }
-  | { kind: "running"; id: string; startedAt: number }
-  | { kind: "done"; status: PublicAuditStatus }
-  | { kind: "refused"; message: string; friendly: boolean };
-
-export function PublicAuditLanding({ brand }: { brand: WorkspaceBrand }) {
-  const [url, setUrl] = useState("");
-  const [honeypot, setHoneypot] = useState("");
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
-  const [status, setStatus] = useState<PublicAuditStatus | null>(null);
-  const shownAt = useRef<number>(Date.now());
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    shownAt.current = Date.now();
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (phase.kind !== "running") return;
-    let active = true;
-    const started = Date.now();
-
-    const tick = async () => {
-      const s = await getPublicAuditStatus(phase.id);
-      if (!active) return;
-      if (s) {
-        setStatus(s);
-        if (s.status === "done" || s.status === "error") {
-          setPhase({ kind: "done", status: s });
-          return;
-        }
-      }
-      if (Date.now() - started > POLL_TIMEOUT_MS) return;
-      timer.current = setTimeout(tick, POLL_MS);
-    };
-    timer.current = setTimeout(tick, 600);
-    return () => {
-      active = false;
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [phase]);
-
-  async function run(e: React.FormEvent) {
-    e.preventDefault();
-    if (!url.trim()) return;
-    setPhase({ kind: "submitting" });
-    const res = await submitPublicAudit({
-      url,
-      website: honeypot,
-      elapsedMs: Date.now() - shownAt.current,
-    });
-    if (!res.ok) {
-      setPhase({ kind: "refused", message: res.message, friendly: res.friendly });
-      return;
-    }
-    setPhase({ kind: "running", id: res.publicAuditId, startedAt: Date.now() });
-  }
-
-  const busy = phase.kind === "submitting" || phase.kind === "running";
+export function PublicAuditLanding({
+  brand,
+  locale,
+}: {
+  brand: WorkspaceBrand;
+  locale: Locale;
+}) {
+  const copy = copyFor(locale);
 
   return (
     <main className="relative z-10 min-h-screen">
-      <div className="mx-auto max-w-[720px] px-5 py-14">
-        <div className="mb-10 font-display text-[18px]">
-          {brand.logoUrl ? (
-            /* eslint-disable-next-line @next/next/no-img-element --
-               a workspace logo behind /api/files, not a static asset */
-            <img src={brand.logoUrl} alt={brand.name} className="max-h-[34px]" />
-          ) : (
-            <>
-              <b className="font-extrabold">{brand.markBold}</b>
-              {brand.markLight ? (
-                <span className="font-light text-muted"> {brand.markLight}</span>
-              ) : null}
-            </>
-          )}
-        </div>
+      <div className="mx-auto max-w-[760px] px-5 py-12 sm:py-16">
+        {/* ---- header ---- */}
+        <header className="mb-12 flex items-center gap-4">
+          <div className="font-display text-[18px]">
+            {brand.logoUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element --
+                 a workspace logo behind /api/files, not a static asset */
+              <img src={brand.logoUrl} alt={brand.name} className="max-h-[34px]" />
+            ) : (
+              <>
+                <b className="font-extrabold">{brand.markBold}</b>
+                {brand.markLight ? (
+                  <span className="font-light text-muted"> {brand.markLight}</span>
+                ) : null}
+              </>
+            )}
+          </div>
+          <div className="ml-auto">
+            <LocaleSwitch to={otherLocale(locale)} label={copy.footer.switchLabel} />
+          </div>
+        </header>
 
-        <h1 className="mb-3 font-display text-[34px] font-bold lowercase leading-[1.1] tracking-display sm:text-[42px]">
-          mennyit ér a weboldala?
+        {/* ---- hero + the tool ---- */}
+        <h1 className="mb-3 font-display text-[34px] font-bold lowercase leading-[1.08] tracking-display sm:text-[46px]">
+          {copy.hero.headline}
         </h1>
-        <p className="mb-8 max-w-[520px] text-[15px] leading-relaxed text-muted">
-          Ingyenes átvilágítás 60 másodperc alatt. Sebesség, mobilnézet,
-          megtalálhatóság, jogi megfelelés — gépi elemzés, marketingszöveg nélkül.
+        <p className="mb-8 max-w-[560px] text-[15px] leading-relaxed text-muted">
+          {copy.hero.sub}
         </p>
 
-        <form onSubmit={run} className="mb-4 flex flex-wrap gap-2.5">
-          <input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="pelda.hu"
-            inputMode="url"
-            autoComplete="off"
-            disabled={busy}
-            data-testid="public-audit-url"
-            aria-label="A weboldal címe"
-            className="min-h-[48px] min-w-[220px] flex-1 rounded-[10px] border border-line bg-[rgba(0,5,29,0.5)] px-3.5 py-2.5 text-[15px] text-ink outline-none focus:border-accent disabled:opacity-60"
-          />
-          {/*
-            Honeypot. Off-screen rather than display:none — some bots skip
-            hidden inputs but fill positioned ones. Never shown to a person,
-            and tabIndex -1 keeps it out of keyboard order.
-          */}
-          <input
-            value={honeypot}
-            onChange={(e) => setHoneypot(e.target.value)}
-            name="website"
-            tabIndex={-1}
-            autoComplete="off"
-            aria-hidden="true"
-            className="absolute left-[-9999px] h-0 w-0 opacity-0"
-          />
-          <button
-            type="submit"
-            disabled={busy || !url.trim()}
-            data-testid="public-audit-submit"
-            className="min-h-[48px] rounded-[10px] border-[1.5px] border-transparent bg-canvas px-5 text-[14px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
-          >
-            {busy ? "Fut…" : "Átvilágítás indítása"}
-          </button>
-        </form>
+        <AuditRunnerIsland locale={locale} />
 
-        {phase.kind === "refused" && (
-          <div
-            data-testid="public-audit-refused"
-            className={`rounded-card border px-4 py-3 text-[13.5px] ${
-              phase.friendly
-                ? "border-accent-soft bg-accent-soft text-[#E4D3FF]"
-                : "border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.1)] text-[#FFB3C2]"
-            }`}
-          >
-            {phase.message}
+        {/* ---- how it works ---- */}
+        <section className="mt-20">
+          <Eyebrow>{copy.steps.eyebrow}</Eyebrow>
+          <SectionTitle>{copy.steps.title}</SectionTitle>
+          <ol className="grid gap-3 sm:grid-cols-3">
+            {copy.steps.items.map((step, i) => (
+              <li
+                key={step.title}
+                className="rounded-card border border-line bg-panel p-4"
+              >
+                <div
+                  className="mb-2 grid h-[26px] w-[26px] place-items-center rounded-full text-[12px] font-bold text-ink"
+                  style={{ backgroundImage: brandGradient(brand) }}
+                >
+                  {i + 1}
+                </div>
+                <div className="mb-1 text-[13.5px] font-bold">{step.title}</div>
+                <p className="text-[12.5px] leading-relaxed text-muted">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        {/* ---- what we check ----
+            Generated from the audit engine's own category registry, so this
+            page cannot advertise a check the engine does not run. */}
+        <section className="mt-20">
+          <Eyebrow>{copy.checks.eyebrow}</Eyebrow>
+          <SectionTitle>{copy.checks.title}</SectionTitle>
+          <p className="mb-5 max-w-[560px] text-[13.5px] leading-relaxed text-muted">
+            {copy.checks.intro}
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {AUDIT_CATEGORIES.map((category) => (
+              <div
+                key={category}
+                className="flex items-center gap-3 rounded-[10px] border border-line bg-panel px-3.5 py-3"
+              >
+                <span
+                  className="h-[7px] w-[7px] flex-none rounded-full"
+                  style={{ backgroundImage: brandGradient(brand) }}
+                  aria-hidden
+                />
+                <span className="text-[13px] text-[#C9CEE3]">
+                  {CATEGORY_LABEL[category][locale]}
+                </span>
+              </div>
+            ))}
           </div>
-        )}
+          <p className="mt-4 max-w-[560px] text-[12px] leading-relaxed text-muted">
+            {copy.checks.footnote}
+          </p>
+        </section>
 
-        {phase.kind === "running" && (
-          <>
-            {status && status.queuePosition > 0 && (
-              <p className="mb-2 text-[12.5px] text-muted" data-testid="queue-position">
-                {status.queuePosition}. a sorban — mindjárt sorra kerül.
-              </p>
-            )}
-            <JobProgress
-              stages={STAGES}
-              current={status?.status === "running" ? "running" : "queued"}
-              startedAt={phase.startedAt}
-              note="Az oldalt egy valódi böngészőben töltjük be, és mobilon is megnézzük."
-              slowNote="Még dolgozunk rajta — a lassú oldalak átvilágítása tart tovább, ez önmagában is információ."
-            />
-          </>
-        )}
+        {/* ---- privacy ---- */}
+        <section className="mt-20">
+          <Eyebrow>{copy.privacy.eyebrow}</Eyebrow>
+          <SectionTitle>{copy.privacy.title}</SectionTitle>
+          <p className="mb-4 max-w-[560px] text-[13.5px] leading-relaxed text-muted">
+            {copy.privacy.body}
+          </p>
+          <ul className="grid gap-2">
+            {copy.privacy.bullets.map((b) => (
+              <li key={b} className="flex gap-2.5 text-[13px] leading-relaxed text-[#C9CEE3]">
+                <span className="text-muted" aria-hidden>
+                  —
+                </span>
+                {b}
+              </li>
+            ))}
+          </ul>
+        </section>
 
-        {phase.kind === "done" && phase.status.status === "error" && (
-          <div className="rounded-card border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.1)] px-4 py-3 text-[13.5px] text-[#FFB3C2]">
-            Nem sikerült betölteni az oldalt. Elérhető egyáltalán? Próbáld újra,
-            vagy írj nekünk.
+        {/* ---- faq ---- */}
+        <section className="mt-20">
+          <Eyebrow>{copy.faq.eyebrow}</Eyebrow>
+          <SectionTitle>{copy.faq.title}</SectionTitle>
+          <div className="grid gap-2.5">
+            {copy.faq.items.map((item) => (
+              <details
+                key={item.q}
+                className="group rounded-card border border-line bg-panel px-4 py-3.5"
+              >
+                <summary className="cursor-pointer list-none text-[13.5px] font-semibold marker:content-none">
+                  <span className="mr-2 text-muted group-open:hidden" aria-hidden>
+                    +
+                  </span>
+                  <span className="mr-2 hidden text-muted group-open:inline" aria-hidden>
+                    −
+                  </span>
+                  {item.q}
+                </summary>
+                <p className="mt-2 pl-5 text-[13px] leading-relaxed text-muted">{item.a}</p>
+              </details>
+            ))}
           </div>
-        )}
+        </section>
 
-        {phase.kind === "done" && phase.status.status === "done" && (
-          <div
-            className="rounded-card border border-line bg-panel p-7"
-            data-testid="public-audit-result"
-          >
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
-              Eredmény · {phase.status.url.replace(/^https?:\/\//, "")}
-            </div>
-            <div className="bg-grad bg-clip-text font-display text-[64px] font-extrabold leading-none tracking-[-0.03em] text-transparent">
-              {phase.status.score}
-            </div>
-            <p className="mt-3 text-[13px] text-muted">
-              A részletes eredmények és a teljes riport a következő lépésben
-              érkezik.
-            </p>
-          </div>
-        )}
+        {/* ---- footer ---- */}
+        <footer className="mt-20 border-t border-line pt-6 text-[11.5px] leading-relaxed text-muted">
+          <p>{copy.footer.contact}</p>
+          <p className="mt-1.5">{brand.footerIdentity}</p>
+        </footer>
       </div>
     </main>
   );

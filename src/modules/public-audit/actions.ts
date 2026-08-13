@@ -6,6 +6,10 @@ import { prismaUnsafe } from "@/lib/db";
 import { takeRateLimit } from "@/lib/rate-limit";
 import { enqueueAudit } from "@/modules/audit/enqueue";
 import { auditRowToView } from "@/modules/audit/view";
+import { buildPriorityMatrix } from "@/modules/audit/priority";
+import { CATEGORY_LABEL } from "@/modules/audit/categories";
+import { DEFAULT_LOCALE, type Locale } from "@/lib/locale";
+import type { AuditCheck } from "@/modules/audit/types";
 import { botVerdict, MIN_FILL_MS } from "@/modules/meetings/botcheck";
 import { checkUrl, judgeSubmission, ipPrefix, type RefusalReason } from "./guard";
 import { getPublicIntakeWorkspaceId, ownDomains, clientDomains, PublicIntakeUnavailable } from "./intake";
@@ -198,28 +202,46 @@ export async function submitPublicAudit(
 }
 
 export interface PublicAuditStatus {
+  id: string;
   status: string;
   queuePosition: number;
-  /** Populated once the run finishes; the teaser split lands in P12/1b. */
+  /** Populated once the run finishes. */
   score: number | null;
   verdict: string | null;
   url: string;
+  /**
+   * The teaser (P12/1b): the three findings that matter most, in the visitor's
+   * language. Deliberately three — enough that the minute was worth spending,
+   * few enough that the full report still has something to give.
+   */
+  headlineFindings: string[];
+  screenshots: { desktop?: string; mobile?: string };
 }
 
 /** Polled by the landing page while the audit runs. No session required. */
-export async function getPublicAuditStatus(publicAuditId: string): Promise<PublicAuditStatus | null> {
+export async function getPublicAuditStatus(
+  publicAuditId: string,
+  locale: Locale = DEFAULT_LOCALE,
+): Promise<PublicAuditStatus | null> {
   const pa = await prismaUnsafe.publicAudit.findUnique({
     where: { id: publicAuditId },
     select: { id: true, url: true, status: true, auditId: true, workspaceId: true },
   });
   if (!pa) return null;
 
-  if (!pa.auditId) {
-    return { status: pa.status, queuePosition: 0, score: null, verdict: null, url: pa.url };
-  }
+  const pending = {
+    id: pa.id,
+    queuePosition: 0,
+    score: null,
+    verdict: null,
+    url: pa.url,
+    headlineFindings: [],
+    screenshots: {},
+  };
+  if (!pa.auditId) return { ...pending, status: pa.status };
 
   const audit = await prismaUnsafe.auditResult.findUnique({ where: { id: pa.auditId } });
-  if (!audit) return { status: pa.status, queuePosition: 0, score: null, verdict: null, url: pa.url };
+  if (!audit) return { ...pending, status: pa.status };
 
   // Keep the public row in step with the underlying audit.
   if (audit.status !== pa.status) {
@@ -244,11 +266,36 @@ export async function getPublicAuditStatus(publicAuditId: string): Promise<Publi
       : 0;
 
   const view = auditRowToView(audit);
+  const done = audit.status === "done";
   return {
+    id: pa.id,
     status: audit.status,
     queuePosition: ahead,
-    score: audit.status === "done" ? view.score : null,
-    verdict: audit.status === "done" ? view.verdict : null,
+    score: done ? view.score : null,
+    verdict: done ? view.verdict : null,
     url: pa.url,
+    headlineFindings: done ? headlineFindings(view.checks, locale) : [],
+    screenshots: done ? view.screenshots : {},
   };
+}
+
+/**
+ * The three findings a visitor should read first.
+ *
+ * Ranked by the audit engine's own impact-then-effort ordering (P2/4), not by
+ * a separate rule written for this page — so the free teaser opens with the
+ * same three items as the paid report, and the two cannot drift apart.
+ *
+ * Labels are the check labels, which are English in the registry. The
+ * Hungarian page shows the category name it belongs to alongside, which is
+ * translated, so the line still reads in the visitor's language.
+ */
+function headlineFindings(checks: AuditCheck[], locale: Locale): string[] {
+  return buildPriorityMatrix(checks)
+    .ordered.slice(0, 3)
+    .map((f) => {
+      const category = f.category ? CATEGORY_LABEL[f.category][locale] : null;
+      const detail = f.detail ? ` (${f.detail})` : "";
+      return category ? `${category}: ${f.label}${detail}` : `${f.label}${detail}`;
+    });
 }

@@ -37,6 +37,10 @@ enum LeadSource {
   MANUAL
   REFERRAL
   COLD_EMAIL
+  /// Came to us: ran their own audit on the public landing and asked for the
+  /// report (P12/1c). The warmest source there is, and the only one where the
+  /// lawful basis for contacting them is a consent record.
+  SELF_SERVE_AUDIT
 }
 
 enum Stage {
@@ -684,8 +688,9 @@ model AuditResult {
   createdAt    DateTime     @default(now()) @map("created_at")
   expiresAt    DateTime     @map("expires_at")
 
-  company Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  shares  AuditShare[]
+  company      Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  shares       AuditShare[]
+  publicAudits PublicAudit[]
 
   @@index([workspaceId])
   @@index([companyId])
@@ -758,6 +763,47 @@ model LogUpload {
   @@index([workspaceId])
   @@index([purgeAfter])
   @@map("log_uploads")
+}
+
+/// Someone asked for their audit report, and what exactly they agreed to
+/// (P12/1b).
+///
+/// This is EVIDENCE, not a preference flag. "Did they consent?" is the easy
+/// question; the one that actually gets asked is "what wording did they agree
+/// to, when, and from where" — so the text version, the timestamp and the full
+/// IP are all part of the record. PublicAudit stores a truncated IP prefix
+/// because that is abuse control; this stores the whole address because the
+/// visitor asked us for something and we may have to show that they did.
+model PublicAuditConsent {
+  id            String   @id @default(cuid())
+  workspaceId   String   @map("workspace_id")
+  publicAuditId String   @map("public_audit_id")
+  name          String
+  email         String
+  companyName   String?  @map("company_name")
+  /// Always true — a row cannot exist without it, since it is what authorises
+  /// the delivery. Stored anyway so the record is self-describing.
+  serviceConsent   Boolean @default(true) @map("service_consent")
+  /// The lawful basis for any later outreach. Defaults FALSE and is only ever
+  /// set by an affirmative tick: a pre-checked box is not consent.
+  marketingConsent Boolean @default(false) @map("marketing_consent")
+  /// Which wording they saw, e.g. "hu-2026-08-14". Replacing the text later
+  /// must not invalidate consent collected under the old one.
+  consentTextVersion String @map("consent_text_version")
+  /// The language the form was presented in.
+  locale        String   @default("hu")
+  ip            String?
+  userAgent     String?  @map("user_agent")
+  /// The lead this became, once created.
+  leadId        String?  @map("lead_id")
+  /// When the report was actually delivered, for support questions.
+  reportSentAt  DateTime? @map("report_sent_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([workspaceId, createdAt])
+  @@index([publicAuditId])
+  @@index([email])
+  @@map("public_audit_consents")
 }
 
 /// A search term we track a company's position for (P2/7).
@@ -841,6 +887,9 @@ model PublicAudit {
   userAgent   String?  @map("user_agent")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+
+  /// The audit this request produced, once the worker has one.
+  audit       AuditResult? @relation(fields: [auditId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
   @@index([domain])

@@ -31,6 +31,37 @@ export interface SegmentRecipient {
   companyId: string | null;
 }
 
+/**
+ * Drop leads whose only reason for being here is a self-serve audit they never
+ * gave marketing consent for.
+ *
+ * A lead is excluded when it has a consent record and NONE of its records carry
+ * marketing consent. A lead we sourced ourselves has no consent record at all
+ * and is untouched — this filter narrows inbound, it does not gate the pipeline.
+ */
+async function excludeUnconsentedInbound(
+  db: WorkspaceClient,
+  recipients: SegmentRecipient[],
+): Promise<SegmentRecipient[]> {
+  if (recipients.length === 0) return recipients;
+
+  const consents = await db.publicAuditConsent.findMany({
+    where: { leadId: { in: recipients.map((r) => r.leadId) } },
+    select: { leadId: true, marketingConsent: true },
+  });
+  if (consents.length === 0) return recipients;
+
+  const consented = new Set<string>();
+  const known = new Set<string>();
+  for (const c of consents) {
+    if (!c.leadId) continue;
+    known.add(c.leadId);
+    if (c.marketingConsent) consented.add(c.leadId);
+  }
+
+  return recipients.filter((r) => !known.has(r.leadId) || consented.has(r.leadId));
+}
+
 export async function previewSegment(
   db: WorkspaceClient,
   q: SegmentQuery,
@@ -51,6 +82,18 @@ export async function previewSegment(
   let recipients: SegmentRecipient[] = leads
     .filter((l): l is { id: string; email: string; companyId: string | null } => !!l.email)
     .map((l) => ({ leadId: l.id, email: l.email, companyId: l.companyId }));
+
+  // ---- Self-serve inbound without marketing consent (P12/1c) -------------
+  //
+  // Someone who ran their own audit gave us an address so we could SEND THEM A
+  // REPORT. Unless they also ticked the marketing box, that address is not a
+  // campaign audience, and putting it in one would be precisely the unsolicited
+  // mail the Grtv. is about.
+  //
+  // Enforced HERE because previewSegment is the single function every audience
+  // flows through — the preview count, campaign creation and the send path all
+  // read it, so one filter covers all three and one test proves it.
+  recipients = await excludeUnconsentedInbound(db, recipients);
 
   if (typeof q.minAuditScore === "number") {
     const companyIds = [...new Set(recipients.map((r) => r.companyId).filter((v): v is string => !!v))];
