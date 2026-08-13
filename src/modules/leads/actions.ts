@@ -14,8 +14,10 @@ import {
   buildResearchUserMessage,
   type LeadCard,
 } from "@/lib/ai/prompts/lead-research";
-import { computeIcpScore, MAX_ICP_SCORE, gateThresholdFromConfig } from "./scoring";
-import { assertCanEnterStage, ScoreGateError } from "./gate";
+import { computeIcpScore, MAX_ICP_SCORE, gateThresholdFromConfig, assessIcp } from "./scoring";
+import { preParse, hasAnalyzableText } from "./preparse";
+import { enrichCompanySite } from "./enrichment";
+import { assertCanEnterStage, ScoreGateError, ResearchInputError } from "./gate";
 import {
   requiresReason,
   schedulesFollowups,
@@ -245,12 +247,50 @@ export async function runResearch(
   });
   if (!lead) throw new Error("Lead not found");
 
+  // P1/1b — deterministic extraction first. These are real fields, found with
+  // regexes, and they cost nothing. Persisting them before the call means a
+  // paste yields something even if the research is never run.
+  const parsed = preParse(lead.notes ?? "");
+  const companyId = lead.companyId;
+  if (parsed.emails[0] || parsed.phones[0] || parsed.city || parsed.domain) {
+    await db.lead.update({
+      where: { id: leadId },
+      data: {
+        email: lead.email ?? parsed.emails[0] ?? undefined,
+        phone: lead.phone ?? parsed.phones[0] ?? undefined,
+      },
+    });
+    if (companyId && (parsed.domain || parsed.city)) {
+      await db.company.update({
+        where: { id: companyId },
+        data: {
+          domain: lead.company?.domain ?? parsed.domain ?? undefined,
+          city: lead.company?.city ?? parsed.city ?? undefined,
+        },
+      });
+    }
+  }
+
+  // P1/1a — refuse to spend a Sonnet call on a paste with nothing in it.
+  if (!hasAnalyzableText(lead.notes ?? "")) {
+    throw new ResearchInputError(
+      "There is no profile text to analyse yet. Paste the profile text alongside the URL, or capture the page with the browser extension.",
+    );
+  }
+
+  // P1/1c — the company's own words, fetched once and cached for 30 days.
+  const site = companyId ? await enrichCompanySite(companyId) : null;
+
   const profile = [
     lead.company?.name && `Company: ${lead.company.name}`,
     lead.company?.industry && `Industry: ${lead.company.industry}`,
     lead.contactName && `Contact: ${lead.contactName}${lead.title ? `, ${lead.title}` : ""}`,
     lead.linkedinUrl && `LinkedIn: ${lead.linkedinUrl}`,
+    parsed.emails[0] && `Email: ${parsed.emails[0]}`,
+    parsed.phones[0] && `Phone: ${parsed.phones[0]}`,
+    parsed.city && `City: ${parsed.city}`,
     lead.notes && `Notes / pasted page:\n${lead.notes}`,
+    site?.text && `Company website copy:\n${site.text}`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -264,12 +304,15 @@ export async function runResearch(
   });
   const card = data as LeadCard;
   const icpScore = computeIcpScore(card.icp);
+  // P1/1d — which criteria the model could not judge, kept separately so an
+  // incomplete score is visibly incomplete rather than looking like a verdict.
+  const assessment = assessIcp(card.icp as never);
 
   await db.lead.update({
     where: { id: leadId },
     data: {
       icpScore,
-      scoreBreakdown: card.icp,
+      scoreBreakdown: { ...card.icp, _unknown: assessment.unknown },
       signals: card.signals,
       contactName: lead.contactName ?? card.person.name,
       title: lead.title ?? card.person.title ?? undefined,

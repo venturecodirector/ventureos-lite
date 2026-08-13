@@ -38,3 +38,15 @@ export function assertCanEnterStage(params: {
     });
   }
 }
+
+/**
+ * Thrown when a research call is asked for with nothing to analyse (P1/1a).
+ * Surfaced as guidance in the UI, never as a failed Claude call — the point is
+ * that the call is not made at all.
+ */
+export class ResearchInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ResearchInputError";
+  }
+}

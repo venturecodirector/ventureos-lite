@@ -22,6 +22,7 @@ import { companyUnderProceedings } from "@/modules/registry/risk";
 import { RiskChip } from "./risk-chip";
 import { Modal } from "./modal";
 import { CsvImport } from "./csv-import";
+import { preParse, hasAnalyzableText } from "@/modules/leads/preparse";
 import { ManualLeadForm } from "./manual-lead-form";
 import { LeadDetailModal } from "./lead-detail-modal";
 
@@ -245,6 +246,12 @@ export function LeadEngine({
   const [paste, setPaste] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
+  // P1/1a — the same pure check the server uses, so the UI never offers a
+  // research call that would be refused. P1/1b — what we already know from the
+  // paste without spending anything.
+  const parsed = useMemo(() => preParse(paste), [paste]);
+  const canResearch = useMemo(() => hasAnalyzableText(paste), [paste]);
+  const urlOnly = paste.trim().length > 0 && !canResearch;
   // Same modal the pipeline board uses — editing and deletion live in one
   // place rather than being reimplemented per screen.
   const [detailFor, setDetailFor] = useState<string | null>(null);
@@ -317,10 +324,58 @@ export function LeadEngine({
               placeholder="Paste a LinkedIn profile URL and the page text — or capture it with the browser extension while viewing the profile."
               className="min-h-[84px] w-full resize-y rounded-[10px] border border-line bg-[rgba(0,5,29,0.5)] p-3 text-[13px] text-ink outline-none placeholder:text-muted focus:border-accent"
             />
+            {urlOnly && (
+              <div
+                data-testid="research-guidance"
+                className="mt-2.5 rounded-[10px] border border-[rgba(245,184,65,0.35)] bg-[rgba(245,184,65,0.08)] px-3.5 py-2.5 text-[12.5px] text-warn"
+              >
+                Paste the profile <b>text</b> alongside the URL, or capture the page
+                with the browser extension — there is nothing to analyse yet.
+                {parsed.websites[0] && (
+                  <>
+                    {" "}
+                    <a
+                      href={
+                        /^https?:\/\//i.test(paste.trim().split(/\s+/)[0] ?? "")
+                          ? paste.trim().split(/\s+/)[0]
+                          : `https://${parsed.websites[0]}`
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline hover:text-ink"
+                    >
+                      Open profile ↗
+                    </a>
+                  </>
+                )}
+              </div>
+            )}
+
+            {(parsed.emails[0] || parsed.phones[0] || parsed.city || parsed.domain) && (
+              <div
+                data-testid="preparse-chips"
+                className="mt-2.5 flex flex-wrap gap-1.5 text-[11.5px]"
+              >
+                <span className="text-muted">Found without AI:</span>
+                {[parsed.emails[0], parsed.phones[0], parsed.domain, parsed.city]
+                  .filter(Boolean)
+                  .map((v) => (
+                    <span
+                      key={v as string}
+                      className="rounded-full border border-line bg-panel-2 px-2 py-0.5 text-[#C9CEE3]"
+                    >
+                      {v}
+                    </span>
+                  ))}
+              </div>
+            )}
+
             <div className="mt-3 flex flex-wrap items-center gap-2.5">
               <button
                 onClick={() => startTransition(researchFromPaste)}
-                disabled={pending || rail.status === "streaming"}
+                title={canResearch ? undefined : "Needs profile text, not just a URL"}
+                data-testid="research-button"
+                disabled={pending || rail.status === "streaming" || !canResearch}
                 className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
               >
                 ✦ Research with Claude

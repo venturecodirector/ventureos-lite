@@ -339,6 +339,13 @@ model Company {
   @@unique([workspaceId, taxId])
   @@index([workspaceId])
   @@map("companies")
+  /// Homepage prose, fetched once and cached for 30 days (P1/1c). Feeds the
+  /// research prompt so Claude has the company's own words rather than three
+  /// fields. Null when the site is unreachable or robots.txt forbids it.
+  siteText      String?   @map("site_text") @db.Text
+  /// When the fetch was last ATTEMPTED — set even on failure, so a dead site
+  /// is not re-fetched on every research run.
+  siteFetchedAt DateTime? @map("site_fetched_at")
 }
 
 model Lead {
