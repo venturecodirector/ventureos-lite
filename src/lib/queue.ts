@@ -13,6 +13,8 @@ export const PDF_QUEUE = "pdfs";
 export const CALLBACKS_QUEUE = "callbacks";
 export const BRIEFS_QUEUE = "briefs";
 export const ERASURE_QUEUE = "erasures";
+/** Access-log parsing (P2/8): long-running, streamed, one job per upload. */
+export const LOGS_QUEUE = "logs";
 
 let connection: IORedis | null = null;
 export function getRedisConnection(): IORedis {
@@ -46,6 +48,14 @@ export function auditsQueue(): Queue {
     audits = new Queue(AUDIT_QUEUE, { connection: getRedisConnection() });
   }
   return audits;
+}
+
+let logs: Queue | null = null;
+export function logsQueue(): Queue {
+  if (!logs) {
+    logs = new Queue(LOGS_QUEUE, { connection: getRedisConnection() });
+  }
+  return logs;
 }
 
 let pdfs: Queue | null = null;

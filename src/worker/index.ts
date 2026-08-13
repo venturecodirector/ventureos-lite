@@ -10,6 +10,7 @@ import {
   CALLBACKS_QUEUE,
   BRIEFS_QUEUE,
   ERASURE_QUEUE,
+  LOGS_QUEUE,
 } from "../lib/queue";
 import { processFollowup, processWakeupSweep } from "../modules/pipeline/jobs";
 import {
@@ -30,6 +31,7 @@ import { processColdSends } from "../modules/campaigns/jobs";
 import { processInvoicePolls } from "../modules/invoicing/jobs";
 import { processSignalEngine, processDailyInsight } from "../modules/signal/jobs";
 import { processKeywordTracking } from "../modules/serp/jobs";
+import { processLogUpload, processLogRetention } from "../modules/logs/jobs";
 
 /**
  * Background worker (BullMQ + Redis). Runs in its own Docker service.
@@ -122,6 +124,20 @@ async function main(): Promise<void> {
     console.error(`[worker] erasure ${job?.id} failed`, err);
   });
 
+  // Log parsing is streamed and can run for minutes on a month of traffic, so
+  // it gets its own queue rather than blocking audits (P2/8).
+  const logWorker = new Worker(
+    LOGS_QUEUE,
+    async (job) => {
+      await processLogUpload(job.data);
+    },
+    { connection, concurrency: 1 },
+  );
+  logWorker.on("failed", (job, err) => {
+    // eslint-disable-next-line no-console
+    console.error(`[worker] log upload ${job?.id} failed`, err);
+  });
+
   const wakeupWorker = new Worker(
     WAKEUPS_QUEUE,
     async (job) => {
@@ -153,6 +169,10 @@ async function main(): Promise<void> {
         const n = await processSignalEngine();
         // eslint-disable-next-line no-console
         console.log(`[worker] signal engine ran for ${n} workspace(s)`);
+      } else if (job.name === "log-retention") {
+        const n = await processLogRetention();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] purged ${n} raw log upload(s)`);
       } else if (job.name === "keyword-tracking") {
         const n = await processKeywordTracking();
         // eslint-disable-next-line no-console
@@ -225,6 +245,13 @@ async function main(): Promise<void> {
     "signal-weekly",
     {},
     { repeat: { pattern: "0 7 * * 1" }, jobId: "signal-weekly" },
+  );
+  // Raw access logs are personal data: sweep anything past its 7-day window
+  // daily at 03:30, as the backstop for an upload whose job never ran (P2/8).
+  await wakeupsQueue().add(
+    "log-retention",
+    {},
+    { repeat: { pattern: "30 3 * * *" }, jobId: "log-retention" },
   );
   // Weekly keyword positions — Tuesday 05:00. Dormant without a provider key,
   // and every query is billed, so this is the one sweep that costs money per

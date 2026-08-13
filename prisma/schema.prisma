@@ -340,6 +340,7 @@ model Company {
   audits    AuditResult[]
   auditWatch AuditWatch?
   keywords   TrackedKeyword[]
+  logUploads LogUpload[]
   registry  RegistryData?
   referrers Referrer[]
 
@@ -726,6 +727,37 @@ model AuditWatch {
   @@index([workspaceId])
   @@index([nextRunAt])
   @@map("audit_watches")
+}
+
+/// An uploaded access log and the aggregate we keep from it (P2/8).
+///
+/// GDPR: log lines contain IP addresses, which are personal data. The raw file
+/// is processed, aggregated, and DELETED within 7 days — `rawPath` goes null
+/// when that happens, and only `analysis` survives. Nothing here ever stores a
+/// single line.
+model LogUpload {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  companyId   String?   @map("company_id")
+  filename    String
+  bytes       Int
+  /// queued | running | done | error
+  status      String    @default("queued")
+  error       String?   @db.Text
+  /// Relative path under FILES_DIR while the raw file still exists.
+  rawPath     String?   @map("raw_path")
+  /// When the raw upload must be gone by.
+  purgeAfter  DateTime  @map("purge_after")
+  purgedAt    DateTime? @map("purged_at")
+  analysis    Json?
+  uploadedBy  String?   @map("uploaded_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([purgeAfter])
+  @@map("log_uploads")
 }
 
 /// A search term we track a company's position for (P2/7).
