@@ -115,3 +115,11 @@ body::before {
     transparent 100%
   );
 }
+
+/* Indeterminate progress track for queued worker jobs (JobProgress). The
+   worker reports a stage, not a percentage, so the bar shows liveness rather
+   than a fabricated completion figure. */
+@keyframes jobslide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

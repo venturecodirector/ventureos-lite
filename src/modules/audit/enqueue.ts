@@ -32,3 +32,25 @@ export async function enqueuePdfRender(data: PdfJobData): Promise<void> {
     removeOnFail: 50,
   });
 }
+
+/**
+ * Ad-hoc analytics export. The report snapshot rides in the payload rather
+ * than being recomputed worker-side, so the PDF is exactly the figures the
+ * operator was looking at when they pressed the button — not a fresh
+ * aggregate that may have moved.
+ */
+export interface AnalyticsPdfJobData {
+  workspaceId: string;
+  /** Relative path under FILES_DIR, e.g. exports/<workspaceId>-analytics-<ts>.pdf */
+  rel: string;
+  report: unknown;
+  commentary: string | null;
+}
+
+export async function enqueueAnalyticsPdf(data: AnalyticsPdfJobData): Promise<void> {
+  await pdfsQueue().add("analytics-pdf", data, {
+    jobId: `analytics-${data.rel}`,
+    removeOnComplete: true,
+    removeOnFail: 50,
+  });
+}

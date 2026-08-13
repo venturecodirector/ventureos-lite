@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { AuditView } from "@/modules/audit/types";
+import { JobProgress } from "./job-progress";
 import {
   startAudit,
   getAudit,
@@ -40,6 +41,8 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
   const [share, setShare] = useState<{ url: string; expiresAt: string } | null>(null);
   const [sharing, setSharing] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // When the current run began, for the elapsed counter in JobProgress.
+  const [startedAt, setStartedAt] = useState<number | null>(null);
 
   // Poll the audit record for progressive results.
   useEffect(() => {
@@ -74,6 +77,7 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
     setPdf("idle");
     setShare(null);
     setBusy(true);
+    setStartedAt(Date.now());
     try {
       const { auditId: id } = await startAudit({ url, withPitch });
       setAuditId(id);
@@ -113,6 +117,15 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
   }
 
   const running = auditId && (!view || view.status === "queued" || view.status === "running");
+
+  // Stage keys mirror audit_results.status, so the label tracks what the
+  // worker actually reports rather than a timer pretending to know.
+  const AUDIT_STAGES = [
+    { key: "queued", label: "Queued" },
+    { key: "running", label: "Loading the site in a browser" },
+    { key: "scoring", label: "Scoring and screenshots" },
+  ];
+  const stage = !view ? "queued" : view.status === "done" ? null : view.status;
 
   return (
     <div className="max-w-[1400px]">
@@ -154,6 +167,13 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
           </span>
         </label>
       </div>
+
+      <JobProgress
+        stages={AUDIT_STAGES}
+        current={running ? stage : null}
+        startedAt={running ? startedAt : null}
+        note="PageSpeed and the two screenshots are the slow part — usually 15-40 seconds."
+      />
 
       {share && (
         <div className="mb-4 rounded-card border border-accent-soft bg-accent-soft px-4 py-3">

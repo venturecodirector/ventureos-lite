@@ -10,6 +10,7 @@ import { buildWhatCloses, type WhatCloses } from "./aggregate";
 import { getOutcomeFacts, type OutcomeTotals } from "./data";
 import { getTopReferrers } from "@/modules/referrals/data";
 import type { TopReferrer } from "@/modules/referrals/ledger";
+import { enqueueAnalyticsPdf } from "@/modules/audit/enqueue";
 import { collectReportInput } from "./report-data";
 import { buildWeeklyReport, type WeeklyReport } from "./reports";
 import { getLatestReport, type ReportView } from "./report-actions";
@@ -131,4 +132,31 @@ export async function listOpenHandoffs(): Promise<
       name: l.contactName ?? l.company?.name ?? "Unnamed lead",
       company: l.company?.name ?? "",
     }));
+}
+
+/**
+ * Export the analytics currently on screen as a branded PDF.
+ *
+ * The rendering happens in the worker (Chromium lives only in that image), so
+ * this enqueues and hands back the path to poll. The report snapshot travels
+ * with the job so the document matches the figures the operator was looking
+ * at, rather than a fresh aggregate taken moments later.
+ */
+export async function exportAnalyticsPdf(): Promise<{ path: string }> {
+  const { workspaceId } = await getActiveContext();
+  const db = getWorkspaceClient(workspaceId);
+  const now = Date.now();
+  const input = await collectReportInput(db, {
+    weekLabel: "this week",
+    sinceMs: now - 7 * 24 * 60 * 60_000,
+    untilMs: now,
+  });
+  const report = buildWeeklyReport(input);
+
+  // exports/<workspaceId>-… is the shape resolveFileWorkspace already knows
+  // how to attribute, so the authenticated file route stays tenant-scoped
+  // without a schema change (hard rule #1).
+  const rel = `exports/${workspaceId}-analytics-${now}.pdf`;
+  await enqueueAnalyticsPdf({ workspaceId, rel, report, commentary: null });
+  return { path: rel };
 }

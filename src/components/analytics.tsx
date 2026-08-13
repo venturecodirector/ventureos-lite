@@ -3,6 +3,7 @@ import type { AggRow } from "@/modules/analytics/aggregate";
 import { STAGE_LABELS } from "@/modules/pipeline/transitions";
 import type { Stage } from "@prisma/client";
 import { ReportComment } from "./report-comment";
+import { AnalyticsExport } from "./analytics-export";
 
 function huf(n: number): string {
   return `${n.toLocaleString("en-US").replace(/,/g, " ")} Ft`;
@@ -96,6 +97,7 @@ export function Analytics({ view }: { view: AnalyticsView }) {
 
   return (
     <div className="mx-auto w-full max-w-[1400px]">
+      <AnalyticsExport />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.1fr_1fr]">
         {/* funnel with per-step conversion */}
         <div className="min-w-0 rounded-card border border-line bg-panel p-[18px]">

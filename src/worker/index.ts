@@ -15,6 +15,7 @@ import { processFollowup, processWakeupSweep } from "../modules/pipeline/jobs";
 import { processAudit, processPdfRender } from "../modules/audit/jobs";
 import { processCallbackDue } from "../modules/calls/jobs";
 import { processDocumentPdf } from "../modules/documents/jobs";
+import { processAnalyticsPdf } from "../modules/analytics/export-job";
 import { processMeetingBrief } from "../modules/meetings/jobs";
 import { processQuarterlyWinLoss } from "../modules/analytics/digest";
 import { processWeeklyReports } from "../modules/analytics/report-job";
@@ -70,6 +71,7 @@ async function main(): Promise<void> {
     PDF_QUEUE,
     async (job) => {
       if (job.name === "document-pdf") await processDocumentPdf(job.data);
+      else if (job.name === "analytics-pdf") await processAnalyticsPdf(job.data);
       else await processPdfRender(job.data);
     },
     { connection, concurrency: 2 },
