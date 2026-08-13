@@ -1,3 +1,5 @@
+import { unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { prismaUnsafe, getWorkspaceClient, type WorkspaceClient } from "../../lib/db";
 import { pseudonymizeLead, shouldAnonymize } from "./anonymize";
 import { parseRetention } from "./retention";
@@ -22,6 +24,9 @@ export async function anonymizeLead(
       phone: true,
       linkedinUrl: true,
       notes: true,
+      bio: true,
+      personBrief: true,
+      avatarPath: true,
       anonymizedAt: true,
     },
   });
@@ -29,6 +34,17 @@ export async function anonymizeLead(
 
   const patch = pseudonymizeLead(lead, nowMs);
   await db.lead.update({ where: { id: leadId }, data: patch });
+
+  // Clearing avatarPath is not enough — the image is a photograph of a person
+  // and has to leave the disk too (P1/1f). Best effort: a file already gone is
+  // the desired end state anyway.
+  if (lead.avatarPath) {
+    try {
+      await unlink(join(process.env.FILES_DIR ?? "/data/files", lead.avatarPath));
+    } catch {
+      /* already gone */
+    }
+  }
   // Conversation PII — scrub bodies/notes but keep the rows (counts/timing).
   await db.message.updateMany({ where: { leadId }, data: { body: "[anonymized]" } });
   await db.call.updateMany({ where: { leadId, note: { not: null } }, data: { note: null } });

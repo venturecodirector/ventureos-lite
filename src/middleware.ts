@@ -42,6 +42,7 @@ const PUBLIC_PREFIXES = [
   "/api/cold/unsubscribe", // one-click unsubscribe in cold mail
   "/api/mailgun", // inbound mail routes (signature-verified)
   "/api/webhooks", // delivery/bounce webhooks (signature-verified)
+  "/api/capture", // browser-extension capture (bearer token, not a session)
   "/share", // public audit reports (legacy path, still served)
   "/r", // public audit reports on the audit domain
   "/public-audit", // self-serve audit landing

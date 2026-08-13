@@ -190,6 +190,7 @@ model User {
   memberships         Membership[]
   sessions            Session[]
   googleCredentials   GoogleCredential[]
+  captureTokens       CaptureToken[]
   passwordResetTokens PasswordResetToken[]
 
   @@map("users")
@@ -390,6 +391,12 @@ model Lead {
   @@index([workspaceId])
   @@index([companyId])
   @@map("leads")
+  /// Captured from the page the user was viewing (P1/1e). Personal data:
+  /// all three join the erasure cascade and the anonymization job.
+  avatarPath    String?   @map("avatar_path")
+  bio           String?   @db.Text
+  personBrief   String?   @map("person_brief") @db.Text
+  briefAt       DateTime? @map("brief_at")
 }
 
 model Activity {
@@ -667,6 +674,27 @@ model AuditResult {
 /// person is known. Anonymous by construction: we hold the URL, the coarse
 /// client fingerprint needed for abuse control, and a pointer to the audit.
 /// A Lead only appears later, if the visitor submits the report form (P12/1b).
+/// Personal token letting the browser extension post captures on a user's
+/// behalf. The extension runs on linkedin.com, so it cannot use the app's
+/// session cookie — this is the credential instead. Hashed at rest, revocable,
+/// and scoped to one user in one workspace.
+model CaptureToken {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  workspaceId String    @map("workspace_id")
+  /// sha256 of the token. The plaintext is shown once, at creation.
+  tokenHash   String    @unique @map("token_hash")
+  label       String?
+  lastUsedAt  DateTime? @map("last_used_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@map("capture_tokens")
+}
+
 model PublicAudit {
   id          String   @id @default(cuid())
   /// Which workspace receives this inbound. Resolved by getPublicIntakeWorkspace().

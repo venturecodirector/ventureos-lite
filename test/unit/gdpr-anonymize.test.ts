@@ -16,6 +16,9 @@ function lead(over: Partial<AnonymizableLead> = {}): AnonymizableLead {
     phone: "+36301234567",
     linkedinUrl: "https://linkedin.com/in/marta",
     notes: "Met at expo; interested in allergen audit.",
+    bio: "Ügyvezető, 12 éve a szakmában.",
+    personBrief: "Márta runs Fortuna Kft and has led it since 2014.",
+    avatarPath: "avatars/clead000abc123def456.jpg",
     anonymizedAt: null,
     ...over,
   };
@@ -69,5 +72,27 @@ describe("shouldAnonymize gates on inactivity + not-yet-anonymized", () => {
   it("falls back to createdAt when lastActivityAt is null", () => {
     expect(shouldAnonymize({ lastActivityAt: null, createdAt: new Date(NOW - 1), anonymizedAt: null }, cutoff)).toBe(true);
     expect(shouldAnonymize({ lastActivityAt: null, createdAt: new Date(NOW + 1), anonymizedAt: null }, cutoff)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P1/1f — fields the browser-extension capture introduced
+// ---------------------------------------------------------------------------
+
+describe("captured profile data is personal data", () => {
+  it("drops the About text, the generated brief and the avatar path", () => {
+    const p = pseudonymizeLead(lead(), NOW);
+    expect(p.bio).toBeNull();
+    expect(p.personBrief).toBeNull();
+    expect(p.avatarPath).toBeNull();
+  });
+
+  it("stays idempotent with the new fields", () => {
+    const once = pseudonymizeLead(lead(), NOW);
+    const twice = pseudonymizeLead(
+      lead({ ...once, id: "clead000abc123def456" }),
+      NOW + 86_400_000,
+    );
+    expect(twice).toEqual(once);
   });
 });

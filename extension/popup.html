@@ -1,0 +1,57 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Venture OS — Capture</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; width: 320px; padding: 16px;
+    background: #00051D; color: #EFF1F8;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  .brand { font-size: 15px; margin-bottom: 14px; }
+  .brand b { font-weight: 800; }
+  .brand span { font-weight: 300; color: #858CAE; }
+  label { display: block; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: #858CAE; margin: 10px 0 4px; }
+  input {
+    width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid rgba(239,241,248,.09); background: rgba(0,5,29,.5); color: #EFF1F8;
+    font: inherit; outline: none;
+  }
+  input:focus { border-color: #7427C6; }
+  button {
+    width: 100%; margin-top: 12px; padding: 10px; border-radius: 10px; cursor: pointer;
+    border: 1.5px solid transparent; color: #EFF1F8; font-weight: 600; font: inherit;
+    background:
+      linear-gradient(#00051D, #00051D) padding-box,
+      linear-gradient(135deg, #310B59, #7427C6) border-box;
+  }
+  button:disabled { opacity: .6; cursor: default; }
+  .msg { margin-top: 10px; font-size: 12px; }
+  .ok { color: #3DDC97; }
+  .err { color: #FFB3C2; }
+  .muted { color: #858CAE; font-size: 11.5px; margin-top: 10px; }
+  details { margin-top: 12px; }
+  summary { color: #858CAE; font-size: 11.5px; cursor: pointer; }
+</style>
+<div class="brand"><b>venture</b> <span>co.group</span></div>
+
+<button id="capture">Capture this profile</button>
+<div class="msg" id="msg"></div>
+
+<details id="settings">
+  <summary>Settings</summary>
+  <label for="baseUrl">Venture OS URL</label>
+  <input id="baseUrl" placeholder="https://ventureco.agency" />
+  <label for="token">Capture token</label>
+  <input id="token" type="password" placeholder="vos_cap_…" />
+  <button id="save">Save</button>
+  <p class="muted">
+    Create a token in Venture OS → Settings → Extension. It is shown once.
+  </p>
+</details>
+
+<p class="muted">
+  Reads the profile page you are viewing, only when you press the button.
+  Never posts, messages or acts on LinkedIn.
+</p>
+<script src="popup.js"></script>

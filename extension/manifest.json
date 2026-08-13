@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Venture OS — Capture",
+  "version": "2.0.0",
+  "description": "Capture the profile you are looking at into Venture OS. Reads the current page only, on your click. Never posts or acts on your behalf.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://www.linkedin.com/*"],
+  "action": { "default_popup": "popup.html", "default_title": "Capture into Venture OS" },
+  "background": { "service_worker": "background.js" },
+  "icons": { "128": "icons/icon-128.png" }
+}

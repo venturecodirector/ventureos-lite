@@ -38,13 +38,19 @@ export async function eraseLeadData(
   leadId: string,
   opts: { eraseDocuments: boolean },
 ): Promise<EraseResult> {
-  const lead = await db.lead.findUnique({ where: { id: leadId }, select: { id: true, companyId: true } });
+  const lead = await db.lead.findUnique({
+    where: { id: leadId },
+    // avatarPath joins the file sweep below: a captured photo is personal data
+    // and erasure must take the bytes off disk, not just the row (P1/1f).
+    select: { id: true, companyId: true, avatarPath: true },
+  });
   if (!lead) return { leadId, deleted: {}, filesRemoved: 0 };
 
   const deleted: Record<string, number> = {};
   const files: Array<string | null> = [];
 
   // Files first (collect paths before rows vanish).
+  files.push(lead.avatarPath);
   const meetings = await db.meeting.findMany({ where: { leadId }, select: { briefPdfPath: true } });
   files.push(...meetings.map((m) => m.briefPdfPath));
 

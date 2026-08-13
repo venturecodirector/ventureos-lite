@@ -11,6 +11,10 @@ export interface AnonymizableLead {
   phone: string | null;
   linkedinUrl: string | null;
   notes: string | null;
+  /** Captured from a profile page (P1/1e) — personal data like any other. */
+  bio: string | null;
+  personBrief: string | null;
+  avatarPath: string | null;
   anonymizedAt: Date | null;
 }
 
@@ -20,6 +24,9 @@ export interface AnonymizedPatch {
   phone: null;
   linkedinUrl: null;
   notes: null;
+  bio: null;
+  personBrief: null;
+  avatarPath: null;
   anonymizedAt: Date;
 }
 
@@ -35,6 +42,13 @@ export function pseudonymizeLead(lead: AnonymizableLead, nowMs: number): Anonymi
     phone: null,
     linkedinUrl: null,
     notes: null,
+    // The captured photo, About text and generated brief are all about a
+    // person; anonymization drops them with everything else (P1/1f). The
+    // avatar FILE is unlinked by the caller — clearing the path alone would
+    // leave the bytes on disk.
+    bio: null,
+    personBrief: null,
+    avatarPath: null,
     // Preserve the original timestamp so repeated runs are stable.
     anonymizedAt: lead.anonymizedAt ?? new Date(nowMs),
   };
