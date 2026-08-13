@@ -23,6 +23,7 @@ import {
   ReferrersIcon,
   CampaignsIcon,
   DocumentsIcon,
+  TemplatesIcon,
   PublicIcon,
   ContentIcon,
   AnalyticsIcon,
@@ -53,6 +54,10 @@ const NAV: NavItem[] = [
   { label: "Referrers", icon: <ReferrersIcon />, href: "/referrers" },
   { label: "Campaigns", icon: <CampaignsIcon />, href: "/campaigns", locked: true },
   { label: "Documents", icon: <DocumentsIcon />, href: "/documents", locked: true },
+  // Quote/contract/certificate bodies AND the transactional email bodies —
+  // one editor, switched by type. It had no nav entry, so neither was
+  // reachable even though both were built and seeded.
+  { label: "Templates", icon: <TemplatesIcon />, href: "/templates" },
   { label: "Public Pages", icon: <PublicIcon />, href: "/public-pages" },
   { label: "Content Hub", icon: <ContentIcon />, href: "/content" },
   { label: "Analytics", icon: <AnalyticsIcon />, href: "/analytics" },

@@ -88,6 +88,13 @@ export const DocumentsIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const TemplatesIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M3 9h18M9 9v12" />
+  </svg>
+);
+
 export const PublicIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <circle cx="12" cy="12" r="9" />
