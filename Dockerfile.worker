@@ -23,8 +23,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends procps \
 
 # Install with dev dependencies present: the Prisma CLI and tsx are devDeps and
 # are required both to migrate and to run the TypeScript worker entrypoint.
+#
+# --include=dev is NOT redundant. NODE_ENV=production is set above (the runtime
+# needs it), and npm honours that during install by omitting devDependencies —
+# which silently dropped tsx and left `npm run worker` dying with
+# "sh: 1: tsx: not found" in a restart loop, while the app container stayed
+# healthy and made the stack look fine.
 COPY package.json package-lock.json* ./
-RUN npm ci && npm cache clean --force
+RUN npm ci --include=dev && npm cache clean --force
 
 COPY . .
 RUN npx prisma generate
