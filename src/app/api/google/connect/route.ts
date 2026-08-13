@@ -14,6 +14,14 @@ const SCOPES = [
   // look free and let prospects book over existing meetings. readonly is the
   // least-privilege scope that satisfies the freeBusy endpoint.
   "https://www.googleapis.com/auth/calendar.readonly",
+  // Email sync (playbook-v2 P2). Restricted scopes, which need Google
+  // verification on an EXTERNAL consent screen — ours is Internal on the
+  // Workspace domain, so they are granted without review and refresh tokens do
+  // not expire. readonly + send rather than modify: we never need to change
+  // anything in the user's mailbox, and asking for less is the difference
+  // between a scope review and none.
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
   "openid",
   "email",
 ].join(" ");

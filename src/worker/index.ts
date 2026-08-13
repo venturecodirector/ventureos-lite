@@ -33,6 +33,7 @@ import { processInvoicePolls } from "../modules/invoicing/jobs";
 import { processSignalEngine, processDailyInsight } from "../modules/signal/jobs";
 import { processKeywordTracking } from "../modules/serp/jobs";
 import { processLogUpload, processLogRetention } from "../modules/logs/jobs";
+import { processMailSyncSweep } from "../modules/email/jobs";
 
 /**
  * Background worker (BullMQ + Redis). Runs in its own Docker service.
@@ -171,6 +172,10 @@ async function main(): Promise<void> {
         const n = await processSignalEngine();
         // eslint-disable-next-line no-console
         console.log(`[worker] signal engine ran for ${n} workspace(s)`);
+      } else if (job.name === "mail-sync") {
+        const n = await processMailSyncSweep();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] mail sync stored ${n} message(s)`);
       } else if (job.name === "log-retention") {
         const n = await processLogRetention();
         // eslint-disable-next-line no-console
@@ -247,6 +252,14 @@ async function main(): Promise<void> {
     "signal-weekly",
     {},
     { repeat: { pattern: "0 7 * * 1" }, jobId: "signal-weekly" },
+  );
+  // Mailbox sync every two minutes (playbook-v2 P2b). Each pass is bounded and
+  // skips mailboxes that need reconnecting, so a stuck account cannot make the
+  // sweep run long.
+  await wakeupsQueue().add(
+    "mail-sync",
+    {},
+    { repeat: { pattern: "*/2 * * * *" }, jobId: "mail-sync" },
   );
   // Raw access logs are personal data: sweep anything past its 7-day window
   // daily at 03:30, as the backstop for an upload whose job never ran (P2/8).

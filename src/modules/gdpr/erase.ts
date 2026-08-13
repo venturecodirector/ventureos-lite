@@ -57,6 +57,27 @@ export async function eraseLeadData(
   // Tables WITHOUT a lead FK — must delete explicitly or they orphan.
   deleted.meetings = (await db.meeting.deleteMany({ where: { leadId } })).count;
   deleted.emailLogs = (await db.emailLog.deleteMany({ where: { leadId } })).count;
+
+  // Synced correspondence (playbook-v2 P2). Messages cascade from the thread,
+  // but the ATTACHMENT BYTES on the volume do not — a row deletion that leaves
+  // the files behind is the easy half of an erasure and the wrong half. Paths
+  // join the same sweep every other file uses, collected before the rows go.
+  const mailThreads = await db.emailThread.findMany({
+    where: { leadId },
+    select: { messages: { select: { attachments: true } } },
+  });
+  for (const thread of mailThreads) {
+    for (const message of thread.messages) {
+      const stored = Array.isArray(message.attachments)
+        ? (message.attachments as Array<{ storedPath?: string }>)
+        : [];
+      files.push(...stored.map((f) => f?.storedPath ?? null));
+    }
+  }
+  deleted.emailThreads = (await db.emailThread.deleteMany({ where: { leadId } })).count;
+  // The address→lead mapping is personal data in its own right: it says this
+  // address belongs to this person.
+  deleted.addressLinks = (await db.addressLink.deleteMany({ where: { leadId } })).count;
   deleted.auditShares = (await db.auditShare.deleteMany({ where: { leadId } })).count;
   deleted.campaignRecipients = (await db.campaignRecipient.deleteMany({ where: { leadId } })).count;
 

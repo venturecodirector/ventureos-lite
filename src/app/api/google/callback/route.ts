@@ -105,6 +105,42 @@ export async function GET(req: Request) {
     });
   }
 
+  // A grant carrying the mail scopes gets a MailAccount, so the sync sweep has
+  // something to pick up (playbook-v2 P2b). Keyed on the account email, so
+  // reconnecting the same mailbox resumes rather than starting a second
+  // backfill of the same 90 days.
+  if (accountEmail && (tok.scope ?? "").includes("gmail.readonly")) {
+    try {
+      const { workspaceId } = await tryGetActiveContextOrThrow();
+      const credential = await prismaUnsafe.googleCredential.findFirst({
+        where: { userId, accountEmail },
+        select: { id: true },
+      });
+      await prismaUnsafe.mailAccount.upsert({
+        where: { userId_accountEmail: { userId, accountEmail } },
+        create: {
+          workspaceId,
+          userId,
+          accountEmail,
+          credentialId: credential?.id ?? null,
+          provider: "gmail",
+          health: "ok",
+        },
+        update: {
+          credentialId: credential?.id ?? null,
+          // Reconnecting clears the reason it stopped; the sweep picks it up
+          // again on the next pass.
+          health: "ok",
+          lastError: null,
+          enabled: true,
+        },
+      });
+    } catch {
+      // The calendar connection still succeeded; mail sync simply is not set
+      // up, and Settings → Email will say so.
+    }
+  }
+
   return Response.redirect(appLink("/meetings?google=connected"), 302);
 }
 

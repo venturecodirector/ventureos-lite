@@ -4,6 +4,7 @@ import { SecurityPanel } from "@/components/security-panel";
 import { SettingsUsers } from "@/components/settings-users";
 import { SettingsIntegrations } from "@/components/settings-integrations";
 import { ApiCosts } from "@/components/api-costs";
+import { SettingsEmail } from "@/components/settings-email";
 import { SettingsExtension } from "@/components/settings-extension";
 import { ProposalQueue } from "@/components/proposal-queue";
 import { GdprPanel } from "@/components/gdpr-panel";
@@ -68,6 +69,7 @@ export default async function SettingsPage({
         )}
         {integrations && <SettingsIntegrations data={integrations} />}
         {apiCosts && <ApiCosts report={apiCosts} />}
+        <SettingsEmail />
         <WorkspaceAdmin isOwner={owner} />
         <ColdSignoff status={coldStatus} isOwner={owner} />
         <SzamlazzKey hasKey={szamlazzKeySet} isOwner={owner} />
