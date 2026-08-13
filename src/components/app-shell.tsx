@@ -6,6 +6,7 @@ import type { BudgetStatus } from "@/lib/ai/budget-status";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { MobileNav, type MobileNavItem } from "./mobile-nav";
 import { GlobalSearch } from "./global-search";
+import { Greeting } from "./greeting";
 import { AppActionsProvider } from "./app-actions";
 import { AppDialogs } from "./app-dialogs";
 import { TopBarActions } from "./top-bar-actions";
@@ -261,7 +262,7 @@ export async function AppShell({
 
         <header className="hidden flex-none items-center gap-3 border-b border-line px-7 py-4 nav:flex">
           <h1 className="min-w-0 truncate font-display text-[26px] font-extrabold lowercase tracking-display">
-            good morning, {firstName}
+            <Greeting suffix={firstName} />
           </h1>
           <GlobalSearch className="ml-auto w-[clamp(180px,22vw,320px)] min-w-0 flex-none" />
           <TopBarActions />

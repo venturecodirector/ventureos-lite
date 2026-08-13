@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/app-shell";
+import { Greeting } from "@/components/greeting";
 import { getLatestInsight } from "@/modules/signal/actions";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export default async function Home() {
               Today
             </div>
             <h2 className="mb-2 font-display text-2xl font-bold lowercase tracking-display">
-              good morning
+              <Greeting />
             </h2>
             <p className="max-w-prose text-[13px] leading-relaxed text-muted">
               Your day starts here. The Signal Engine analyses what converts each week and
