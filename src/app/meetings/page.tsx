@@ -28,7 +28,10 @@ export default async function MeetingsPage({
       take: 200,
       select: { id: true, contactName: true, company: { select: { name: true } } },
     }),
-    prismaUnsafe.googleCredential.findUnique({ where: { userId }, select: { id: true } }),
+    prismaUnsafe.googleCredential.findUnique({
+      where: { userId },
+      select: { id: true, scope: true },
+    }),
   ]);
 
   const leads = leadRows.map((l) => ({
@@ -42,6 +45,11 @@ export default async function MeetingsPage({
         meetings={meetings}
         leads={leads}
         googleConnected={!!cred}
+        // A token minted before calendar.readonly was requested still works
+        // for writing events but cannot read busy periods, so availability is
+        // silently wrong until the host reconnects. Surface that rather than
+        // showing an unqualified green tick.
+        googleCanReadBusy={!!cred?.scope?.includes("calendar.readonly")}
         googleNotice={google ? GOOGLE_NOTICE[google] ?? null : null}
       />
     </AppShell>

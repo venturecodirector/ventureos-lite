@@ -278,3 +278,30 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
     eventUrl: m.eventUrl,
   };
 }
+
+/**
+ * Drop the stored Google Calendar credential for the signed-in host.
+ *
+ * There was no way to disconnect, and no way to reconnect either — once the
+ * UI said "Connected" it was a dead end, which is exactly the state a host
+ * lands in when the granted scopes turn out to be insufficient or the tokens
+ * are revoked at Google.
+ *
+ * Only ever removes the caller's own credential; the row is keyed by user.
+ */
+export async function disconnectGoogleCalendar(): Promise<{ ok: true }> {
+  const { workspaceId, userId } = await getActiveContext();
+  await prismaUnsafe.googleCredential.deleteMany({ where: { userId } });
+  await getWorkspaceClient(workspaceId).auditLog.create({
+    data: {
+      workspaceId,
+      actorUserId: userId,
+      action: "calendar.disconnected",
+      entityType: "GoogleCredential",
+      entityId: userId,
+      meta: {},
+    },
+  });
+  revalidatePath("/meetings");
+  return { ok: true };
+}

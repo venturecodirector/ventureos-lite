@@ -8,6 +8,7 @@ import {
   updateBrief,
   logMeetingOutcome,
   getMeeting,
+  disconnectGoogleCalendar,
   type MeetingRow,
   type MeetingDetail,
 } from "@/modules/meetings/actions";
@@ -27,11 +28,13 @@ export function Meetings({
   meetings,
   leads,
   googleConnected,
+  googleCanReadBusy,
   googleNotice,
 }: {
   meetings: MeetingRow[];
   leads: Array<{ id: string; name: string }>;
   googleConnected: boolean;
+  googleCanReadBusy: boolean;
   googleNotice: string | null;
 }) {
   const router = useRouter();
@@ -156,7 +159,42 @@ export function Meetings({
               Google Calendar
             </div>
             {googleConnected ? (
-              <p className="text-[12.5px] text-[#3DDC97]">✓ Connected — events land on your calendar.</p>
+              <>
+                <p className="text-[12.5px] text-[#3DDC97]">
+                  ✓ Connected — events land on your calendar.
+                </p>
+                {!googleCanReadBusy && (
+                  <p className="mt-1.5 text-[12px] text-warn" data-testid="google-scope-warning">
+                    This connection cannot read your busy times, so every slot is
+                    offered and someone could book over an existing meeting.
+                    Reconnect to fix it.
+                  </p>
+                )}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {/* Reconnect must always be available: scopes change, tokens
+                      get revoked, and people switch Google accounts. Without
+                      it, a connected-but-broken calendar is a dead end. */}
+                  <a
+                    href="/api/google/connect"
+                    data-testid="google-reconnect"
+                    className="inline-block rounded-[8px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2"
+                  >
+                    Reconnect
+                  </a>
+                  <button
+                    type="button"
+                    data-testid="google-disconnect"
+                    onClick={async () => {
+                      if (!confirm("Disconnect Google Calendar? Bookings keep saving, but no events will be written.")) return;
+                      await disconnectGoogleCalendar();
+                      router.refresh();
+                    }}
+                    className="rounded-[8px] border border-line px-3 py-1.5 text-[12px] text-[#FF8FA5] hover:border-[rgba(255,92,122,0.5)] hover:bg-[rgba(255,92,122,0.08)]"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              </>
             ) : (
               <>
                 <p className="mb-2 text-[12px] text-muted">
