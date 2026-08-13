@@ -20,6 +20,7 @@ import { loadComparison } from "./comparison-load";
 import { computeDelta, signalFor } from "./delta";
 import { nextRunFrom } from "./watch";
 import { brandFrom } from "../workspaces/brand";
+import { shareOfTopTen } from "../serp/provider";
 import { resolveIntegration } from "@/modules/integrations/resolve";
 import { analyzeAudit } from "./analyze";
 import { auditThresholdsFromConfig } from "./config";
@@ -431,7 +432,24 @@ export async function processPdfRender(data: PdfJobData): Promise<void> {
       brand.logoUrl = null;
     }
   }
-  const html = buildAuditPdfHtml(view, { shots, comparison, brand });
+  // Search visibility (P2/7): only when there is something measured to say.
+  let visibility: { tracked: number; inTopTen: number; shareOfTopTen: number } | null = null;
+  if (a.companyId) {
+    const tracked = await db.trackedKeyword.findMany({
+      where: { companyId: a.companyId, enabled: true },
+      include: { positions: { orderBy: { checkedAt: "desc" }, take: 1 } },
+    });
+    const measured = tracked.filter((k) => k.positions.length > 0);
+    if (measured.length > 0) {
+      const positions = measured.map((k) => k.positions[0]!.position);
+      visibility = {
+        tracked: measured.length,
+        inTopTen: positions.filter((p) => p !== null && p <= 10).length,
+        shareOfTopTen: shareOfTopTen(positions),
+      };
+    }
+  }
+  const html = buildAuditPdfHtml(view, { shots, comparison, brand, visibility });
   const pdf = await renderHtmlToPdf(html);
 
   const rel = `audits/${data.auditId}.pdf`;

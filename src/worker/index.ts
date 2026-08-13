@@ -29,6 +29,7 @@ import { processAnonymizationSweep } from "../modules/gdpr/sweep";
 import { processColdSends } from "../modules/campaigns/jobs";
 import { processInvoicePolls } from "../modules/invoicing/jobs";
 import { processSignalEngine, processDailyInsight } from "../modules/signal/jobs";
+import { processKeywordTracking } from "../modules/serp/jobs";
 
 /**
  * Background worker (BullMQ + Redis). Runs in its own Docker service.
@@ -152,6 +153,10 @@ async function main(): Promise<void> {
         const n = await processSignalEngine();
         // eslint-disable-next-line no-console
         console.log(`[worker] signal engine ran for ${n} workspace(s)`);
+      } else if (job.name === "keyword-tracking") {
+        const n = await processKeywordTracking();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] keyword tracking checked ${n} position(s)`);
       } else if (job.name === "audit-watch") {
         const n = await processAuditWatchSweep();
         // eslint-disable-next-line no-console
@@ -220,6 +225,14 @@ async function main(): Promise<void> {
     "signal-weekly",
     {},
     { repeat: { pattern: "0 7 * * 1" }, jobId: "signal-weekly" },
+  );
+  // Weekly keyword positions — Tuesday 05:00. Dormant without a provider key,
+  // and every query is billed, so this is the one sweep that costs money per
+  // row rather than per run (P2/7).
+  await wakeupsQueue().add(
+    "keyword-tracking",
+    {},
+    { repeat: { pattern: "0 5 * * 2" }, jobId: "keyword-tracking" },
   );
   // Daily re-audit sweep — 04:00, before the working day, so a worsening
   // signal is on the lead by the time anyone opens the queue (P2/5).

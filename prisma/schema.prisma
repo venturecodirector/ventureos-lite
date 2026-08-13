@@ -339,6 +339,7 @@ model Company {
   leads     Lead[]
   audits    AuditResult[]
   auditWatch AuditWatch?
+  keywords   TrackedKeyword[]
   registry  RegistryData?
   referrers Referrer[]
 
@@ -725,6 +726,47 @@ model AuditWatch {
   @@index([workspaceId])
   @@index([nextRunAt])
   @@map("audit_watches")
+}
+
+/// A search term we track a company's position for (P2/7).
+///
+/// Known terms only — this system does no keyword research and holds no
+/// search-volume data, so a keyword exists here because someone typed it.
+model TrackedKeyword {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  companyId   String   @map("company_id")
+  keyword     String
+  /// hu-HU unless told otherwise.
+  locale      String   @default("hu-HU")
+  /// Local intent, e.g. "Budapest,Hungary".
+  location    String?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  positions KeywordPosition[]
+
+  @@unique([companyId, keyword, locale])
+  @@index([workspaceId])
+  @@map("tracked_keywords")
+}
+
+/// One weekly measurement. `position` null means "not in the first hundred",
+/// which is a real answer and must not be stored as a large number.
+model KeywordPosition {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  keywordId   String   @map("keyword_id")
+  position    Int?
+  url         String?
+  checkedAt   DateTime @default(now()) @map("checked_at")
+
+  keyword TrackedKeyword @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([keywordId, checkedAt])
+  @@map("keyword_positions")
 }
 
 /// Personal token letting the browser extension post captures on a user's

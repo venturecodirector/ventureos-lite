@@ -83,6 +83,22 @@ export const INTEGRATION_GROUPS: IntegrationGroup[] = [
     ],
   },
   {
+    id: "serp",
+    title: "SERP provider (rank tracking)",
+    description:
+      "Optional. Weekly keyword positions for clients. Without it the feature stays dormant — we never scrape Google.",
+    testable: false,
+    fields: [
+      {
+        key: "serp.credential",
+        label: "DataForSEO credential (login:password)",
+        kind: "secret",
+        envVar: "SERP_CREDENTIAL",
+        help: "Billed per query. The cost projection in the app uses their per-task price.",
+      },
+    ],
+  },
+  {
     id: "mailgun_transactional",
     title: "Mailgun — transactional",
     description: "Quotes, contracts, certificates, booking confirmations.",

@@ -39,6 +39,12 @@ export interface AuditDocOptions {
   generatedAt?: Date;
   /** Competitor side-by-side (P2/3) — named, because this is the sales PDF. */
   comparison?: ComparisonTable | null;
+  /**
+   * Search visibility (P2/7), when the company has tracked keywords with at
+   * least one measurement. Omitted entirely otherwise — an empty line reads as
+   * "you rank nowhere", which we have not measured and cannot claim.
+   */
+  visibility?: { tracked: number; inTopTen: number; shareOfTopTen: number } | null;
 }
 
 /**
@@ -478,6 +484,15 @@ export function buildAuditPdfHtml(
   <div class="brand">${mark}</div>
   <div class="kicker">Website Opportunity Audit</div>
   ${auditReportBody(view, opts.shots ?? {}, opts.comparison ?? null)}
+  ${
+    opts.visibility && opts.visibility.tracked > 0
+      ? `<div class="eyebrow">Keresési láthatóság</div><div class="muted scope">${
+          opts.visibility.tracked
+        } követett kulcsszóból ${opts.visibility.inTopTen} van a Google első tíz találata között (${
+          opts.visibility.shareOfTopTen
+        }%).</div>`
+      : ""
+  }
   <div class="foot">Prepared by ${esc(footerName)} · ${date} · High score = weak site = strong opportunity.</div>
 </body></html>`;
 }
