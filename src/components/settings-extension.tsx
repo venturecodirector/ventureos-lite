@@ -13,7 +13,13 @@ import {
  * extension. Shown once at creation — we store only a hash, so there is no
  * "show again".
  */
-export function SettingsExtension({ tokens }: { tokens: CaptureTokenRow[] }) {
+export function SettingsExtension({
+  tokens,
+  version,
+}: {
+  tokens: CaptureTokenRow[];
+  version: string;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [label, setLabel] = useState("");
@@ -40,6 +46,34 @@ export function SettingsExtension({ tokens }: { tokens: CaptureTokenRow[] }) {
         it runs on linkedin.com, where a cookie for this site is never sent.
         Create one per browser; revoke it if a machine is lost.
       </p>
+
+      <div className="mb-4 rounded-[10px] border border-line bg-panel-2 p-3.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <a
+            href="/api/extension/download"
+            data-testid="download-extension"
+            className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box]"
+          >
+            Download extension ↓
+          </a>
+          <span className="text-[11.5px] text-muted">
+            v{version} · Chrome, Edge, Brave · packaged from this deployment
+          </span>
+        </div>
+        <ol className="mt-3 grid gap-1 pl-4 text-[12px] text-muted [list-style:decimal]">
+          <li>Unzip it somewhere permanent — Chrome loads it from that folder.</li>
+          <li>
+            Open <code className="text-[#C9CEE3]">chrome://extensions</code>, turn on
+            Developer mode, choose <b>Load unpacked</b>, pick the folder.
+          </li>
+          <li>Create a token below and paste it into the extension, with this site&apos;s address.</li>
+        </ol>
+        <p className="mt-2 text-[11.5px] text-muted">
+          Developer mode is required because the extension is distributed by us
+          rather than through the Chrome Web Store. Chrome refuses to install
+          self-hosted packages any other way.
+        </p>
+      </div>
 
       {issued && (
         <div

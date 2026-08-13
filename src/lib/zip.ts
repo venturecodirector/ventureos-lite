@@ -14,7 +14,8 @@ function crc32(buf: Buffer): number {
 
 export interface ZipEntry {
   name: string;
-  content: string;
+  /** Text, or raw bytes for binary members such as PNG icons. */
+  content: string | Buffer;
 }
 
 export function makeZip(entries: ZipEntry[]): Buffer {
@@ -24,7 +25,7 @@ export function makeZip(entries: ZipEntry[]): Buffer {
 
   for (const e of entries) {
     const nameBuf = Buffer.from(e.name, "utf8");
-    const data = Buffer.from(e.content, "utf8");
+    const data = Buffer.isBuffer(e.content) ? e.content : Buffer.from(e.content, "utf8");
     const crc = crc32(data);
 
     const local = Buffer.alloc(30);

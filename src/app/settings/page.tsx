@@ -16,6 +16,7 @@ import { getSecurityStatus } from "@/modules/auth/actions";
 import { listWorkspaceUsers } from "@/modules/users/actions";
 import { getIntegrations } from "@/modules/integrations/actions";
 import { listCaptureTokens } from "@/modules/capture/actions";
+import { buildExtensionPackage } from "@/modules/extension/package";
 import { listProposals } from "@/modules/signal/actions";
 import { getRetention, listErasableLeads } from "@/modules/gdpr/actions";
 import { isOwner, hasGrant } from "@/lib/authz";
@@ -45,11 +46,13 @@ export default async function SettingsPage({
   const szamlazzKeySet = await hasSzamlazzKey();
   // Personal, not workspace-wide: every user manages their own extension tokens.
   const captureTokens = await listCaptureTokens();
+  // Version only — the zip itself is built on demand by the download route.
+  const extensionVersion = (await buildExtensionPackage()).version;
   return (
     <AppShell activePath="/settings">
       <div className="grid gap-4">
         <SecurityPanel status={securityStatus} focusPassword={security === "password"} />
-        <SettingsExtension tokens={captureTokens} />
+        <SettingsExtension tokens={captureTokens} version={extensionVersion} />
         {owner && (
           <SettingsUsers
             users={managedUsers}
