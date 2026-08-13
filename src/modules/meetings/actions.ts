@@ -6,6 +6,7 @@ import { prismaUnsafe, getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { moveLeadStage } from "@/modules/leads/actions";
 import { getCalendarProvider, type CalendarCredentials } from "./calendar";
+import { getWriteAccount, saveRefreshedTokens } from "./credentials";
 import { calendarFailureActivity, type BriefStatus } from "./logic";
 import { enqueueMeetingBrief } from "./enqueue";
 
@@ -76,14 +77,15 @@ export async function bookMeeting(
   const cal = getCalendarProvider();
   let calendarOk = true;
   try {
-    const cred = await prismaUnsafe.googleCredential.findUnique({ where: { userId } });
-    if (cal.name === "google" && !cred) throw new Error("google_calendar_not_connected");
-    const creds: CalendarCredentials = cred
+    // Internally-booked meetings go to the write calendar too.
+    const acct = await getWriteAccount(userId);
+    if (cal.name === "google" && !acct) throw new Error("google_calendar_not_connected");
+    const creds: CalendarCredentials = acct
       ? {
-          accessToken: cred.accessToken,
-          refreshToken: cred.refreshToken,
-          expiryDate: cred.expiryDate,
-          calendarId: cred.calendarId,
+          accessToken: acct.creds.accessToken,
+          refreshToken: acct.creds.refreshToken,
+          expiryDate: acct.creds.expiryDate,
+          calendarId: acct.creds.calendarId,
         }
       : { accessToken: "", refreshToken: null, expiryDate: null, calendarId: null };
 
@@ -110,9 +112,7 @@ export async function bookMeeting(
       where: { id: meeting.id },
       data: { googleEventId: result.eventId, eventUrl: result.htmlLink },
     });
-    if (refreshed && cred) {
-      await prismaUnsafe.googleCredential.update({ where: { userId }, data: refreshed });
-    }
+    if (refreshed && acct) await saveRefreshedTokens(acct.id, refreshed);
   } catch (e) {
     calendarOk = false;
     // Calendar failures land in the Today Queue (spec §4.8).
@@ -289,17 +289,72 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
  *
  * Only ever removes the caller's own credential; the row is keyed by user.
  */
-export async function disconnectGoogleCalendar(): Promise<{ ok: true }> {
+export async function disconnectGoogleCalendar(credentialId: string): Promise<{ ok: true }> {
   const { workspaceId, userId } = await getActiveContext();
-  await prismaUnsafe.googleCredential.deleteMany({ where: { userId } });
+  // Scoped by userId as well as id: a credential id from another host must not
+  // be removable by passing it in.
+  const removed = await prismaUnsafe.googleCredential.deleteMany({
+    where: { id: credentialId, userId },
+  });
+  if (removed.count === 0) return { ok: true };
+
+  // If the write target just went, promote another account so meetings keep
+  // landing somewhere rather than silently failing on the next booking.
+  const rest = await prismaUnsafe.googleCredential.findMany({
+    where: { userId },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, purpose: true },
+  });
+  if (rest.length > 0 && !rest.some((r) => r.purpose === "WRITE")) {
+    await prismaUnsafe.googleCredential.update({
+      where: { id: rest[0].id },
+      data: { purpose: "WRITE" },
+    });
+  }
+
   await getWorkspaceClient(workspaceId).auditLog.create({
     data: {
       workspaceId,
       actorUserId: userId,
       action: "calendar.disconnected",
       entityType: "GoogleCredential",
-      entityId: userId,
+      entityId: credentialId,
       meta: {},
+    },
+  });
+  revalidatePath("/meetings");
+  return { ok: true };
+}
+
+/**
+ * Choose which connected account meetings are written to. Exactly one is the
+ * write target; every other connected account contributes busy times only.
+ */
+export async function setWriteCalendar(credentialId: string): Promise<{ ok: true }> {
+  const { workspaceId, userId } = await getActiveContext();
+  const target = await prismaUnsafe.googleCredential.findFirst({
+    where: { id: credentialId, userId },
+    select: { id: true, accountEmail: true },
+  });
+  if (!target) return { ok: true };
+
+  await prismaUnsafe.googleCredential.updateMany({
+    where: { userId },
+    data: { purpose: "BUSY_ONLY" },
+  });
+  await prismaUnsafe.googleCredential.update({
+    where: { id: target.id },
+    data: { purpose: "WRITE" },
+  });
+
+  await getWorkspaceClient(workspaceId).auditLog.create({
+    data: {
+      workspaceId,
+      actorUserId: userId,
+      action: "calendar.write_target_changed",
+      entityType: "GoogleCredential",
+      entityId: target.id,
+      meta: { accountEmail: target.accountEmail },
     },
   });
   revalidatePath("/meetings");

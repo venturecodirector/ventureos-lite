@@ -8,6 +8,7 @@ import { resolveSendingIdentity } from "@/modules/mail/identity";
 import { brandEmail, brandEmailText } from "@/modules/mail/layout";
 import { getBookingHost, getAvailability, type Availability } from "./public-booking";
 import { getCalendarProvider, type CalendarCredentials } from "./calendar";
+import { getWriteAccount, saveRefreshedTokens } from "./credentials";
 import { calendarFailureActivity } from "./logic";
 import { enqueueMeetingBrief } from "./enqueue";
 import { botVerdict, MIN_FILL_MS } from "./botcheck";
@@ -118,17 +119,12 @@ export async function submitPublicBooking(raw: unknown): Promise<BookingResult> 
   // --- drop the event on the host calendar with the visitor attached ---
   const cal = getCalendarProvider();
   try {
-    const cred = await prismaUnsafe.googleCredential.findUnique({
-      where: { userId: host.hostUserId },
-    });
-    if (cal.name === "google" && !cred) throw new Error("google_calendar_not_connected");
-    const creds: CalendarCredentials = cred
-      ? {
-          accessToken: cred.accessToken,
-          refreshToken: cred.refreshToken,
-          expiryDate: cred.expiryDate,
-          calendarId: cred.calendarId,
-        }
+    // Meetings always land on the write calendar. Any other connected account
+    // is busy-check only and is never written to.
+    const acct = await getWriteAccount(host.hostUserId);
+    if (cal.name === "google" && !acct) throw new Error("google_calendar_not_connected");
+    const creds: CalendarCredentials = acct
+      ? acct.creds
       : { accessToken: "", refreshToken: null, expiryDate: null, calendarId: null };
     const { result, refreshed } = await cal.createEvent(creds, {
       summary: `Venture · ${input.name}${input.company ? ` (${input.company})` : ""}`,
@@ -149,12 +145,7 @@ export async function submitPublicBooking(raw: unknown): Promise<BookingResult> 
       where: { id: meeting.id },
       data: { googleEventId: result.eventId, eventUrl: result.htmlLink },
     });
-    if (refreshed && cred) {
-      await prismaUnsafe.googleCredential.update({
-        where: { userId: host.hostUserId },
-        data: refreshed,
-      });
-    }
+    if (refreshed && acct) await saveRefreshedTokens(acct.id, refreshed);
   } catch (e) {
     // Calendar failure lands in the Today Queue (spec §4.8/§4.21).
     const act = calendarFailureActivity({

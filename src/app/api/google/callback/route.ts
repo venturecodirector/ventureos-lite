@@ -53,23 +53,57 @@ export async function GET(req: Request) {
   };
   const expiryDate = new Date(Date.now() + tok.expires_in * 1000);
 
-  await prismaUnsafe.googleCredential.upsert({
-    where: { userId },
-    create: {
-      userId,
-      accessToken: tok.access_token,
-      refreshToken: tok.refresh_token ?? null,
-      expiryDate,
-      scope: tok.scope ?? null,
-    },
-    update: {
-      accessToken: tok.access_token,
-      // Google only returns a refresh_token on first consent — keep the old one.
-      ...(tok.refresh_token ? { refreshToken: tok.refresh_token } : {}),
-      expiryDate,
-      scope: tok.scope ?? null,
-    },
+  // Which Google account was just authorised. Identity matters now that a host
+  // can connect several: without it, reconnecting a second account would
+  // overwrite the first instead of adding to it.
+  let accountEmail: string | null = null;
+  try {
+    const who = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${tok.access_token}` },
+    });
+    if (who.ok) accountEmail = ((await who.json()) as { email?: string }).email ?? null;
+  } catch {
+    // Non-fatal: the connection still works, it is just labelled "unknown".
+  }
+
+  // First account connected becomes the one meetings are written to; any
+  // later one is busy-check only until the host says otherwise. That matches
+  // the common case — business calendar first, personal added afterwards —
+  // and never silently moves where meetings land.
+  const existing = await prismaUnsafe.googleCredential.count({ where: { userId } });
+  const purpose = existing === 0 ? "WRITE" : "BUSY_ONLY";
+
+  // Not an upsert: accountEmail is nullable, and Prisma will not take a null
+  // inside a compound-unique where. Look it up, then update or create.
+  const prior = await prismaUnsafe.googleCredential.findFirst({
+    where: { userId, accountEmail },
+    select: { id: true },
   });
+  if (prior) {
+    await prismaUnsafe.googleCredential.update({
+      where: { id: prior.id },
+      data: {
+        accessToken: tok.access_token,
+        // Google only returns a refresh_token on first consent — keep the old one.
+        ...(tok.refresh_token ? { refreshToken: tok.refresh_token } : {}),
+        expiryDate,
+        scope: tok.scope ?? null,
+        // Reconnecting must not move where meetings are written.
+      },
+    });
+  } else {
+    await prismaUnsafe.googleCredential.create({
+      data: {
+        userId,
+        accountEmail,
+        purpose,
+        accessToken: tok.access_token,
+        refreshToken: tok.refresh_token ?? null,
+        expiryDate,
+        scope: tok.scope ?? null,
+      },
+    });
+  }
 
   return Response.redirect(appLink("/meetings?google=connected"), 302);
 }

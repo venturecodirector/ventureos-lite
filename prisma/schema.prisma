@@ -189,16 +189,24 @@ model User {
   updatedAt           DateTime             @updatedAt @map("updated_at")
   memberships         Membership[]
   sessions            Session[]
-  googleCredential    GoogleCredential?
+  googleCredentials   GoogleCredential[]
   passwordResetTokens PasswordResetToken[]
 
   @@map("users")
 }
 
 // Global (per-user) Google OAuth tokens for Calendar (spec §4.8). Not tenant-scoped.
+/// One connected Google account. A host may connect several — typically a
+/// business account that meetings are written to, plus a personal one that
+/// only contributes busy times so nobody books over a dentist appointment.
 model GoogleCredential {
   id           String    @id @default(cuid())
-  userId       String    @unique @map("user_id")
+  userId       String    @map("user_id")
+  /// Which Google account this is, for the UI and to keep reconnects idempotent.
+  accountEmail String?   @map("account_email")
+  /// WRITE = meetings are created here (exactly one per host).
+  /// BUSY_ONLY = read for availability, never written to.
+  purpose      String    @default("WRITE")
   accessToken  String    @map("access_token")
   refreshToken String?   @map("refresh_token")
   expiryDate   DateTime? @map("expiry_date")
@@ -208,6 +216,9 @@ model GoogleCredential {
   updatedAt    DateTime  @updatedAt @map("updated_at")
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  /// Reconnecting the same Google account updates it rather than duplicating.
+  @@unique([userId, accountEmail])
+  @@index([userId])
   @@map("google_credentials")
 }
 

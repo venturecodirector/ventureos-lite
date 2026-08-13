@@ -1,4 +1,5 @@
 import { prismaUnsafe } from "@/lib/db";
+import { getBusyAccounts, saveRefreshedTokens } from "./credentials";
 import { getCalendarProvider, type CalendarCredentials, type BusyPeriod } from "./calendar";
 import {
   parseSlotConfig,
@@ -63,35 +64,47 @@ export async function getHostBusy(
   endMs: number,
 ): Promise<BusyPeriod[]> {
   const provider = getCalendarProvider();
-  const cred = await prismaUnsafe.googleCredential.findUnique({ where: { userId: hostUserId } });
-  if (provider.name === "google" && !cred) return [];
-  const creds: CalendarCredentials = cred
-    ? {
-        accessToken: cred.accessToken,
-        refreshToken: cred.refreshToken,
-        expiryDate: cred.expiryDate,
-        calendarId: cred.calendarId,
-      }
-    : { accessToken: "", refreshToken: null, expiryDate: null, calendarId: null };
-  try {
-    const { busy, refreshed } = await provider.freeBusy(creds, { startMs, endMs });
-    if (refreshed && cred) {
-      await prismaUnsafe.googleCredential.update({ where: { userId: hostUserId }, data: refreshed });
+  const accounts = await getBusyAccounts(hostUserId);
+  if (provider.name === "google" && accounts.length === 0) return [];
+
+  // No connected accounts and a mock provider (dev/tests): one empty probe so
+  // the mock still gets exercised.
+  const probes = accounts.length
+    ? accounts
+    : [
+        {
+          id: "",
+          accountEmail: null,
+          purpose: "WRITE",
+          scope: null,
+          calendarId: null,
+          creds: { accessToken: "", refreshToken: null, expiryDate: null, calendarId: null },
+        },
+      ];
+
+  // Union across every connected account. A personal calendar contributes its
+  // busy times so nobody books over them, while nothing is ever written there
+  // and none of its detail is read — freeBusy returns opaque intervals only.
+  const all: BusyPeriod[] = [];
+  for (const acct of probes) {
+    try {
+      const { busy, refreshed } = await provider.freeBusy(acct.creds, { startMs, endMs });
+      if (refreshed && acct.id) await saveRefreshedTokens(acct.id, refreshed);
+      all.push(...busy);
+    } catch (e) {
+      // Deliberately fail OPEN: an unreadable calendar contributes no busy
+      // periods rather than emptying the booking page. Losing a prospect to a
+      // blank page is worse than a double-booking the host can move. But it
+      // must never be silent — this swallow is why a missing
+      // calendar.readonly scope went unnoticed while availability was wrong.
+      // eslint-disable-next-line no-console
+      console.error(
+        `[booking] freeBusy failed for host ${hostUserId} account ${acct.accountEmail ?? "unknown"}; its busy times are NOT blocking slots:`,
+        e instanceof Error ? e.message : e,
+      );
     }
-    return busy;
-  } catch (e) {
-    // Deliberately fail OPEN: an empty busy list means every configured slot
-    // is offered. Losing a prospect to a blank booking page is worse than a
-    // double-booking the host can move. But it must never be silent — this
-    // swallow is why a missing calendar.readonly scope went unnoticed while
-    // availability was quietly wrong.
-    // eslint-disable-next-line no-console
-    console.error(
-      `[booking] freeBusy failed for host ${hostUserId}; offering all slots unchecked:`,
-      e instanceof Error ? e.message : e,
-    );
-    return [];
   }
+  return all;
 }
 
 export interface AvailableSlot {

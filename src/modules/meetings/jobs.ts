@@ -13,6 +13,7 @@ import {
 } from "../../lib/ai/prompts/meeting-brief";
 import { buildBriefPdfHtml } from "./brief-pdf";
 import { getCalendarProvider } from "./calendar";
+import { getWriteAccount, saveRefreshedTokens } from "./credentials";
 import type { BriefJobData } from "./enqueue";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
@@ -130,30 +131,19 @@ export async function processMeetingBrief(data: BriefJobData): Promise<void> {
     // Best-effort: attach the discovery questions to the host's calendar event.
     if (meeting.googleEventId && meeting.hostUserId) {
       try {
-        const cred = await prismaUnsafe.googleCredential.findUnique({
-          where: { userId: meeting.hostUserId },
-        });
-        if (cred) {
+        // The event lives on the write calendar, so update it there.
+        const acct = await getWriteAccount(meeting.hostUserId);
+        if (acct) {
           const note =
             `Venture meeting brief\n\n${briefToText(brief)}\n\n` +
             `Full brief: ${appLink(`/meetings/${data.meetingId}`)}`;
           const cal = getCalendarProvider();
           const { refreshed } = await cal.updateEventDescription(
-            {
-              accessToken: cred.accessToken,
-              refreshToken: cred.refreshToken,
-              expiryDate: cred.expiryDate,
-              calendarId: cred.calendarId,
-            },
+            acct.creds,
             meeting.googleEventId,
             note,
           );
-          if (refreshed) {
-            await prismaUnsafe.googleCredential.update({
-              where: { userId: meeting.hostUserId },
-              data: refreshed,
-            });
-          }
+          if (refreshed) await saveRefreshedTokens(acct.id, refreshed);
         }
       } catch (err) {
         // Attaching to the calendar is non-critical; the brief itself is saved.

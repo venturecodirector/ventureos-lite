@@ -9,6 +9,7 @@ import {
   logMeetingOutcome,
   getMeeting,
   disconnectGoogleCalendar,
+  setWriteCalendar,
   type MeetingRow,
   type MeetingDetail,
 } from "@/modules/meetings/actions";
@@ -27,14 +28,17 @@ function fmtWhen(iso: string): string {
 export function Meetings({
   meetings,
   leads,
-  googleConnected,
-  googleCanReadBusy,
+  calendars,
   googleNotice,
 }: {
   meetings: MeetingRow[];
   leads: Array<{ id: string; name: string }>;
-  googleConnected: boolean;
-  googleCanReadBusy: boolean;
+  calendars: Array<{
+    id: string;
+    accountEmail: string | null;
+    purpose: string;
+    canReadBusy: boolean;
+  }>;
   googleNotice: string | null;
 }) {
   const router = useRouter();
@@ -158,42 +162,73 @@ export function Meetings({
             <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
               Google Calendar
             </div>
-            {googleConnected ? (
+            {calendars.length > 0 ? (
               <>
-                <p className="text-[12.5px] text-[#3DDC97]">
-                  ✓ Connected — events land on your calendar.
+                <ul className="mb-2 grid gap-2">
+                  {calendars.map((c) => (
+                    <li
+                      key={c.id}
+                      className="rounded-[10px] border border-line bg-panel-2 px-3 py-2"
+                      data-testid="calendar-account"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <b className="text-[12.5px]">{c.accountEmail ?? "Google account"}</b>
+                        {c.purpose === "WRITE" ? (
+                          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10.5px] font-semibold text-accent-ink">
+                            meetings land here
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-panel px-2 py-0.5 text-[10.5px] text-muted">
+                            busy-check only
+                          </span>
+                        )}
+                        <span className="ml-auto flex gap-2">
+                          {c.purpose !== "WRITE" && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await setWriteCalendar(c.id);
+                                router.refresh();
+                              }}
+                              className="rounded-[8px] border border-line px-2.5 py-1 text-[11.5px] hover:bg-panel"
+                            >
+                              Write meetings here
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            data-testid="google-disconnect"
+                            onClick={async () => {
+                              if (!confirm(`Disconnect ${c.accountEmail ?? "this account"}?`)) return;
+                              await disconnectGoogleCalendar(c.id);
+                              router.refresh();
+                            }}
+                            className="rounded-[8px] border border-line px-2.5 py-1 text-[11.5px] text-[#FF8FA5] hover:border-[rgba(255,92,122,0.5)]"
+                          >
+                            Disconnect
+                          </button>
+                        </span>
+                      </div>
+                      {!c.canReadBusy && (
+                        <p className="mt-1 text-[11.5px] text-warn" data-testid="google-scope-warning">
+                          Cannot read busy times — its events do NOT block slots.
+                          Reconnect to fix.
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <a
+                  href="/api/google/connect"
+                  data-testid="google-reconnect"
+                  className="inline-block rounded-[8px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2"
+                >
+                  Connect another calendar
+                </a>
+                <p className="mt-1.5 text-[11.5px] text-muted">
+                  Add a personal calendar to block its times without meetings
+                  ever being written to it.
                 </p>
-                {!googleCanReadBusy && (
-                  <p className="mt-1.5 text-[12px] text-warn" data-testid="google-scope-warning">
-                    This connection cannot read your busy times, so every slot is
-                    offered and someone could book over an existing meeting.
-                    Reconnect to fix it.
-                  </p>
-                )}
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {/* Reconnect must always be available: scopes change, tokens
-                      get revoked, and people switch Google accounts. Without
-                      it, a connected-but-broken calendar is a dead end. */}
-                  <a
-                    href="/api/google/connect"
-                    data-testid="google-reconnect"
-                    className="inline-block rounded-[8px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2"
-                  >
-                    Reconnect
-                  </a>
-                  <button
-                    type="button"
-                    data-testid="google-disconnect"
-                    onClick={async () => {
-                      if (!confirm("Disconnect Google Calendar? Bookings keep saving, but no events will be written.")) return;
-                      await disconnectGoogleCalendar();
-                      router.refresh();
-                    }}
-                    className="rounded-[8px] border border-line px-3 py-1.5 text-[12px] text-[#FF8FA5] hover:border-[rgba(255,92,122,0.5)] hover:bg-[rgba(255,92,122,0.08)]"
-                  >
-                    Disconnect
-                  </button>
-                </div>
               </>
             ) : (
               <>

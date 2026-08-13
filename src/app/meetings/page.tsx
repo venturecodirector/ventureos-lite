@@ -3,6 +3,7 @@ import { Meetings } from "@/components/meetings";
 import { listMeetings } from "@/modules/meetings/actions";
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
+import { listCalendarAccounts } from "@/modules/meetings/credentials";
 
 export const dynamic = "force-dynamic";
 
@@ -21,17 +22,14 @@ export default async function MeetingsPage({
   const db = getWorkspaceClient(workspaceId);
   const { google } = await searchParams;
 
-  const [meetings, leadRows, cred] = await Promise.all([
+  const [meetings, leadRows, calendars] = await Promise.all([
     listMeetings(),
     db.lead.findMany({
       orderBy: { createdAt: "desc" },
       take: 200,
       select: { id: true, contactName: true, company: { select: { name: true } } },
     }),
-    prismaUnsafe.googleCredential.findUnique({
-      where: { userId },
-      select: { id: true, scope: true },
-    }),
+    listCalendarAccounts(userId),
   ]);
 
   const leads = leadRows.map((l) => ({
@@ -44,12 +42,12 @@ export default async function MeetingsPage({
       <Meetings
         meetings={meetings}
         leads={leads}
-        googleConnected={!!cred}
-        // A token minted before calendar.readonly was requested still works
-        // for writing events but cannot read busy periods, so availability is
-        // silently wrong until the host reconnects. Surface that rather than
-        // showing an unqualified green tick.
-        googleCanReadBusy={!!cred?.scope?.includes("calendar.readonly")}
+        calendars={calendars.map((c) => ({
+          id: c.id,
+          accountEmail: c.accountEmail,
+          purpose: c.purpose,
+          canReadBusy: !!c.scope?.includes("calendar.readonly"),
+        }))}
         googleNotice={google ? GOOGLE_NOTICE[google] ?? null : null}
       />
     </AppShell>
