@@ -96,7 +96,11 @@ export class DataForSeoProvider implements SerpProvider {
             depth: 100,
           },
         ]),
-        signal: AbortSignal.timeout(30_000),
+        // A live/advanced query at depth 100 measured 21s against the real
+        // API on an idle account. 30s left almost no headroom for a slower
+        // day, and a timeout here is indistinguishable downstream from "this
+        // site does not rank" — which is the one wrong answer that matters.
+        signal: AbortSignal.timeout(60_000),
       },
     );
     if (!res.ok) throw new Error(`SERP provider returned ${res.status}`);
