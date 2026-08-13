@@ -3,6 +3,7 @@ import { SettingsGrants } from "@/components/settings-grants";
 import { SecurityPanel } from "@/components/security-panel";
 import { SettingsUsers } from "@/components/settings-users";
 import { SettingsIntegrations } from "@/components/settings-integrations";
+import { ApiCosts } from "@/components/api-costs";
 import { SettingsExtension } from "@/components/settings-extension";
 import { ProposalQueue } from "@/components/proposal-queue";
 import { GdprPanel } from "@/components/gdpr-panel";
@@ -20,6 +21,8 @@ import { buildExtensionPackage } from "@/modules/extension/package";
 import { listProposals } from "@/modules/signal/actions";
 import { getRetention, listErasableLeads } from "@/modules/gdpr/actions";
 import { isOwner, hasGrant } from "@/lib/authz";
+import { getApiCostReport } from "@/lib/api-usage";
+import { getActiveContext } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +47,10 @@ export default async function SettingsPage({
   const managedUsers = owner ? await listWorkspaceUsers() : [];
   const integrations = owner ? await getIntegrations() : null;
   const szamlazzKeySet = await hasSzamlazzKey();
+  // Sits directly under Integrations: the keys are configured there, and what
+  // they cost belongs next to them.
+  const { workspaceId } = await getActiveContext();
+  const apiCosts = owner ? await getApiCostReport(workspaceId) : null;
   // Personal, not workspace-wide: every user manages their own extension tokens.
   const captureTokens = await listCaptureTokens();
   // Version only — the zip itself is built on demand by the download route.
@@ -60,6 +67,7 @@ export default async function SettingsPage({
           />
         )}
         {integrations && <SettingsIntegrations data={integrations} />}
+        {apiCosts && <ApiCosts report={apiCosts} />}
         <WorkspaceAdmin isOwner={owner} />
         <ColdSignoff status={coldStatus} isOwner={owner} />
         <SzamlazzKey hasKey={szamlazzKeySet} isOwner={owner} />

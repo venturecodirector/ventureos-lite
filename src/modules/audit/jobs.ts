@@ -33,6 +33,7 @@ import { loadComparison } from "./comparison-load";
 import { computeDelta, signalFor } from "./delta";
 import { nextRunFrom } from "./watch";
 import { brandFrom } from "../workspaces/brand";
+import { usageRecorderFor } from "@/lib/api-usage";
 import { shareOfTopTen } from "../serp/provider";
 import { resolveIntegration } from "@/modules/integrations/resolve";
 import { analyzeAudit } from "./analyze";
@@ -294,8 +295,17 @@ export async function processAudit(data: AuditJobData): Promise<void> {
       // Guarded independently: a PageSpeed outage must not also cost us the
       // field data, and vice versa.
       const [psi, crux] = await Promise.all([
-        fetchPsi(probe.finalUrl, psiKey).catch(() => null),
-        fetchCrux(probe.finalUrl, cruxKey).catch(() => null),
+        fetchPsi(
+          probe.finalUrl,
+          psiKey,
+          usageRecorderFor(data.workspaceId, "pagespeed", "audit"),
+        ).catch(() => null),
+        fetchCrux(
+          probe.finalUrl,
+          cruxKey,
+          fetch,
+          usageRecorderFor(data.workspaceId, "crux", "audit"),
+        ).catch(() => null),
       ]);
       probe.psi = psi;
       if (crux) {

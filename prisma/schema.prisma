@@ -1128,6 +1128,29 @@ model Suppression {
   @@map("suppressions")
 }
 
+/// One billable (or quota-consuming) call to an external API (P2 follow-up).
+///
+/// Claude has its own table and its own enforced daily cap; this is everything
+/// else we spend money or quota on, in one place, so "what did this month
+/// cost" has a single answer. Free APIs are recorded too — for PageSpeed and
+/// CrUX the meaningful number is calls against Google's quota, not dollars.
+model ApiUsage {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  /// dataforseo | pagespeed | crux | places
+  provider    String
+  /// What was asked for, e.g. "serp.organic" or "audit".
+  operation   String
+  /// HTTP requests this row represents — CrUX may retry a www counterpart.
+  calls       Int      @default(1)
+  /// USD. Exactly 0 for the free Google APIs, and that is the honest value.
+  cost        Decimal  @default(0)
+  at          DateTime @default(now())
+
+  @@index([workspaceId, at])
+  @@map("api_usage")
+}
+
 model ClaudeUsage {
   id          String   @id @default(cuid())
   workspaceId String   @map("workspace_id")

@@ -13,6 +13,8 @@ interface PsiResponse {
 export async function fetchPsi(
   url: string,
   apiKey: string | null = null,
+  /** Called once per HTTP request, for the API-cost panel. Never throws. */
+  onUsage?: (calls: number) => void,
 ): Promise<PsiScores | null> {
   const params = new URLSearchParams({ url, strategy: "mobile" });
   for (const c of ["performance", "seo", "accessibility", "best-practices"]) {
@@ -22,6 +24,7 @@ export async function fetchPsi(
   const key = apiKey ?? process.env.PAGESPEED_API_KEY;
   if (key) params.set("key", key);
 
+  onUsage?.(1);
   const res = await fetch(
     `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params.toString()}`,
   );

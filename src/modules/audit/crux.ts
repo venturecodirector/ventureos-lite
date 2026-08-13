@@ -127,6 +127,12 @@ export async function fetchCrux(
   url: string,
   apiKey: string | null = null,
   doFetch: typeof fetch = fetch,
+  /**
+   * Called once per HTTP request. This function may make up to four (two form
+   * factors × two origins), so the cost panel would undercount by 4× if it
+   * assumed one call per invocation.
+   */
+  onUsage?: (calls: number) => void,
 ): Promise<CruxData | null> {
   const key = apiKey ?? process.env.CRUX_API_KEY ?? process.env.PAGESPEED_API_KEY;
   if (!key) return null;
@@ -143,6 +149,7 @@ export async function fetchCrux(
     formFactor: "PHONE" | "ALL",
   ): Promise<CruxData | null> => {
     try {
+      onUsage?.(1);
       const res = await doFetch(`${ENDPOINT}?key=${encodeURIComponent(key)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },

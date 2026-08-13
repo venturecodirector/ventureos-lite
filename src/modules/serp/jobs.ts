@@ -2,6 +2,7 @@ import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { resolveIntegration } from "@/modules/integrations/resolve";
 import { normalizeDomain } from "@/modules/leads/dedupe";
 import { serpProviderFor, positionOf, droppedOutOfTopTen } from "./provider";
+import { recordApiUsage } from "@/lib/api-usage";
 
 /**
  * Weekly position check (P2/7).
@@ -56,6 +57,15 @@ export async function processKeywordTracking(now: Date = new Date()): Promise<nu
         });
         position = positionOf(res.results, domain);
         url = res.results.find((r) => r.position === position)?.url ?? null;
+        // Recorded on SUCCESS only: a failed query below is skipped without a
+        // measurement, and DataForSEO does not bill for one either.
+        await recordApiUsage({
+          workspaceId: ws.id,
+          provider: "dataforseo",
+          operation: "serp.organic",
+          calls: 1,
+          costUsd: res.costUsd,
+        });
       } catch {
         // A provider outage must not write a false "dropped out of the
         // rankings" row — skip the measurement entirely.

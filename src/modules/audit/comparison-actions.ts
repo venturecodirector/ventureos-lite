@@ -8,6 +8,7 @@ import { getActiveContext } from "@/lib/session";
 import { getPlacesClient } from "@/lib/places";
 import { resolveIntegration } from "@/modules/integrations/resolve";
 import { TEXT_SEARCH_COST_USD } from "@/modules/prospector/cost";
+import { recordApiUsage } from "@/lib/api-usage";
 import { normalizeDomain } from "../leads/dedupe";
 import { enqueueAudit } from "./enqueue";
 import {
@@ -92,6 +93,13 @@ export async function suggestCompetitors(auditId: string): Promise<CompetitorSug
 
   const ownDomain = normalizeDomain(audit.url);
   const res = await getPlacesClient(key).textSearch({ keyword, location });
+  await recordApiUsage({
+    workspaceId,
+    provider: "places",
+    operation: "competitor.search",
+    calls: res.requestCount,
+    costUsd: res.requestCount * TEXT_SEARCH_COST_USD,
+  });
 
   const seen = new Set<string>();
   const candidates: CompetitorCandidate[] = [];
