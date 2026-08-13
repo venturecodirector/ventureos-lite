@@ -3,6 +3,7 @@ import { scoreByCategory, ungroupedChecks, CATEGORY_LABEL } from "./categories";
 import { analyzeStructure } from "./structure";
 import { formatMetric, verdictFor, fieldSummaryEn } from "./crux";
 import type { ComparisonTable } from "./comparison";
+import { buildPriorityMatrix, QUADRANTS, EFFORT_LABEL } from "./priority";
 
 /**
  * Branded audit one-pager (spec §4.4). A self-contained HTML doc — no external
@@ -183,6 +184,7 @@ export function auditReportBody(
     <div class="checks">${checks}${other}</div>
     ${comparisonSection(comparison)}
     ${structureSection(view)}
+    ${recommendedOrderSection(view)}
     ${shotsHtml}
     ${pitch}
   `;
@@ -239,6 +241,39 @@ function speedSection(view: AuditView): string {
     : "";
 
   return `<div class="eyebrow">Speed — lab vs. real visitors</div>${lab}${field}`;
+}
+
+/**
+ * The closing "Javasolt sorrend" page (P2/4).
+ *
+ * Generated deterministically from the impact/effort registry — the same
+ * ordering the internal matrix shows, printed as the one page a client keeps.
+ * No AI: the sequence is a sort, not an opinion.
+ */
+function recommendedOrderSection(view: AuditView): string {
+  const matrix = buildPriorityMatrix(view.checks);
+  if (matrix.ordered.length === 0) return "";
+
+  const groups = QUADRANTS.map((q) => {
+    const bucket = matrix.quadrants.find((x) => x.id === q.id);
+    if (!bucket || bucket.findings.length === 0) return "";
+    const items = bucket.findings
+      .map(
+        (f) =>
+          `<li>${esc(f.label)}${
+            f.detail ? ` <span class="muted">· ${esc(f.detail)}</span>` : ""
+          } <span class="eff">${esc(EFFORT_LABEL[f.effort].hu)}</span></li>`,
+      )
+      .join("");
+    return `<div class="prio">
+      <div class="prio-head">${esc(q.hu)} <span class="muted">— ${esc(q.note.hu)}</span></div>
+      <ol>${items}</ol>
+    </div>`;
+  }).join("");
+
+  return `<div class="page-break"></div>
+    <div class="eyebrow">Javasolt sorrend</div>
+    ${groups}`;
 }
 
 /**
@@ -411,6 +446,15 @@ export function buildAuditPdfHtml(
   .cmp td.d-better { color: #3DDC97; font-weight: 700; }
   .cmp td.d-worse { color: #FF5C7A; font-weight: 700; }
   .takeaways { margin-top: 8px; font-size: 10.5px; line-height: 1.7; }
+  .page-break { break-before: page; height: 0; }
+  .prio { margin-bottom: 14px; break-inside: avoid; }
+  .prio-head { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
+  .prio ol { margin: 0 0 0 16px; padding: 0; }
+  .prio li { font-size: 11px; color: #C9CEE3; margin-bottom: 3px; }
+  .eff {
+    font-size: 9px; color: #858CAE; border: 1px solid rgba(239,241,248,0.12);
+    border-radius: 10px; padding: 1px 6px; margin-left: 4px;
+  }
   .broken { margin-top: 10px; font-size: 10px; }
   .broken b { display: block; margin-bottom: 3px; font-size: 10px; }
   .pitch { margin-top: 26px; border: 1px solid rgba(116,39,198,0.4); background: rgba(116,39,198,0.10); border-radius: 12px; padding: 16px 18px; }
