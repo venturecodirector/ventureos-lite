@@ -18,8 +18,11 @@ import {
 
 const POLL_MS = 1500;
 const POLL_TIMEOUT_MS = 45_000;
-/** A crawl adds up to ~75s of paced fetching before the usual stages run. */
-const CRAWL_POLL_TIMEOUT_MS = 180_000;
+/**
+ * A static crawl adds ~75s of paced fetching; a JS-heavy site switches to
+ * rendered mode, which the worker caps at three minutes (P2/9).
+ */
+const CRAWL_POLL_TIMEOUT_MS = 240_000;
 
 function VerdictChip({ verdict }: { verdict: string }) {
   const map: Record<string, string> = {
@@ -184,7 +187,7 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
           />
           Crawl up to 15 pages · finds broken links and duplicate titles
           <span className="ml-auto">
-            Internal only · adds up to ~75s · 1 request/sec, robots.txt obeyed
+            Internal only · ~75s, JS-heavy sites up to 3 min · 1 req/sec, robots.txt obeyed
           </span>
         </label>
       </div>

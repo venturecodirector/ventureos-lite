@@ -44,8 +44,27 @@ const MAX_SITEMAP_URLS = 500;
 /** Extensions we never open as pages — they are not HTML. */
 const NON_PAGE = /\.(pdf|zip|rar|7z|docx?|xlsx?|pptx?|csv|jpe?g|png|gif|webp|avif|svg|ico|mp[34]|mov|avi|woff2?|ttf|eot|css|js|json|xml|rss|atom)($|\?)/i;
 
+/**
+ * A page fetched by a real browser (P2/9).
+ *
+ * Injected rather than imported, so this module stays free of Playwright and
+ * can keep being imported by the web bundle. The worker supplies the
+ * implementation; a static crawl passes nothing and behaves exactly as before.
+ */
+export interface RenderedPage {
+  html: string;
+  status: number | null;
+  finalUrl: string;
+  /** Links discovered in the RENDERED DOM, which is where a SPA's nav lives. */
+  links: string[];
+}
+
+export type RenderPage = (url: string) => Promise<RenderedPage>;
+
 export interface CrawlOptions {
   cap?: number;
+  /** When set, pages are rendered in a browser instead of merely fetched. */
+  renderPage?: RenderPage;
   /** Injected in tests; defaults to global fetch. */
   fetchImpl?: typeof fetch;
   /** Injected in tests so a fake crawl does not sleep for real seconds. */
@@ -354,9 +373,28 @@ export async function crawlSite(
         deadlineHit = true;
         return;
       }
-      const r = await fetchPage(url, doFetch, "GET");
+      // In rendered mode the browser IS the fetch: asking twice would double
+      // both the load on their server and our own runtime.
+      const r = options.renderPage
+        ? await (async () => {
+            const rp = await options.renderPage!(url);
+            return {
+              status: rp.status,
+              finalUrl: rp.finalUrl,
+              redirects: [] as string[],
+              body: rp.html,
+              bytes: Buffer.byteLength(rp.html),
+              renderedLinks: rp.links,
+            };
+          })()
+        : { ...(await fetchPage(url, doFetch, "GET")), renderedLinks: undefined as string[] | undefined };
       const meta = parseDocumentMeta(r.body);
       const found = r.body ? extractLinks(r.body, r.finalUrl) : { nav: [], footer: [], body: [] };
+      // A client-side router's links exist only after hydration, so they are
+      // merged in rather than replacing what the markup already offered.
+      if (r.renderedLinks?.length) {
+        found.nav = [...new Set([...found.nav, ...r.renderedLinks])];
+      }
       // Every same-site target is kept for the broken-link check — a dead PDF
       // in the footer is as broken as a dead page. Only the crawlable subset
       // joins the frontier.

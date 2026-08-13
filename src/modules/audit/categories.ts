@@ -128,6 +128,9 @@ export const CHECK_META: Record<string, CheckMeta> = {
   sitemap: { category: "seo" },
   robots: { category: "seo" },
   psiSeo: { category: "seo" },
+  /// P2/9 — content that only exists after JavaScript runs is content a
+  /// search engine may never index.
+  jsDependency: { category: "seo", weight: 3 },
 
   // analytics & conversion
   analytics: { category: "conversion", weight: 2 },

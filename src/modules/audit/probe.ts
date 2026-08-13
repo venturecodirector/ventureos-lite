@@ -3,6 +3,7 @@ import { connect as tlsConnect } from "node:tls";
 import { chromium, type Page } from "playwright";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { VENTURE_USER_AGENT } from "@/lib/robots";
 import type { PageProbe } from "./types";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
@@ -50,6 +51,7 @@ export async function probeSite(url: string): Promise<PageProbe> {
       const imgTotal = imgs.length;
       const imgWithAlt = imgs.filter((i) => (i.getAttribute("alt") ?? "").trim().length > 0).length;
       const bodyText = document.body?.innerText ?? "";
+      const renderedTextLength = bodyText.replace(/\s+/g, " ").trim().length;
       const html = document.documentElement.outerHTML.toLowerCase();
 
       const cm = bodyText.match(/(?:©|\(c\)|copyright)\s*(\d{4})/i);
@@ -63,6 +65,7 @@ export async function probeSite(url: string): Promise<PageProbe> {
       const hasCookieBanner = /(cookie|süti|gdpr|consent)/i.test(html);
 
       return {
+        renderedTextLength,
         title,
         metaDescription,
         hasViewport,
@@ -125,14 +128,18 @@ export async function probeSite(url: string): Promise<PageProbe> {
 
     // DNS and the HEAD probes run together: they are independent waits, and
     // the item's budget is a 45s whole-audit runtime.
-    const [hasSitemap, hasRobots, sitemapUrlCount, mail, sslDaysLeft, a11y] = await Promise.all([
-      headOk(new URL("/sitemap.xml", finalUrl).toString()),
-      headOk(new URL("/robots.txt", finalUrl).toString()),
-      countSitemapUrls(new URL("/sitemap.xml", finalUrl).toString()),
-      lookupMailHygiene(new URL(finalUrl).hostname),
-      certificateDaysLeft(new URL(finalUrl).hostname),
-      runAxe(page),
-    ]);
+    const [hasSitemap, hasRobots, sitemapUrlCount, mail, sslDaysLeft, a11y, rawHtml] =
+      await Promise.all([
+        headOk(new URL("/sitemap.xml", finalUrl).toString()),
+        headOk(new URL("/robots.txt", finalUrl).toString()),
+        countSitemapUrls(new URL("/sitemap.xml", finalUrl).toString()),
+        lookupMailHygiene(new URL(finalUrl).hostname),
+        certificateDaysLeft(new URL(finalUrl).hostname),
+        runAxe(page),
+        // The server's HTML, unrendered (P2/9). Joins the same Promise.all so
+        // it costs no extra wall-clock against the runtime budget.
+        fetchRawHtml(finalUrl),
+      ]);
 
     await context.close();
     return {
@@ -154,6 +161,7 @@ export async function probeSite(url: string): Promise<PageProbe> {
       dmarc: mail.dmarc,
       sslDaysLeft,
       a11y,
+      ...(rawHtml !== null ? { rawHtml } : {}),
       psi: null,
       screenshots: {},
       ...dom,
@@ -227,6 +235,77 @@ export async function probePagesDeep(
   return out;
 }
 
+/**
+ * A browser-backed page fetcher for the crawler (P2/9).
+ *
+ * One browser and one context for the whole rendered crawl — launching Chrome
+ * per page is most of the cost of rendered crawling, and this feature only
+ * exists because we bounded that cost.
+ *
+ * HYDRATION WAIT: networkidle alone is not enough. A framework can settle its
+ * requests and then paint, so this also waits for the DOM to stop CHANGING —
+ * two consecutive samples with the same content length, or the timeout,
+ * whichever comes first. A hard per-page ceiling applies either way: a site
+ * that never goes idle must not hold the audit open.
+ */
+export async function createRenderedFetcher(perPageTimeoutMs = 15_000): Promise<{
+  render: (url: string) => Promise<{ html: string; status: number | null; finalUrl: string; links: string[] }>;
+  close: () => Promise<void>;
+}> {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    userAgent: `Mozilla/5.0 (compatible; ${VENTURE_USER_AGENT})`,
+  });
+
+  return {
+    async render(url) {
+      const page = await context.newPage();
+      try {
+        const resp = await page.goto(url, {
+          waitUntil: "networkidle",
+          timeout: perPageTimeoutMs,
+        });
+        await waitForContentStability(page, perPageTimeoutMs);
+
+        const html = await page.content();
+        // Links from the RENDERED DOM: a client-side router's nav does not
+        // exist in the markup, which is exactly why this mode exists.
+        const links = await page.evaluate(() =>
+          Array.from(document.querySelectorAll("a[href]")).map((a) =>
+            (a as HTMLAnchorElement).href,
+          ),
+        );
+        return { html, status: resp?.status() ?? null, finalUrl: page.url(), links };
+      } catch {
+        // A page that will not render is reported as unreachable rather than
+        // as an empty page, which would read as "no content at all".
+        return { html: "", status: null, finalUrl: url, links: [] };
+      } finally {
+        await page.close().catch(() => {});
+      }
+    },
+    async close() {
+      await context.close().catch(() => {});
+      await browser.close().catch(() => {});
+    },
+  };
+}
+
+/** Poll until the rendered content stops growing, or the budget runs out. */
+async function waitForContentStability(page: Page, budgetMs: number): Promise<void> {
+  const started = Date.now();
+  let previous = -1;
+  while (Date.now() - started < Math.min(budgetMs, 5000)) {
+    const length = await page
+      .evaluate(() => document.body?.innerText.length ?? 0)
+      .catch(() => -1);
+    if (length === previous) return;
+    previous = length;
+    await page.waitForTimeout(250);
+  }
+}
+
 /** Stage 3: mobile + desktop screenshots written to the files volume. */
 export async function captureScreenshots(
   url: string,
@@ -281,6 +360,27 @@ async function lookupMailHygiene(
     ),
   ]);
   return { spf, dmarc };
+}
+
+/**
+ * The document as the server sent it, before any JavaScript.
+ *
+ * Null on any failure: without it we cannot compare, and inventing a
+ * comparison would produce exactly the alarmist finding this module is
+ * careful to avoid.
+ */
+async function fetchRawHtml(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { "user-agent": VENTURE_USER_AGENT, accept: "text/html" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    if (!(res.headers.get("content-type") ?? "").includes("html")) return null;
+    return (await res.text()).slice(0, 2_000_000);
+  } catch {
+    return null;
+  }
 }
 
 /** Flattened TXT records, or null when the lookup itself failed. */

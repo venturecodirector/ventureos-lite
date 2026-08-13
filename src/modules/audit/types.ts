@@ -70,6 +70,18 @@ export interface PageProbe {
 
   hasAnalytics?: boolean;
 
+  /**
+   * The server's HTML, before JavaScript runs (P2/9).
+   *
+   * One extra plain fetch, because the browser only ever hands back the
+   * RENDERED document — and the difference between the two is the entire
+   * finding. Undefined when the fetch failed, in which case no JS-dependency
+   * check is emitted rather than a made-up one.
+   */
+  rawHtml?: string;
+  /** Visible text length AFTER hydration, for the same comparison. */
+  renderedTextLength?: number;
+
   /** axe-core violation counts by impact. */
   a11y?: {
     critical: number;

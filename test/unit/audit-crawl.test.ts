@@ -351,3 +351,56 @@ describe("crawlSite", () => {
     expect(DEFAULT_CRAWL_CAP).toBeLessThanOrEqual(MAX_CRAWL_CAP);
   });
 });
+
+describe("rendered mode (P2/9)", () => {
+  it("uses the browser instead of fetching, and follows the rendered nav", async () => {
+    const site = fakeSite({
+      "https://spa.hu/robots.txt": { status: 404 },
+      "https://spa.hu/sitemap.xml": { status: 404 },
+      // The server sends an empty mount node: a static crawl would find
+      // nothing to follow at all.
+      "https://spa.hu/": { html: '<html><body><div id="root"></div></body></html>' },
+    });
+
+    const rendered: Record<string, string> = {
+      "https://spa.hu/": doc("Home", []),
+      "https://spa.hu/arak": doc("Arak"),
+    };
+    const visited: string[] = [];
+    const renderPage = async (url: string) => {
+      visited.push(url);
+      return {
+        html: rendered[url] ?? doc("Unknown"),
+        status: 200,
+        finalUrl: url,
+        // A client-side router's links exist only after hydration.
+        links: url === "https://spa.hu/" ? ["https://spa.hu/arak"] : [],
+      };
+    };
+
+    const r = await crawlSite("https://spa.hu/", { ...site.options, cap: 5, renderPage });
+
+    expect(visited).toEqual(["https://spa.hu/", "https://spa.hu/arak"]);
+    expect(r.pages.map((p) => p.title)).toEqual(["Home", "Arak"]);
+    // The browser IS the fetch in this mode: no page GET goes through fetch.
+    expect(site.calls.some((c) => c.url === "https://spa.hu/" && c.method === "GET")).toBe(false);
+  });
+
+  it("still paces itself and honours the cap when rendering", async () => {
+    const site = fakeSite({
+      "https://spa.hu/robots.txt": { status: 404 },
+      "https://spa.hu/sitemap.xml": { status: 404 },
+      "https://spa.hu/": { html: "<html><body></body></html>" },
+    });
+    const renderPage = async (url: string) => ({
+      html: doc("P", ["/a", "/b", "/c", "/d"]),
+      status: 200,
+      finalUrl: url,
+      links: ["https://spa.hu/a", "https://spa.hu/b", "https://spa.hu/c", "https://spa.hu/d"],
+    });
+
+    const r = await crawlSite("https://spa.hu/", { ...site.options, cap: 3, renderPage });
+    expect(r.pages).toHaveLength(3);
+    expect(r.cap).toBe(3);
+  });
+});

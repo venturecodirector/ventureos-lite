@@ -78,6 +78,8 @@ export const DEFAULT_CHECK_PRIORITY: Record<string, CheckPriority> = {
   sitemap: { impact: "medium", effort: "quick" },
   robots: { impact: "low", effort: "quick" },
   psiSeo: { impact: "medium", effort: "project" },
+  // Making a client-rendered site indexable is a rebuild, not a tweak.
+  jsDependency: { impact: "high", effort: "project" },
 
   // analytics & conversion — where the money leaks
   analytics: { impact: "high", effort: "quick" },

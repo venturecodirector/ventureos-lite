@@ -57,7 +57,13 @@ async function seedShare(workspaceId: string, slug: string, url: string) {
 }
 
 test.beforeAll(async () => {
-  const seedWs = await prisma.workspace.findFirst({ select: { id: true } });
+  // Oldest first, deliberately: this spec CREATES workspaces, and with
+  // parallel workers an unordered findFirst can hand one worker another
+  // worker's brand-new "Studio Kft" as though it were the seed tenant.
+  const seedWs = await prisma.workspace.findFirst({
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
   const other = await prisma.workspace.create({
     data: { name: `Studio Kft ${RUN}`, brand: OTHER_BRAND },
     select: { id: true },

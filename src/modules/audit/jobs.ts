@@ -11,9 +11,22 @@ import {
   buildAuditPitchMessage,
 } from "../../lib/ai/prompts/audit-pitch";
 import { computeIcpScore, type IcpBreakdown } from "../leads/scoring";
-import { probeSite, captureScreenshots, probePagesDeep } from "./probe";
+import {
+  probeSite,
+  captureScreenshots,
+  probePagesDeep,
+  createRenderedFetcher,
+} from "./probe";
 import { crawlSite } from "./crawl";
 import { analyzeStructure } from "./structure";
+import {
+  detectFramework,
+  jsDependencyPercent,
+  jsDependencyCheck,
+  crawlModeFor,
+  RENDERED_CRAWL_CAP,
+  RENDERED_PAGE_TIMEOUT_MS,
+} from "./framework";
 import { fetchPsi } from "./psi";
 import { fetchCrux } from "./crux";
 import { loadComparison } from "./comparison-load";
@@ -189,11 +202,47 @@ export async function processAudit(data: AuditJobData): Promise<void> {
     // a crawled and an uncrawled audit of the same site must stay comparable,
     // or the re-audit delta would report a site "getting worse" when all that
     // changed was the toggle.
-    let structureChecks: AuditCheck[] = [];
-    let structureFlags: string[] = [];
+    // Checks appended beyond the single-page analysis: the JS-dependency
+    // finding (P2/9) and, when the crawl runs, the site-structure ones (P2/1).
+    // They are re-applied wherever the analysis is rebuilt, or a later stage
+    // would erase them.
+    let extraChecks: AuditCheck[] = [];
+    let extraFlags: string[] = [];
+
+    // ---- P2/9: does this site need a browser to be crawled at all? --------
+    // Decided from the homepage we have already loaded, so the detection costs
+    // nothing: framework markers plus how much text is missing from the HTML.
+    // Markers alone cannot tell a server-rendered Next page (fine) from a
+    // client-rendered SPA (the finding), which is why both are used.
+    const detection = detectFramework(probe.rawHtml ?? "");
+    const jsDependency = jsDependencyPercent(probe.rawHtml ?? "", probe.renderedTextLength ?? 0);
+    const mode = crawlModeFor(detection, jsDependency);
+    const jsCheck = jsDependencyCheck(jsDependency, detection);
+    if (jsCheck) {
+      extraChecks = [jsCheck];
+      if (!jsCheck.pass) extraFlags = ["JS-only content"];
+      await db.auditResult.update({
+        where: { id: data.auditId },
+        data: {
+          checks: [...analysis.checks, ...extraChecks],
+          flags: [...new Set([...analysis.flags, ...extraFlags])],
+        },
+      });
+    }
+
     if (data.crawl) {
+      let renderer: Awaited<ReturnType<typeof createRenderedFetcher>> | null = null;
       try {
-        const crawl = await crawlSite(data.url, { cap: data.crawl.cap });
+        // Rendered crawling is roughly ten times the cost, so it is capped
+        // harder and only entered when the static crawl would have read empty
+        // pages anyway.
+        if (mode === "rendered") {
+          renderer = await createRenderedFetcher(RENDERED_PAGE_TIMEOUT_MS);
+        }
+        const crawl = await crawlSite(data.url, {
+          cap: mode === "rendered" ? Math.min(data.crawl.cap, RENDERED_CRAWL_CAP) : data.crawl.cap,
+          ...(renderer ? { renderPage: renderer.render } : {}),
+        });
 
         // The deep checks are the expensive half, so they run on the homepage
         // (already probed above) plus the two heaviest crawled pages only.
@@ -211,18 +260,20 @@ export async function processAudit(data: AuditJobData): Promise<void> {
         }
 
         const structure = analyzeStructure(crawl);
-        structureChecks = structure.checks;
-        structureFlags = structure.flags;
+        extraChecks = [...extraChecks, ...structure.checks];
+        extraFlags = [...new Set([...extraFlags, ...structure.flags])];
         await db.auditResult.update({
           where: { id: data.auditId },
           data: {
             crawl: crawl as unknown as object,
-            checks: [...analysis.checks, ...structureChecks],
-            flags: [...new Set([...analysis.flags, ...structureFlags])],
+            checks: [...analysis.checks, ...extraChecks],
+            flags: [...new Set([...analysis.flags, ...extraFlags])],
           },
         });
       } catch {
         // A crawl that dies must not cost the audit its single-page result.
+      } finally {
+        await renderer?.close();
       }
     }
 
@@ -260,10 +311,11 @@ export async function processAudit(data: AuditJobData): Promise<void> {
           score: analysis.score,
           verdict: analysis.verdict,
           // Re-scoring from the probe rebuilds the check list from scratch, so
-          // the crawl's findings have to be folded back in or the PSI stage
-          // would quietly erase the whole Site structure category.
-          checks: [...analysis.checks, ...structureChecks],
-          flags: [...new Set([...analysis.flags, ...structureFlags])],
+          // the appended findings have to be folded back in — otherwise the
+          // PSI stage quietly erases the whole Site structure category and the
+          // JS-dependency finding with it.
+          checks: [...analysis.checks, ...extraChecks],
+          flags: [...new Set([...analysis.flags, ...extraFlags])],
         },
       });
     } catch {
@@ -304,7 +356,7 @@ export async function processAudit(data: AuditJobData): Promise<void> {
     // Stage 5 — flags → lead trigger signals.
     if (data.leadId) {
       await attachFlagsToLead(db, data.leadId, [
-        ...new Set([...analysis.flags, ...structureFlags]),
+        ...new Set([...analysis.flags, ...extraFlags]),
       ]);
     }
 
@@ -318,7 +370,7 @@ export async function processAudit(data: AuditJobData): Promise<void> {
     // Stage 6 — what changed since last time (P2/5).
     await recordDelta(db, data, {
       score: analysis.score,
-      checks: [...analysis.checks, ...structureChecks],
+      checks: [...analysis.checks, ...extraChecks],
     });
   } catch (e) {
     await db.auditResult
