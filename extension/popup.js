@@ -114,11 +114,16 @@ $("capture").addEventListener("click", async () => {
       // A capture that read nothing but the URL used to look identical to a
       // good one — that is how a lead called "unknown" with no data happened
       // without anybody noticing.
+      // Name the LAYER each field came from, not just the field. When a field
+      // stops arriving, the layer that used to supply it is the thing that
+      // broke, and this is the only place that difference is visible.
+      const detail = fields.map((f) => `${f} (${readFrom[f]})`).join(", ");
+      const photo = res.data?.avatarProblem ? ` Photo not saved: ${res.data.avatarProblem}.` : "";
       msg(
         fields.length === 0
           ? `${what}, but only the URL could be read — LinkedIn's layout has changed.`
-          : `${what} · read ${fields.join(", ")}.`,
-        fields.length === 0 ? "err" : "ok",
+          : `${what} · read ${detail}.${photo}`,
+        fields.length === 0 || photo ? "err" : "ok",
       );
     } else if (res?.error === "not_configured") {
       $("settings").open = true;

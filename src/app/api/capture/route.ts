@@ -117,8 +117,11 @@ export async function POST(req: Request): Promise<Response> {
   // Avatar: downloaded once, never hotlinked (the source URL expires and
   // rendering it would leak every card view to that CDN).
   let avatarPath: string | null = null;
+  let avatarProblem: string | null = null;
   if (input.photoUrl) {
-    avatarPath = await storeAvatar(lead.id, input.photoUrl);
+    const stored = await storeAvatar(lead.id, input.photoUrl);
+    avatarPath = stored.path;
+    avatarProblem = stored.reason;
     if (avatarPath) {
       await db.lead.update({ where: { id: lead.id }, data: { avatarPath } });
     }
@@ -170,7 +173,15 @@ export async function POST(req: Request): Promise<Response> {
   });
 
   return json(
-    { ok: true, leadId: lead.id, created: !existing, hasBrief: !!brief },
+    {
+      ok: true,
+      leadId: lead.id,
+      created: !existing,
+      hasBrief: !!brief,
+      // Reported so a photo that was read but could not be stored says so,
+      // instead of silently degrading to initials.
+      avatarProblem,
+    },
     existing ? 200 : 201,
   );
 }

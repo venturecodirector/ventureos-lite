@@ -21,45 +21,63 @@ const ALLOWED: Record<string, string> = {
   "image/webp": "webp",
 };
 
+export interface AvatarResult {
+  path: string | null;
+  /** Why there is no path. Short, safe to show a user, never contains the URL. */
+  reason: string | null;
+}
+
 /**
- * Fetch and store an avatar. Returns the relative path, or null for anything
- * that is not plainly a small image — never throws, because a missing picture
- * must not fail a capture.
+ * Fetch and store an avatar.
+ *
+ * Never throws — a missing picture must not fail a capture. But it no longer
+ * fails SILENTLY: every rejection returns a reason. This function had eight
+ * separate `return null` paths and no logging, so when captured photos stopped
+ * appearing there was no way to tell which one fired without adding print
+ * statements to production. The reason travels back to the popup instead.
  */
-export async function storeAvatar(leadId: string, url: string): Promise<string | null> {
+export async function storeAvatar(leadId: string, url: string): Promise<AvatarResult> {
+  const no = (reason: string): AvatarResult => ({ path: null, reason });
+
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    return null;
+    return no("the photo address was not a URL");
   }
   // Same SSRF reasoning as the public audit: we fetch what we are handed.
-  if (parsed.protocol !== "https:") return null;
+  // A `data:` placeholder lands here, which is the likeliest way a page that
+  // lazy-loads its images yields a photo URL that cannot be fetched.
+  if (parsed.protocol !== "https:") {
+    return no(`the photo was a ${parsed.protocol.replace(":", "")} address, not https`);
+  }
   if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/i.test(parsed.hostname)) {
-    return null;
+    return no("the photo pointed at a private address");
   }
 
   try {
     const res = await fetch(parsed.toString(), { signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (!res.ok) return null;
+    if (!res.ok) return no(`the photo host answered ${res.status}`);
 
     const type = (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
     const ext = ALLOWED[type];
-    if (!ext) return null;
+    if (!ext) return no(`the photo came back as ${type || "an unknown type"}`);
 
     const declared = Number(res.headers.get("content-length") ?? 0);
-    if (declared > MAX_BYTES) return null;
+    if (declared > MAX_BYTES) return no("the photo was larger than 2 MB");
 
     const buf = Buffer.from(await res.arrayBuffer());
     // Re-check after download: content-length can lie or be absent.
-    if (buf.byteLength === 0 || buf.byteLength > MAX_BYTES) return null;
+    if (buf.byteLength === 0) return no("the photo downloaded empty");
+    if (buf.byteLength > MAX_BYTES) return no("the photo was larger than 2 MB");
 
     const rel = `avatars/${leadId}.${ext}`;
     await mkdir(join(FILES_DIR, "avatars"), { recursive: true });
     await writeFile(join(FILES_DIR, rel), buf);
-    return rel;
-  } catch {
-    return null;
+    return { path: rel, reason: null };
+  } catch (e) {
+    const name = e instanceof Error ? e.name : "";
+    return no(name === "TimeoutError" ? "the photo host timed out" : "the photo could not be fetched");
   }
 }
 

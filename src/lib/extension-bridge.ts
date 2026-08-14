@@ -18,9 +18,11 @@ interface BridgeResponse {
   ok?: boolean;
   error?: string;
   status?: number;
-  data?: { created?: boolean; leadId?: string };
+  data?: { created?: boolean; leadId?: string; avatarProblem?: string | null };
   /** Which extraction layers supplied data, e.g. ["name", "headline"]. */
   read?: string[];
+  /** field → the layer that supplied it, e.g. { headline: "structure" }. */
+  readFrom?: Record<string, string>;
   version?: string;
 }
 
@@ -86,7 +88,14 @@ export async function configureExtension(
 }
 
 export type CaptureOutcome =
-  | { ok: true; created: boolean; read: string[] }
+  | {
+      ok: true;
+      created: boolean;
+      read: string[];
+      readFrom: Record<string, string>;
+      /** Set when a photo was read but could not be stored. */
+      avatarProblem: string | null;
+    }
   | { ok: false; error: string; message: string };
 
 const MESSAGES: Record<string, string> = {
@@ -113,7 +122,13 @@ export async function captureProfileViaExtension(url: string): Promise<CaptureOu
   if (!res) return { ok: false, error: "not_installed", message: MESSAGES.not_installed! };
 
   if (res.ok) {
-    return { ok: true, created: !!res.data?.created, read: res.read ?? [] };
+    return {
+      ok: true,
+      created: !!res.data?.created,
+      read: res.read ?? [],
+      readFrom: res.readFrom ?? {},
+      avatarProblem: res.data?.avatarProblem ?? null,
+    };
   }
 
   const key = res.error ?? (res.status === 401 ? "not_configured" : "unreadable");

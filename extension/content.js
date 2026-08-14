@@ -20,7 +20,11 @@
  *   1. JSON-LD   — the Person graph LinkedIn embeds for search engines
  *   2. meta tags — og:title / og:description / og:image, for link previews
  *   3. <title>   — "Name - Headline | LinkedIn"
- *   4. CSS       — best-effort, last resort
+ *   4. structure — the SHAPE of the page: the <h1>, and sections named by their
+ *                  own <h2>. A signed-in profile is React-rendered and carries
+ *                  neither a Person graph nor a useful og:description, so on the
+ *                  page that actually matters this is the layer that works.
+ *   5. CSS       — best-effort, last resort
  *
  * It also reports WHICH layer supplied each field, so the next layout change
  * reports itself in the popup instead of looking like a silent success.
@@ -120,19 +124,110 @@
   const ogParts = splitTitle(meta("og:title"));
   const titleParts = splitTitle(document.title);
 
+  // ---- layer 4: page structure -------------------------------------------
+  // Class names are cosmetic and rot; the shape of the page does not. A profile
+  // is a heading holding the person's name, a subtitle under it, and sections
+  // titled by their own <h2>. Where an element must be identified, this uses
+  // SEMANTIC attributes — aria-hidden, headings, list items — never a class.
+  //
+  // aria-hidden="true" deserves a note: LinkedIn renders each visible line twice,
+  // once for sight and once for screen readers, so reading textContent naively
+  // yields "BudapestBudapest". Selecting the aria-hidden copy takes each line
+  // exactly once, and does it via an accessibility contract rather than styling.
+  const NOISE =
+    /^(contact info|kapcsolatfelvétel|message|üzenet|connect|follow|követés|more|továbbiak|show all|see all|open to|add profile section|premium|linkedin)\b/i;
+  const isNoise = (l) =>
+    NOISE.test(l) ||
+    /\b\d+\+?\s*(connections?|followers?|követő|kapcsolat)\b/i.test(l) ||
+    /^·?\s*\d+(st|nd|rd|th)\b/i.test(l);
+
+  /** Reads like a place: "Budapest, Hungary". Conservative on purpose. */
+  const isPlace = (l) => l.length <= 100 && l.includes(",") && !/[\d@]/.test(l);
+
+  /** Each visible line of a container, once, in document order. */
+  const textLines = (el) => {
+    if (!el || !el.querySelectorAll) return [];
+    let nodes = [...el.querySelectorAll('span[aria-hidden="true"]')];
+    // Not every profile block uses the doubled-span pattern; fall back to the
+    // ordinary text holders, which needs the containment filter below.
+    if (nodes.length === 0) nodes = [...el.querySelectorAll("p, span, div")];
+
+    const seen = new Set();
+    const lines = [];
+    for (const n of nodes) {
+      const t = text(n);
+      if (!t || seen.has(t)) continue;
+      seen.add(t);
+      lines.push(t);
+    }
+    // A container's text is the concatenation of its children's, so drop any
+    // line that merely contains another — otherwise the whole card reads as one
+    // enormous "line" and wins every "first line" test.
+    return lines.filter((l) => !lines.some((o) => o !== l && l.includes(o)));
+  };
+
+  const structure = (() => {
+    const out = {
+      name: null, headline: null, location: null,
+      company: null, jobTitle: null, bio: null, posts: [],
+    };
+    const main = document.querySelector("main") || document.body;
+    if (!main || !main.querySelectorAll) return out;
+
+    // -- the top card: name, then the subtitle under it
+    const h1 = main.querySelector("h1");
+    out.name = text(h1);
+    if (h1) {
+      const card = (h1.closest && h1.closest("section")) || h1.parentElement;
+      const lines = textLines(card).filter((l) => l !== out.name && !isNoise(l));
+      // The line under the name is the headline — LinkedIn has put it there for
+      // as long as the profile has existed. Length-capped so a stray paragraph
+      // cannot pose as one.
+      out.headline = lines.find((l) => l.length <= 250) || null;
+      out.location = lines.find((l) => l !== out.headline && isPlace(l)) || null;
+    }
+
+    // -- sections, found by what their heading SAYS rather than how it looks
+    for (const section of main.querySelectorAll("section")) {
+      const heading = (text(section.querySelector("h2")) || "").toLowerCase();
+      if (!heading) continue;
+
+      if (!out.bio && /^(about|névjegy|info)/.test(heading)) {
+        // The About text is the longest thing in its section by a wide margin.
+        const lines = textLines(section).filter((l) => !l.toLowerCase().startsWith(heading));
+        out.bio = lines.slice().sort((a, b) => b.length - a.length)[0] || null;
+      } else if (!out.jobTitle && /(experience|tapasztalat)/.test(heading)) {
+        // First entry = current role. Its first line is the title, the next is
+        // the employer, often suffixed "· Full-time".
+        const first = section.querySelector("li") || section;
+        const lines = textLines(first).filter((l) => !isNoise(l));
+        out.jobTitle = lines[0] || null;
+        out.company = lines[1] ? clean(lines[1].split(" · ")[0]) : null;
+      } else if (out.posts.length === 0 && /(activity|aktivitás)/.test(heading)) {
+        out.posts = [...section.querySelectorAll("li")]
+          .map((li) => text(li))
+          .filter((t) => t && !isNoise(t))
+          .slice(0, 3);
+      }
+    }
+    return out;
+  })();
+
   // Recent posts the person published or shared. Read from whatever the profile
   // already rendered — no scrolling and no "show more", so this is the first few
   // visible items or nothing.
-  const posts = [
-    ...document.querySelectorAll(
-      ".feed-shared-update-v2 .update-components-text, .profile-creator-shared-feed-update__container .update-components-text",
-    ),
-  ]
-    .slice(0, 3)
-    .map((el) => text(el))
-    .filter(Boolean);
+  const posts = structure.posts.length
+    ? structure.posts
+    : [
+        ...document.querySelectorAll(
+          ".feed-shared-update-v2 .update-components-text, .profile-creator-shared-feed-update__container .update-components-text",
+        ),
+      ]
+        .slice(0, 3)
+        .map((el) => text(el))
+        .filter(Boolean);
 
-  // ---- layer 4: CSS (last resort) ----------------------------------------
+  // ---- layer 5: CSS (last resort) ----------------------------------------
   const pick = (selectors) => {
     for (const sel of selectors) {
       const v = text(document.querySelector(sel));
@@ -145,12 +240,14 @@
     take("name", "json-ld", ld.name) ||
     take("name", "og:title", ogParts[0]) ||
     take("name", "title", titleParts[0]) ||
+    take("name", "structure", structure.name) ||
     take("name", "css", pick(["h1.text-heading-xlarge", "main h1", "h1"]));
 
   const headline =
     take("headline", "json-ld", ld.headline) ||
     take("headline", "og:title", ogParts[1]) ||
     take("headline", "title", titleParts[1]) ||
+    take("headline", "structure", structure.headline) ||
     take(
       "headline",
       "css",
@@ -161,6 +258,7 @@
     take("companyName", "json-ld", ld.company) ||
     take("companyName", "og:title", ogParts[2]) ||
     take("companyName", "title", titleParts[2]) ||
+    take("companyName", "structure", structure.company) ||
     take(
       "companyName",
       "css",
@@ -173,6 +271,7 @@
 
   const location =
     take("location", "json-ld", ld.location) ||
+    take("location", "structure", structure.location) ||
     take(
       "location",
       "css",
@@ -185,7 +284,9 @@
   // og:description carries the About text on most profiles, and the About text
   // is most of what makes a capture worth anything to the research call.
   let bio =
-    take("bio", "json-ld", ld.bio) || take("bio", "og:description", meta("og:description"));
+    take("bio", "json-ld", ld.bio) ||
+    take("bio", "og:description", meta("og:description")) ||
+    take("bio", "structure", structure.bio);
   if (!bio) {
     for (const section of document.querySelectorAll("section")) {
       const heading = text(section.querySelector("h2"));
@@ -208,7 +309,9 @@
   // often a slogan ("helping brands grow ↗"), while the experience block states
   // an actual role. JSON-LD's jobTitle is the same idea, so it is reused as the
   // first layer.
-  let jobTitle = take("jobTitle", "json-ld", ld.headline);
+  let jobTitle =
+    take("jobTitle", "json-ld", ld.headline) ||
+    take("jobTitle", "structure", structure.jobTitle);
   if (!jobTitle) {
     for (const section of document.querySelectorAll("section")) {
       const heading = text(section.querySelector("h2"));

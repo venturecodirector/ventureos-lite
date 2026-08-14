@@ -141,8 +141,9 @@ async function captureProfileInTab(profileUrl) {
     const { _from, ...body } = payload;
     const res = await postCapture(body);
     // Which layers supplied data, so the app can say "read from og:title" and a
-    // future LinkedIn change is visible instead of silent.
-    return { ...res, read: Object.keys(_from ?? {}) };
+    // future LinkedIn change is visible instead of silent. The map travels too:
+    // a field going missing is really the LAYER behind it having broken.
+    return { ...res, read: Object.keys(_from ?? {}), readFrom: _from ?? {} };
   } catch (e) {
     // A login wall, or a tab that went away mid-read.
     return { ok: false, error: "unreadable", detail: String(e?.message ?? e).slice(0, 120) };

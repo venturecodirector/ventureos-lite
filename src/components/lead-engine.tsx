@@ -316,10 +316,15 @@ export function LeadEngine({
       // Say what was actually read: a capture that got only a URL used to look
       // exactly like a good one, which is how "unknown lead, no data" happened
       // without anybody noticing.
+      // Each field is named with the layer that supplied it: when a field stops
+      // arriving, the layer behind it is what broke, and this is where that is
+      // visible without opening the extension.
+      const detail = res.read.map((f) => `${f} (${res.readFrom[f] ?? "?"})`).join(", ");
+      const photo = res.avatarProblem ? ` Photo not saved: ${res.avatarProblem}.` : "";
       setExtNote(
         res.read.length === 0
           ? "Read the URL only — LinkedIn's layout has changed."
-          : `${res.created ? "Captured" : "Updated"} · read ${res.read.join(", ")}.`,
+          : `${res.created ? "Captured" : "Updated"} · read ${detail}.${photo}`,
       );
       router.refresh();
     } finally {
