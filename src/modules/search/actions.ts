@@ -13,6 +13,7 @@ import {
   taxIdDigits,
   type SearchHit,
 } from "./query";
+import { broadSearch } from "./broad";
 
 /**
  * Global search (spec §4.1). Leads, companies and documents in the CURRENT
@@ -137,6 +138,13 @@ export async function searchWorkspace(raw: unknown): Promise<SearchHit[]> {
       score: bestRank([d.number, d.lead?.company?.name], q),
     })),
   ].filter((h) => h.score > 0);
+
+  // The exact pass is fast and covers most searches. When it finds nothing, fall
+  // back to the accent- and typo-tolerant pass (P3/1) — which reads more rows,
+  // so an exact match must never pay for it.
+  if (hits.length === 0) {
+    return orderHits(await broadSearch(db, q));
+  }
 
   return orderHits(hits);
 }
