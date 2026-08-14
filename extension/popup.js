@@ -106,8 +106,19 @@ $("capture").addEventListener("click", async () => {
       msg("Too many captures just now. Try again shortly.", "err");
     } else if (res?.error === "timeout") {
       msg("The server did not answer in time.", "err");
+    } else if (res?.status === 400) {
+      // Previously this fell into the generic branch below, so a rejected
+      // payload was indistinguishable from a network failure — and the server
+      // was rejecting every profile with a field it could not read.
+      const fields = res?.data?.fields?.join(", ");
+      msg(
+        fields
+          ? `The server rejected the capture (${fields}). Update the extension.`
+          : "The server rejected this capture. Update the extension.",
+        "err",
+      );
     } else {
-      msg("Capture failed.", "err");
+      msg(`Capture failed (${res?.status ?? res?.error ?? "unknown"}).`, "err");
     }
   } finally {
     $("capture").disabled = false;

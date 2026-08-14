@@ -54,13 +54,19 @@
     ".pv-text-details__right-panel-item-text",
   ]);
 
+  // undefined, not null, for anything that was not found. JSON.stringify drops
+  // undefined keys entirely, which is what "absent" should look like on the
+  // wire — and null is what silently failed server validation for every profile
+  // whose DOM had moved, surfacing to the user as a bare "Capture failed."
+  const absent = (v) => (v === null || v === "" ? undefined : v);
+
   return {
     url: location_url(),
-    name,
-    headline,
-    companyName,
-    location,
-    bio,
+    name: absent(name),
+    headline: absent(headline),
+    companyName: absent(companyName),
+    location: absent(location),
+    bio: absent(bio),
     photoUrl: photo && photo.src ? photo.src : undefined,
     posts,
   };

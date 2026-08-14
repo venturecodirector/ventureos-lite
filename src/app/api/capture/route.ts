@@ -10,6 +10,7 @@ import {
 import { resolveCaptureToken } from "@/modules/capture/tokens";
 import { storeAvatar } from "@/modules/capture/avatar";
 import { normalizeDomain } from "@/modules/leads/dedupe";
+import { captureBodySchema } from "@/modules/capture/body";
 
 /**
  * Browser-extension capture (P1/1e).
@@ -24,16 +25,6 @@ import { normalizeDomain } from "@/modules/leads/dedupe";
  */
 export const dynamic = "force-dynamic";
 
-const bodySchema = z.object({
-  url: z.string().url().max(1000),
-  name: z.string().max(200).optional(),
-  headline: z.string().max(400).optional(),
-  companyName: z.string().max(200).optional(),
-  location: z.string().max(200).optional(),
-  bio: z.string().max(8000).optional(),
-  photoUrl: z.string().url().max(2000).optional(),
-  posts: z.array(z.string().max(2000)).max(5).optional(),
-});
 
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -53,8 +44,18 @@ export async function POST(req: Request): Promise<Response> {
   });
   if (!rate.allowed) return json({ error: "rate_limited" }, 429);
 
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return json({ error: "bad_request" }, 400);
+  const parsed = captureBodySchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    // Name the offending fields. The previous bare "bad_request" is why a
+    // missing headline presented as an unexplained "Capture failed."
+    return json(
+      {
+        error: "bad_request",
+        fields: parsed.error.issues.map((i) => i.path.join(".")).filter(Boolean),
+      },
+      400,
+    );
+  }
   const input = parsed.data;
 
   const db = getWorkspaceClient(identity.workspaceId);
