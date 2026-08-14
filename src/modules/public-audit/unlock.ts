@@ -8,6 +8,7 @@ import { isLocale, DEFAULT_LOCALE, type Locale } from "@/lib/locale";
 import { enqueueReportEmail } from "./enqueue";
 import { consentSnapshot } from "./consent-text";
 import { LANDING_COPY } from "./copy";
+import { createTaskFromSignal } from "@/modules/tasks/from-signal";
 
 /**
  * "Send me the report" (P12/1b, 1c).
@@ -134,6 +135,36 @@ export async function unlockFullReport(raw: unknown): Promise<UnlockResult> {
 }
 
 /**
+ * A same-day task for warm inbound (P3/3).
+ *
+ * This is the warmest lead the system produces — they came to us, ran their own
+ * audit and asked for the report — and a same-day follow-up is the whole point
+ * of knowing. Without marketing consent the task says so, because the operator
+ * has to know what they may and may not do before they pick up the phone.
+ */
+async function warmInboundTask(
+  db: ReturnType<typeof getWorkspaceClient>,
+  input: { url: string; marketingConsent: boolean; name: string },
+  leadId: string,
+): Promise<void> {
+  await createTaskFromSignal(db, {
+    workspaceId: (await db.lead.findUnique({ where: { id: leadId }, select: { workspaceId: true } }))!
+      .workspaceId,
+    title: input.marketingConsent
+      ? `Meleg inbound: ${input.name} — keresd meg még ma`
+      : `Meleg inbound: ${input.name} — NINCS marketing hozzájárulás`,
+    note: input.marketingConsent
+      ? `Lefuttatta: ${input.url}. Kezdd a legfontosabb megállapítással.`
+      : `Lefuttatta: ${input.url}. Csak a riportot kérte — megkeresésre nincs hozzájárulás.`,
+    type: "call",
+    entityType: "lead",
+    entityId: leadId,
+    source: "self_serve_inbound",
+    dueInDays: 0,
+  });
+}
+
+/**
  * Company + Lead for someone who audited their own site.
  *
  * Deduped against what is already there: an inbound request from a company we
@@ -203,6 +234,7 @@ async function createLeadFromConsent(input: {
         },
       },
     });
+    await warmInboundTask(db, input, existingLead.id);
     return existingLead.id;
   }
 
@@ -231,5 +263,6 @@ async function createLeadFromConsent(input: {
       },
     },
   });
+  await warmInboundTask(db, input, lead.id);
   return lead.id;
 }

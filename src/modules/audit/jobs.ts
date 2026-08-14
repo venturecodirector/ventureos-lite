@@ -32,6 +32,7 @@ import { fetchCrux } from "./crux";
 import { loadComparison } from "./comparison-load";
 import { computeDelta, signalFor } from "./delta";
 import { nextRunFrom } from "./watch";
+import { createTaskFromSignal } from "../tasks/from-signal";
 import { brandFrom } from "../workspaces/brand";
 import { usageRecorderFor } from "@/lib/api-usage";
 import { shareOfTopTen } from "../serp/provider";
@@ -159,6 +160,21 @@ async function recordDelta(
       },
     });
     await attachFlagsToLead(db, leadId, [signal.flag]);
+
+    // The suggested task the signal has been carrying since P2/5 now exists as
+    // a real task instead of a string in a payload nothing rendered.
+    await createTaskFromSignal(db, {
+      workspaceId: data.workspaceId,
+      title: signal.suggestedTaskHu,
+      note: signal.headlineHu,
+      type: "call",
+      entityType: "lead",
+      entityId: leadId,
+      source: signal.type,
+      // A worsening site is a same-day call; an improving one is more urgent
+      // still, because somebody else may already be talking to them.
+      dueInDays: signal.type === "audit_improved" ? 0 : 1,
+    });
   } catch {
     // A delta is an extra: never fail a completed audit over it.
   }

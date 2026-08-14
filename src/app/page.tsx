@@ -1,11 +1,22 @@
 import { AppShell } from "@/components/app-shell";
 import { Greeting } from "@/components/greeting";
+import { TasksPanel } from "@/components/tasks-panel";
+import { myTasks } from "@/modules/tasks/actions";
 import { getLatestInsight } from "@/modules/signal/actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const insight = await getLatestInsight();
+  // Tasks are fetched HERE, on the server, and handed to the panel as a prop.
+  // The dashboard is the first page loaded every morning; a client round trip
+  // for its main list costs a flash and real latency on a phone.
+  const [insight, tasks] = await Promise.all([getLatestInsight(), myTasks()]);
+  const initialTasks = [
+    ...tasks.overdue,
+    ...tasks.today,
+    ...tasks.upcoming,
+    ...tasks.someday,
+  ];
 
   return (
     <AppShell activePath="/">
@@ -23,6 +34,8 @@ export default async function Home() {
               surfaces a fresh insight below — approve its proposals in Settings.
             </p>
           </div>
+
+          <TasksPanel initial={initialTasks} />
 
           <div>
             {/* Claude insight card — the only glowing element (spec §4.13) */}

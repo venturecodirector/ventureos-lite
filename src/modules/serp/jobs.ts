@@ -3,6 +3,7 @@ import { resolveIntegration } from "@/modules/integrations/resolve";
 import { normalizeDomain } from "@/modules/leads/dedupe";
 import { serpProviderFor, positionOf, droppedOutOfTopTen } from "./provider";
 import { recordApiUsage } from "@/lib/api-usage";
+import { createTaskFromSignal } from "@/modules/tasks/from-signal";
 
 /**
  * Weekly position check (P2/7).
@@ -97,6 +98,18 @@ export async function processKeywordTracking(now: Date = new Date()): Promise<nu
               suggestedTask: "Ügyfél kulcsszava kiesett a top 10-ből — nézd meg, mi változott",
             },
           },
+        });
+
+        await createTaskFromSignal(db, {
+          workspaceId: ws.id,
+          title: `Kiesett a top 10-ből: "${k.keyword}"`,
+          note: `${previous}. → ${position === null ? "100+" : `${position}.`} — ügyfél kulcsszava`,
+          entityType: "company",
+          entityId: k.company.id,
+          // One task per keyword, not per company: two terms dropping are two
+          // pieces of work.
+          source: `keyword_dropped:${k.id}`,
+          dueInDays: 2,
         });
       }
     }

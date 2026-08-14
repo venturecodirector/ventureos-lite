@@ -58,6 +58,13 @@ export async function eraseLeadData(
   deleted.meetings = (await db.meeting.deleteMany({ where: { leadId } })).count;
   deleted.emailLogs = (await db.emailLog.deleteMany({ where: { leadId } })).count;
 
+  // Tasks link polymorphically (P3/3), so there is no cascade to rely on — the
+  // rows would survive their lead and keep its name in a title. Deleted here
+  // explicitly, which the Task model comment warns is required.
+  deleted.tasks = (
+    await db.task.deleteMany({ where: { entityType: "lead", entityId: leadId } })
+  ).count;
+
   // Synced correspondence (playbook-v2 P2). Messages cascade from the thread,
   // but the ATTACHMENT BYTES on the volume do not — a row deletion that leaves
   // the files behind is the easy half of an erasure and the wrong half. Paths

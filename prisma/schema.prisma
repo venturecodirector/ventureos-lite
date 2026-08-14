@@ -765,6 +765,44 @@ model LogUpload {
   @@map("log_uploads")
 }
 
+/// A thing someone has to do (playbook-v2 P3/3).
+///
+/// POLYMORPHIC LINK by design: a task hangs off a lead today, a deal once P4
+/// exists, a document, or nothing at all. entityType + entityId rather than four
+/// nullable foreign keys, because the alternative is a schema change every time
+/// a new thing becomes taskable.
+///
+/// The cost of that choice is no cascade: erasing a lead does not delete its
+/// tasks automatically, so eraseLeadData removes them explicitly. That is
+/// written down here because it is exactly the kind of thing a future migration
+/// forgets.
+model Task {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  /// call | email | todo | follow_up
+  type        String    @default("todo")
+  title       String
+  note        String?   @db.Text
+  dueAt       DateTime? @map("due_at")
+  /// lead | company | document | none
+  entityType  String?   @map("entity_type")
+  entityId    String?   @map("entity_id")
+  /// Who owes this. Null means unassigned, which is visible rather than hidden.
+  assigneeId  String?   @map("assignee_id")
+  doneAt      DateTime? @map("done_at")
+  /// Set when the system created it from a signal, so the UI can say why this
+  /// task exists — and so a person's own tasks are distinguishable from ours.
+  source      String?
+  createdBy   String?   @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([workspaceId, doneAt, dueAt])
+  @@index([workspaceId, entityType, entityId])
+  @@index([assigneeId, doneAt])
+  @@map("tasks")
+}
+
 // ============================================================================
 // Email sync (playbook-v2 P2). Correspondence lives in a personal mailbox; the
 // CRM only ever saw what someone pasted in. These tables hold the SUBSET that
