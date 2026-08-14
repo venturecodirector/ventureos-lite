@@ -7,6 +7,7 @@ import {
   revokeCaptureToken,
   type CaptureTokenRow,
 } from "@/modules/capture/actions";
+import { extensionPresence, configureExtension } from "@/lib/extension-bridge";
 
 /**
  * Settings → Extension (P1/1e). Personal capture tokens for the browser
@@ -25,11 +26,27 @@ export function SettingsExtension({
   const [label, setLabel] = useState("");
   const [issued, setIssued] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  /** Set when the token was handed straight to the extension. */
+  const [connected, setConnected] = useState<string | null>(null);
 
   function issue() {
     startTransition(async () => {
       const { token } = await issueCaptureToken({ label: label.trim() || undefined });
       setIssued(token);
+
+      // If the extension is here, hand it the token directly. Copying a token by
+      // hand is what made people re-enter it after every reinstall — and a
+      // token that is never displayed is a token that cannot be pasted into the
+      // wrong window.
+      const presence = await extensionPresence();
+      if (presence.present) {
+        const res = await configureExtension(window.location.origin, token);
+        setConnected(
+          res.ok
+            ? "Sent to the extension in this browser — nothing to copy."
+            : `Extension found but refused the token (${res.error ?? "unknown"}).`,
+        );
+      }
       setCopied(false);
       setLabel("");
       router.refresh();
@@ -81,8 +98,14 @@ export function SettingsExtension({
           data-testid="issued-token"
         >
           <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-ink">
-            Copy it now — it is not shown again
+            {connected ? "Sent to this browser's extension" : "Copy it now — it is not shown again"}
           </div>
+          {connected && (
+            <p className="mb-2 text-[12px] leading-relaxed text-[#C9CEE3]" data-testid="extension-connected">
+              {connected} Keep the token below only if you also use the extension in
+              another browser.
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <code className="flex-1 break-all rounded-[8px] border border-line bg-[rgba(0,5,29,0.5)] px-2.5 py-1.5 text-[12px] text-ink">
               {issued}

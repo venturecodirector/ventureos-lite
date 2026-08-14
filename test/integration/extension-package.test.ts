@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { appUrl } from "@/lib/env";
 import { buildExtensionPackage } from "../../src/modules/extension/package";
 
 /**
@@ -55,8 +56,40 @@ describe("extension package", () => {
     expect(manifest.version).toBe(pkg.version);
     // The permission model this build deliberately settled on.
     expect(manifest.permissions).toEqual(["activeTab", "scripting", "storage"]);
-    expect(manifest.host_permissions).toBeUndefined();
     expect(manifest.optional_host_permissions).toEqual(["https://*/*"]);
+  });
+
+  it("is packaged knowing its own server, so nobody types an address", async () => {
+    // The extension is built BY the deployment that receives its captures, so
+    // the address is injected here rather than hardcoded in the checked-in
+    // manifest — which keeps CLAUDE.md's "hosts come from the environment".
+    const pkg = await buildExtensionPackage();
+    const dir = mkdtempSync(join(tmpdir(), "ext-"));
+    const zipPath = join(dir, "e.zip");
+    writeFileSync(zipPath, pkg.zip);
+
+    const origin = new URL(appUrl()).origin;
+    const manifest = JSON.parse(
+      execFileSync("unzip", ["-p", zipPath, "manifest.json"], { encoding: "utf8" }),
+    );
+
+    // Its own server needs no runtime permission prompt.
+    expect(manifest.host_permissions).toEqual([`${origin}/*`]);
+
+    // The bridge runs ONLY on the app's origin — never on LinkedIn. That
+    // boundary is the whole reason it is safe to let a page talk to it.
+    expect(manifest.content_scripts).toEqual([
+      { matches: [`${origin}/*`], js: ["bridge.js"], run_at: "document_idle" },
+    ]);
+
+    const config = execFileSync("unzip", ["-p", zipPath, "config.js"], { encoding: "utf8" });
+    expect(config).toContain(origin);
+
+    // Injected once, not appended alongside the checked-in placeholder: two
+    // entries with one name is a corrupt zip.
+    const listing = execFileSync("unzip", ["-l", zipPath], { encoding: "utf8" });
+    expect(listing.match(/config\.js/g) ?? []).toHaveLength(1);
+    expect(listing).toContain("bridge.js");
   });
 
   it("keeps binary icons byte-identical through the zip", async () => {

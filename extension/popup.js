@@ -14,11 +14,24 @@ function originOf(value) {
 
 (async () => {
   const { baseUrl, token } = await chrome.storage.local.get(["baseUrl", "token"]);
-  $("baseUrl").value = baseUrl ?? "";
+  // config.js is written at download time with the address of the Venture OS
+  // that packaged this build, so the address never has to be typed.
+  const injected = globalThis.VENTURE_DEFAULT_BASE_URL ?? "";
+  $("baseUrl").value = baseUrl ?? injected;
   $("token").value = token ?? "";
-  if (!baseUrl || !token) {
+
+  if (baseUrl && token) {
+    // Already configured: say so plainly instead of showing empty-looking
+    // fields that invite re-entering what is already saved.
+    msg(`Connected to ${baseUrl}. Open a LinkedIn profile and press Capture.`, "ok");
+  } else if (!token) {
     $("settings").open = true;
-    msg("Add your Venture OS address and a capture token to start.", "muted");
+    msg(
+      injected
+        ? "Paste a capture token from Settings → Extension to start."
+        : "Add your Venture OS address and a capture token to start.",
+      "muted",
+    );
   }
 })();
 
@@ -91,9 +104,22 @@ $("capture").addEventListener("click", async () => {
       return;
     }
 
-    const res = await chrome.runtime.sendMessage({ type: "capture", payload });
+    // _from is a local diagnostic, never sent to the server.
+    const { _from: readFrom, ...body } = payload;
+    const fields = Object.keys(readFrom ?? {});
+
+    const res = await chrome.runtime.sendMessage({ type: "capture", payload: body });
     if (res?.ok) {
-      msg(res.data?.created ? "Captured as a new lead." : "Existing lead updated.", "ok");
+      const what = res.data?.created ? "Captured as a new lead" : "Existing lead updated";
+      // A capture that read nothing but the URL used to look identical to a
+      // good one — that is how a lead called "unknown" with no data happened
+      // without anybody noticing.
+      msg(
+        fields.length === 0
+          ? `${what}, but only the URL could be read — LinkedIn's layout has changed.`
+          : `${what} · read ${fields.join(", ")}.`,
+        fields.length === 0 ? "err" : "ok",
+      );
     } else if (res?.error === "not_configured") {
       $("settings").open = true;
       msg("Add your Venture OS address and token first.", "err");

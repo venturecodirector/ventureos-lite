@@ -2,6 +2,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { makeZip, type ZipEntry } from "@/lib/zip";
+import { appUrl } from "@/lib/env";
 
 /**
  * Packages the browser extension for download from inside the app (P1/1e).
@@ -45,17 +46,55 @@ export async function buildExtensionPackage(): Promise<ExtensionPackage> {
     if (EXCLUDE_FILES.has(rel) || EXCLUDE_PATHS.has(rel)) continue;
     const info = await stat(abs);
     if (!info.isFile()) continue;
+    const name = rel.split(sep).join("/");
     entries.push({
       // Zip paths use forward slashes regardless of platform.
-      name: rel.split(sep).join("/"),
+      name,
       content: await readFile(abs),
     });
   }
 
   const manifestEntry = entries.find((e) => e.name === "manifest.json");
   if (!manifestEntry) throw new Error("extension/manifest.json is missing");
-  const manifest = JSON.parse(manifestEntry.content.toString()) as { version?: string };
+  const manifest = JSON.parse(manifestEntry.content.toString()) as Record<string, unknown> & {
+    version?: string;
+  };
   const version = manifest.version ?? "0.0.0";
+
+  // ---- born knowing its own server ---------------------------------------
+  //
+  // The extension is packaged BY the deployment that will receive its captures,
+  // so the address does not have to be typed in — and CLAUDE.md's rule that
+  // hosts come from the environment is kept, because this reads appUrl() rather
+  // than hardcoding anything in the checked-in manifest.
+  //
+  // Two consequences, both of which remove a step the operator was doing by
+  // hand: host_permissions means no runtime permission prompt for its own
+  // server, and the bridge content script lets the app hand the extension its
+  // token and ask it to read a profile.
+  const origin = new URL(appUrl()).origin;
+  const pattern = `${origin}/*`;
+  manifest.host_permissions = [pattern];
+  // The bridge runs ONLY on the app's own origin — never on LinkedIn. It is what
+  // lets the app talk to its extension without knowing an id that differs on
+  // every side-loaded install.
+  manifest.content_scripts = [{ matches: [pattern], js: ["bridge.js"], run_at: "document_idle" }];
+  manifestEntry.content = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+  // The default address travels as a tiny config file rather than being sewn
+  // into the popup, so it is obvious what was injected and by whom. A
+  // placeholder is checked in, so this REPLACES rather than appends — two
+  // entries with one name is a corrupt zip.
+  const configContent = Buffer.from(
+    `// Written at download time by ${origin}. The address of the Venture OS\n` +
+      `// that packaged this extension, so it does not have to be typed in.\n` +
+      `globalThis.VENTURE_DEFAULT_BASE_URL = ${JSON.stringify(origin)};\n`,
+    "utf8",
+  );
+  const configEntry = entries.find((e) => e.name === "config.js");
+  if (configEntry) configEntry.content = configContent;
+  else entries.push({ name: "config.js", content: configContent });
+  entries.sort((a, b) => a.name.localeCompare(b.name));
 
   const zip = makeZip(entries);
   const fingerprint = createHash("sha256").update(zip).digest("hex").slice(0, 12);

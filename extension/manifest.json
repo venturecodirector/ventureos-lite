@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Venture OS — Capture",
-  "version": "2.0.1",
-  "description": "Capture the LinkedIn profile you are viewing into Venture OS. Reads the current page on your click. Never posts, messages or acts for you.",
+  "version": "2.1.0",
+  "description": "Capture the LinkedIn profile you are viewing into Venture OS. Reads a page when you ask it to \u2014 from the popup, or when Venture OS requests one. Never posts, messages or acts for you.",
   "minimum_chrome_version": "116",
 
   "permissions": ["activeTab", "scripting", "storage"],

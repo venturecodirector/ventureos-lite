@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { extensionPresence, captureProfileViaExtension } from "@/lib/extension-bridge";
 import type { LeadCard } from "@/lib/ai/prompts/lead-research";
 import {
   captureLinkedin,
@@ -246,11 +247,34 @@ export function LeadEngine({
   const [paste, setPaste] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
+  // The extension is optional, so its actions only appear when it answers.
+  const [hasExtension, setHasExtension] = useState(false);
+  const [extBusy, setExtBusy] = useState(false);
+  const [extNote, setExtNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Optional tool: ask once, show its actions only if it answers. A missing
+    // extension simply never replies, so this resolves to false on its own.
+    let active = true;
+    extensionPresence().then((p) => {
+      if (active) setHasExtension(p.present);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
   // P1/1a — the same pure check the server uses, so the UI never offers a
   // research call that would be refused. P1/1b — what we already know from the
   // paste without spending anything.
   const parsed = useMemo(() => preParse(paste), [paste]);
   const canResearch = useMemo(() => hasAnalyzableText(paste), [paste]);
+  // The first LinkedIn profile URL in the pasted text — what the extension
+  // would be asked to read.
+  const linkedInUrl = (() => {
+    const match = /https?:\/\/(?:[a-z-]+\.)?linkedin\.com\/in\/[^\s]+/i.exec(paste);
+    return match ? match[0].split("?")[0]!.replace(/\/$/, "") : null;
+  })();
+
   const urlOnly = paste.trim().length > 0 && !canResearch;
   // Same modal the pipeline board uses — editing and deletion live in one
   // place rather than being reimplemented per screen.
@@ -274,6 +298,30 @@ export function LeadEngine({
     } catch (e) {
       setRail({ status: "idle" });
       setError((e as Error).message);
+    }
+  }
+
+  async function captureWithExtension() {
+    if (!linkedInUrl) return;
+    setExtBusy(true);
+    setExtNote(null);
+    try {
+      const res = await captureProfileViaExtension(linkedInUrl);
+      if (!res.ok) {
+        setExtNote(res.message);
+        return;
+      }
+      // Say what was actually read: a capture that got only a URL used to look
+      // exactly like a good one, which is how "unknown lead, no data" happened
+      // without anybody noticing.
+      setExtNote(
+        res.read.length === 0
+          ? "Read the URL only — LinkedIn's layout has changed."
+          : `${res.created ? "Captured" : "Updated"} · read ${res.read.join(", ")}.`,
+      );
+      router.refresh();
+    } finally {
+      setExtBusy(false);
     }
   }
 
@@ -329,8 +377,21 @@ export function LeadEngine({
                 data-testid="research-guidance"
                 className="mt-2.5 rounded-[10px] border border-[rgba(245,184,65,0.35)] bg-[rgba(245,184,65,0.08)] px-3.5 py-2.5 text-[12.5px] text-warn"
               >
-                Paste the profile <b>text</b> alongside the URL, or capture the page
-                with the browser extension — there is nothing to analyse yet.
+                Paste the profile <b>text</b> alongside the URL, or let the
+                extension read the page — there is nothing to analyse yet.
+                {hasExtension && linkedInUrl && (
+                  <div className="mt-2">
+                    <button
+                      onClick={captureWithExtension}
+                      disabled={extBusy}
+                      data-testid="capture-with-extension"
+                      className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12.5px] font-semibold text-ink hover:bg-panel-2 disabled:opacity-60"
+                    >
+                      {extBusy ? "Reading the profile…" : "Read it with the extension"}
+                    </button>
+                    {extNote && <span className="ml-2 text-[12px]">{extNote}</span>}
+                  </div>
+                )}
                 {parsed.websites[0] && (
                   <>
                     {" "}
