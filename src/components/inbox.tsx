@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { EmailThreads } from "./email-threads";
+import { UnmatchedThreads } from "./unmatched-threads";
 import {
   getThread,
   logInboundReply,
@@ -107,6 +109,11 @@ export function Inbox({
           {error}
         </div>
       )}
+
+      {/* Correspondence we synced but could not place. Above the fold on
+          purpose: an unmatched thread is a lead's conversation sitting in the
+          wrong place, and it stays wrong until someone links it. */}
+      <UnmatchedThreads leads={leads} />
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[290px_1fr_300px]">
         {/* thread list */}
@@ -232,6 +239,8 @@ export function Inbox({
                 </button>
                 <span className="self-center text-[11px] text-muted">Never auto-sent.</span>
               </div>
+
+              {selected && <EmailThreads leadId={selected} />}
             </>
           )}
         </div>
