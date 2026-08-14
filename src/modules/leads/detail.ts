@@ -44,6 +44,12 @@ export interface LeadDetail {
   companyDomain: string;
   companyCity: string;
   companyTaxId: string;
+  /** Relative path under FILES_DIR; served through the authenticated route. */
+  avatarPath: string | null;
+  /** The Haiku summary written at capture time (P1/1e). */
+  personBrief: string | null;
+  /** The About text the capture read, which the brief was written from. */
+  bio: string | null;
   timeline: TimelineEntry[];
 }
 
@@ -119,6 +125,12 @@ export async function getLeadDetail(leadId: string): Promise<LeadDetail | null> 
     companyDomain: lead.company?.domain ?? "",
     companyCity: lead.company?.city ?? "",
     companyTaxId: lead.company?.taxId ?? "",
+    // Captured by the extension and stored since P1/1e, but never rendered —
+    // which is why a captured photo appeared to vanish, and why the Haiku
+    // person brief was being paid for and thrown away.
+    avatarPath: lead.avatarPath ?? null,
+    personBrief: lead.personBrief ?? null,
+    bio: lead.bio ?? null,
     timeline: timeline.slice(0, 60),
   };
 }

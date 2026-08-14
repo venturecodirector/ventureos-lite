@@ -38,6 +38,16 @@ export async function resolveFileWorkspace(rel: string): Promise<string | null> 
       const a = await prismaUnsafe.auditResult.findUnique({ where: { id: auditId }, select: { workspaceId: true } });
       return a?.workspaceId ?? null;
     }
+    case "avatars": {
+      // avatars/<leadId>.<jpg|png|webp> — written by the capture route. Without
+      // this case the route fell through to `default` and 404'd every avatar,
+      // which is why a captured photo never appeared on a lead.
+      const lead = await prismaUnsafe.lead.findFirst({
+        where: { avatarPath: rel },
+        select: { workspaceId: true },
+      });
+      return lead?.workspaceId ?? null;
+    }
     default:
       return null;
   }

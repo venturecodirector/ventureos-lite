@@ -26,11 +26,13 @@ import { CsvImport } from "./csv-import";
 import { preParse, hasAnalyzableText } from "@/modules/leads/preparse";
 import { ManualLeadForm } from "./manual-lead-form";
 import { LeadDetailModal } from "./lead-detail-modal";
+import { LeadAvatar } from "./lead-avatar";
 
 export interface LeadRow {
   id: string;
   companyId: string | null;
   contactName: string | null;
+  avatarPath: string | null;
   title: string | null;
   company: string;
   industry: string | null;
@@ -488,6 +490,7 @@ export function LeadEngine({
                     <tr key={l.id} className="hover:[&>td]:bg-panel">
                       <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
                         <span className="flex items-center gap-2">
+                          <LeadAvatar name={l.contactName} path={l.avatarPath} size={28} />
                           <button
                             type="button"
                             onClick={() => setDetailFor(l.id)}

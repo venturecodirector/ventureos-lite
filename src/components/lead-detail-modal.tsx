@@ -11,6 +11,7 @@ import {
 } from "@/modules/leads/detail";
 import { moveLeadStage, deleteLead } from "@/modules/leads/actions";
 import { PIPELINE_STAGES, SIDE_STAGES, STAGE_LABELS } from "@/modules/pipeline/transitions";
+import { LeadAvatar } from "./lead-avatar";
 import { Modal } from "./modal";
 
 const INPUT =
@@ -139,6 +140,7 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
   return (
     <Modal onClose={onClose} labelledBy="lead-modal-title" wide>
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        <LeadAvatar name={form.contactName} path={detail.avatarPath} size={40} />
         <h3 id="lead-modal-title" className="font-display text-lg font-bold lowercase">
           {form.contactName || form.companyName || "lead"}
         </h3>
@@ -168,6 +170,29 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
         >
           {msg.text}
         </p>
+      )}
+
+      {/* The capture brief: written once by Haiku from the About text and the
+          person's recent posts, cached on the lead. It was being generated and
+          paid for since P1/1e without ever being shown. */}
+      {detail.personBrief && (
+        <section
+          className="mb-3 rounded-[11px] border border-accent-soft bg-accent-soft p-3"
+          data-testid="lead-person-brief"
+        >
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent-ink">
+            From the captured profile
+          </p>
+          <p className="text-[12.5px] leading-relaxed text-[#C9CEE3]">{detail.personBrief}</p>
+          {detail.bio && (
+            <details className="mt-1.5">
+              <summary className="cursor-pointer text-[11.5px] text-muted">About text</summary>
+              <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-muted">
+                {detail.bio}
+              </p>
+            </details>
+          )}
+        </section>
       )}
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">

@@ -120,6 +120,18 @@
   const ogParts = splitTitle(meta("og:title"));
   const titleParts = splitTitle(document.title);
 
+  // Recent posts the person published or shared. Read from whatever the profile
+  // already rendered — no scrolling and no "show more", so this is the first few
+  // visible items or nothing.
+  const posts = [
+    ...document.querySelectorAll(
+      ".feed-shared-update-v2 .update-components-text, .profile-creator-shared-feed-update__container .update-components-text",
+    ),
+  ]
+    .slice(0, 3)
+    .map((el) => text(el))
+    .filter(Boolean);
+
   // ---- layer 4: CSS (last resort) ----------------------------------------
   const pick = (selectors) => {
     for (const sel of selectors) {
@@ -191,6 +203,52 @@
     }
   }
 
+  // ---- job title ---------------------------------------------------------
+  // Distinct from the headline on purpose. A headline is free text and is very
+  // often a slogan ("helping brands grow ↗"), while the experience block states
+  // an actual role. JSON-LD's jobTitle is the same idea, so it is reused as the
+  // first layer.
+  let jobTitle = take("jobTitle", "json-ld", ld.headline);
+  if (!jobTitle) {
+    for (const section of document.querySelectorAll("section")) {
+      const heading = text(section.querySelector("h2"));
+      if (!heading || !/^(experience|tapasztalat|munkatapasztalat)/i.test(heading)) continue;
+      // The first entry is the current role; its bold line is the title.
+      const first = section.querySelector("li");
+      const found = text(
+        (first || section).querySelector(
+          ".t-bold span[aria-hidden='true'], .mr1.t-bold span, .t-bold",
+        ),
+      );
+      if (found) {
+        jobTitle = take("jobTitle", "css", found);
+        break;
+      }
+    }
+  }
+
+  // ---- contact details ---------------------------------------------------
+  // ONLY from text the person published on the page we already read — their
+  // About section, headline and posts. LinkedIn keeps real contact details
+  // behind a "Contact info" overlay that requires a click, and clicking is
+  // automation this file does not do (see the boundary note at the top). So an
+  // address appears here exactly when its owner chose to publish it in prose.
+  const published = [headline, bio, ...posts].filter(Boolean).join("\n");
+
+  const emailMatch = published.match(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/);
+  // Ignore LinkedIn's own addresses, which appear in boilerplate rather than
+  // being anybody's contact address.
+  const email =
+    emailMatch && !/@(linkedin|licdn)\.com$/i.test(emailMatch[0])
+      ? take("email", "published-text", emailMatch[0])
+      : null;
+
+  // Hungarian and international forms: +36 1 234 5678, 06-1-234-5678,
+  // +44 20 1234 5678. Requires a leading + or 0 so years and figures quoted in
+  // a post are not read as phone numbers.
+  const phoneMatch = published.match(/(?:\+|\b0)[\d][\d\s\-().]{7,17}\d/);
+  const phone = phoneMatch ? take("phone", "published-text", phoneMatch[0]) : null;
+
   const photoEl =
     document.querySelector("img.pv-top-card-profile-picture__image--show") ||
     document.querySelector("main img.presence-entity__image") ||
@@ -201,10 +259,6 @@
     take("photoUrl", "og:image", meta("og:image")) ||
     take("photoUrl", "css", photoEl && photoEl.src);
 
-  const posts = [...document.querySelectorAll(".feed-shared-update-v2 .update-components-text")]
-    .slice(0, 3)
-    .map((el) => text(el))
-    .filter(Boolean);
 
   // undefined, not null, for anything not found. JSON.stringify drops undefined
   // keys entirely, which is what "absent" should look like on the wire — and
@@ -218,6 +272,9 @@
     headline: absent(headline),
     companyName: absent(companyName),
     location: absent(location),
+    jobTitle: absent(jobTitle),
+    email: absent(email),
+    phone: absent(phone),
     bio: absent(bio),
     photoUrl: absent(photoUrl),
     posts,

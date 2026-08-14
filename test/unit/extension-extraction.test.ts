@@ -81,6 +81,9 @@ function run(doc: ReturnType<typeof fakeDocument>) {
     companyName?: string;
     location?: string;
     bio?: string;
+    jobTitle?: string;
+    email?: string;
+    phone?: string;
     photoUrl?: string;
     posts: string[];
     _from: Record<string, string>;
@@ -195,5 +198,66 @@ describe("robustness", () => {
       if (key === "_from" || key === "posts") continue;
       expect(value, `${key} must be a string or absent, never null`).not.toBeNull();
     }
+  });
+});
+
+/**
+ * Contact details, and the line this must not cross.
+ *
+ * LinkedIn keeps real contact details behind a "Contact info" overlay that only
+ * opens on a click, and the content script does not click. So an address is read
+ * here exactly when the person chose to publish it in their own prose — which is
+ * a different act from harvesting a hidden field, and is the only version of
+ * this feature that stays inside CLAUDE.md's no-scraping rule.
+ */
+describe("contact details, only where the person published them", () => {
+  it("reads an address and a number out of the About text", () => {
+    const out = run(
+      fakeDocument({
+        meta: {
+          "og:title": "Nagy Anna - Ügyvezető | LinkedIn",
+          "og:description":
+            "Fogászati rendelőt vezetek. Írj: anna@danubia.hu vagy hívj: +36 1 234 5678.",
+        },
+      }),
+    );
+    expect(out.email).toBe("anna@danubia.hu");
+    expect(out.phone?.replace(/\s/g, "")).toBe("+3612345678");
+    expect(out._from.email).toBe("published-text");
+  });
+
+  it("leaves them absent when the profile never states them", () => {
+    const out = run(fakeDocument({ jsonLd: PERSON_LD }));
+    expect(out.email).toBeUndefined();
+    expect(out.phone).toBeUndefined();
+  });
+
+  it("does not mistake a year or a figure in a post for a phone number", () => {
+    const out = run(
+      fakeDocument({
+        meta: { "og:description": "1998 óta 15000 beteget kezeltünk, 3 rendelőben." },
+      }),
+    );
+    expect(out.phone).toBeUndefined();
+  });
+
+  it("ignores LinkedIn's own addresses, which belong to nobody", () => {
+    const out = run(
+      fakeDocument({ meta: { "og:description": "Kapcsolat: noreply@linkedin.com" } }),
+    );
+    expect(out.email).toBeUndefined();
+  });
+});
+
+describe("job title is separate from the headline", () => {
+  it("prefers the stated role over a slogan", () => {
+    // A headline is marketing copy; jobTitle is what the person actually is.
+    const out = run(
+      fakeDocument({
+        jsonLd: PERSON_LD,
+        meta: { "og:title": "Nagy Anna - helping brands grow ↗ | LinkedIn" },
+      }),
+    );
+    expect(out.jobTitle).toBe("Ügyvezető");
   });
 });

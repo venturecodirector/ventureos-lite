@@ -15,6 +15,8 @@ const CONTENT_TYPES: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
+  // Accepted by the avatar downloader, so it has to be servable too.
+  webp: "image/webp",
   zip: "application/zip",
   csv: "text/csv",
 };

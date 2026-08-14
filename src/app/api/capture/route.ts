@@ -64,7 +64,7 @@ export async function POST(req: Request): Promise<Response> {
   // capture of the same person updates rather than duplicating.
   const existing = await db.lead.findFirst({
     where: { linkedinUrl: input.url },
-    select: { id: true, contactName: true, bio: true, personBrief: true },
+    select: { id: true, contactName: true, bio: true, personBrief: true, title: true, email: true, phone: true },
   });
 
   let companyId: string | null = null;
@@ -87,7 +87,11 @@ export async function POST(req: Request): Promise<Response> {
         where: { id: existing.id },
         data: {
           contactName: input.name ?? existing.contactName,
-          title: input.headline ?? undefined,
+          // A real role beats the headline, which is often a slogan. Never
+          // overwrite something a human already typed here.
+          title: existing.title ?? input.jobTitle ?? input.headline ?? undefined,
+          email: existing.email ?? input.email ?? undefined,
+          phone: existing.phone ?? input.phone ?? undefined,
           bio: input.bio ?? undefined,
           companyId: companyId ?? undefined,
         },
@@ -98,7 +102,9 @@ export async function POST(req: Request): Promise<Response> {
           workspaceId: identity.workspaceId,
           companyId,
           contactName: input.name ?? null,
-          title: input.headline ?? null,
+          title: input.jobTitle ?? input.headline ?? null,
+          email: input.email ?? null,
+          phone: input.phone ?? null,
           linkedinUrl: input.url,
           bio: input.bio ?? null,
           source: "LINKEDIN",

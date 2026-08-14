@@ -122,3 +122,34 @@ describe("whitespace", () => {
     expect(parsed.success && parsed.data.name).toBe("Nagy Anna");
   });
 });
+
+/**
+ * The fields added after the first round of live use: a real job title, and
+ * contact details where the person published them in their own prose.
+ */
+describe("the later capture fields", () => {
+  it("accepts a job title, email and phone", () => {
+    const out = captureBodySchema.parse({
+      url: "https://www.linkedin.com/in/nagy-anna",
+      jobTitle: "Ügyvezető",
+      email: "anna@danubia.hu",
+      phone: "+36 1 234 5678",
+    });
+    expect(out.jobTitle).toBe("Ügyvezető");
+    expect(out.email).toBe("anna@danubia.hu");
+    expect(out.phone).toBe("+36 1 234 5678");
+  });
+
+  it("still treats them as absent when the extension sends null", () => {
+    // An installed older extension keeps sending nulls; the server is the side
+    // that has to stay forgiving.
+    const out = captureBodySchema.parse({
+      url: "https://www.linkedin.com/in/nagy-anna",
+      jobTitle: null,
+      email: null,
+      phone: null,
+    });
+    expect(out.jobTitle).toBeUndefined();
+    expect(out.email).toBeUndefined();
+  });
+});

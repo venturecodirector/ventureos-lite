@@ -59,6 +59,12 @@ export const captureBodySchema = z.object({
   headline: looseString(400),
   companyName: looseString(200),
   location: looseString(200),
+  /** The current role from the experience block — LinkedIn's headline is free
+   *  text and often a slogan, so a real job title is a separate field. */
+  jobTitle: looseString(200),
+  /** Only ever what the person published in their own profile text. */
+  email: looseString(320),
+  phone: looseString(60),
   bio: looseString(8000),
   photoUrl: looseUrl(2000),
   posts: z

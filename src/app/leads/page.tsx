@@ -39,6 +39,7 @@ export default async function LeadsPage() {
       id: l.id,
       companyId: l.companyId,
       contactName: l.contactName,
+      avatarPath: l.avatarPath,
       title: l.title,
       company: l.company?.name ?? "—",
       industry: l.company?.industry ?? null,

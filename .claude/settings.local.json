@@ -177,7 +177,16 @@
       "Bash(cp __TRACKED_VAR__/rasterize.mjs ./_rasterize.mjs)",
       "Bash(node ./_rasterize.mjs)",
       "Bash('\\) *)",
-      "Bash(node -e \"console.log\\('axe-core', require\\('axe-core/package.json'\\).version\\)\")"
+      "Bash(node -e \"console.log\\('axe-core', require\\('axe-core/package.json'\\).version\\)\")",
+      "Bash(git stash *)",
+      "Bash(FILES_DIR=/tmp/venture-files npx playwright test e2e/public-audit-landing.spec.ts)",
+      "Bash(FILES_DIR=/tmp/venture-files npx playwright test e2e/public-audit-landing.spec.ts --grep \"English landing\")",
+      "Bash(FILES_DIR=/tmp/venture-files npx playwright test)",
+      "Bash(git tag -a pre-public-landing main -m 'Live state before the bilingual public audit landing. *)",
+      "Bash(git merge *)",
+      "Bash(FILES_DIR=/tmp/venture-files npx playwright test e2e/shell.spec.ts e2e/desktop-layout.spec.ts)",
+      "Bash(FILES_DIR=/tmp/venture-files npx playwright test e2e/shell.spec.ts)",
+      "Bash(git tag -a pre-email-sync main -m 'Live state before email sync and the greeting fix. *)"
     ]
   },
   "enableAllProjectMcpServers": true,
