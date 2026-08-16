@@ -169,16 +169,27 @@ export function visibleTypesFor(role: string): NotificationType[] {
  * Owner-only notifications once they are not. An unknown type resolves to
  * silence, so a row left behind by a retired type cannot resurrect it.
  */
+export type StoredChannels = {
+  [K in keyof Channels]?: boolean | null;
+};
+
 export function resolveChannels(
   type: string,
-  stored: Partial<Channels> | null | undefined,
+  stored: StoredChannels | null | undefined,
   role: string,
 ): Channels {
   if (!isNotificationType(type)) return { ...ALL_OFF };
   if (NOTIFICATION_TYPE_DEFS[type].ownerOnly && !(role === "OWNER" || role === "ADMIN")) {
     return { ...ALL_OFF };
   }
-  return { ...defaultChannels(type), ...(stored ?? {}) };
+  const resolved = defaultChannels(type);
+  // Only an explicit boolean overrides. null/undefined mean "no opinion", and
+  // spreading them in would turn a channel the TYPE enables into a falsy value.
+  for (const key of ["inApp", "push", "emailDigest"] as const) {
+    const value = stored?.[key];
+    if (typeof value === "boolean") resolved[key] = value;
+  }
+  return resolved;
 }
 
 /**

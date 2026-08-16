@@ -1428,9 +1428,14 @@ model NotificationPreference {
   workspaceId String   @map("workspace_id")
   userId      String   @map("user_id")
   type        String
-  inApp       Boolean  @default(true) @map("in_app")
-  push        Boolean  @default(false)
-  emailDigest Boolean  @default(false) @map("email_digest")
+  /// NULL means "no opinion — use the per-type default in types.ts".
+  /// Nullable rather than defaulted, because a column default is a SECOND set
+  /// of defaults that silently disagrees with the code's: a row written with
+  /// only `push` set would take the column defaults for the other two and quietly
+  /// switch off a channel the type turns on.
+  inApp       Boolean? @map("in_app")
+  push        Boolean?
+  emailDigest Boolean? @map("email_digest")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@unique([workspaceId, userId, type])

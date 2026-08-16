@@ -118,6 +118,30 @@ describe("resolving a user's channels", () => {
     expect(resolved.inApp).toBe(defaultChannels("callback_due").inApp);
   });
 
+  it("ignores a channel the row leaves unset, keeping the TYPE's default", () => {
+    // The bug this pins: a partial preference row used to take the DATABASE
+    // column defaults for the channels it did not set, which is a second set of
+    // defaults competing with the ones in this file. callback_due enables the
+    // digest; a row that only turns push on must not switch it off.
+    const resolved = resolveChannels("callback_due", { push: true }, "BDR");
+    expect(resolved.emailDigest).toBe(defaultChannels("callback_due").emailDigest);
+    expect(resolved.emailDigest).toBe(true);
+    expect(resolved.push).toBe(true);
+  });
+
+  it("treats an explicit null as no opinion, not as false", () => {
+    const resolved = resolveChannels(
+      "callback_due",
+      { inApp: null, push: null, emailDigest: null },
+      "BDR",
+    );
+    expect(resolved).toEqual(defaultChannels("callback_due"));
+  });
+
+  it("still lets an explicit false switch a channel off", () => {
+    expect(resolveChannels("callback_due", { emailDigest: false }, "BDR").emailDigest).toBe(false);
+  });
+
   it("returns everything off for a type that does not exist any more", () => {
     // A preference row written before a type was retired must not resurrect it.
     expect(resolveChannels("meeting_cancelled", { inApp: true }, "OWNER")).toEqual({

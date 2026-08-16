@@ -40,10 +40,16 @@ async function columnValues(page: Page, header: string): Promise<string[]> {
  * check goes back to the server rather than trusting the cached render.
  */
 async function expectRowEventually(page: Page, name: string) {
-  await expect(async () => {
-    if (!(await page.locator("tr", { hasText: name }).count())) await page.reload();
-    await expect(page.locator("tr", { hasText: name })).toBeVisible({ timeout: 2_000 });
-  }).toPass({ timeout: 20_000 });
+  // Generous, and it reloads only after a real wait rather than after a short
+  // one: the seeded workspace accumulates leads across runs, the dev-mode page
+  // render grows with it, and a 2s inner timeout meant every attempt gave up
+  // before the table had painted and then reloaded into the same race.
+  await expect(page.locator("tr", { hasText: name })).toBeVisible({ timeout: 15_000 }).catch(
+    async () => {
+      await page.reload();
+      await expect(page.locator("tr", { hasText: name })).toBeVisible({ timeout: 15_000 });
+    },
+  );
 }
 
 async function createLead(page: Page, name: string, company: string) {
