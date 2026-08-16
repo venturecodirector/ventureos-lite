@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getShellContext } from "@/modules/workspaces/actions";
 import type { BudgetStatus } from "@/lib/ai/budget-status";
+import { NotificationBell } from "./notification-bell";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { MobileNav, type MobileNavItem } from "./mobile-nav";
 import { GlobalSearch } from "./global-search";
@@ -258,6 +259,13 @@ export async function AppShell({
             />
           </div>
           <BudgetMeter budget={shell.budget} compact />
+          {/* Kept on the phone header: the playbook's whole point is triage on
+              the move, and the bell is the one control that cannot be dropped
+              at 390px without defeating it. */}
+          <NotificationBell
+            initialUnread={shell.unreadNotifications}
+            testId="notification-bell-mobile"
+          />
         </header>
 
         <header className="hidden flex-none items-center gap-3 border-b border-line px-7 py-4 nav:flex">
@@ -265,6 +273,7 @@ export async function AppShell({
             <Greeting suffix={firstName} />
           </h1>
           <GlobalSearch className="ml-auto w-[clamp(180px,22vw,320px)] min-w-0 flex-none" />
+          <NotificationBell initialUnread={shell.unreadNotifications} />
           <TopBarActions />
           <AccountMenu
             name={shell.user.name}

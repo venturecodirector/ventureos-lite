@@ -10,6 +10,7 @@ import { requireOwner } from "@/lib/authz";
 import { GRANTS, OWNER_GRANTS, type Grant } from "@/lib/grants";
 import { NO_PASSWORD } from "@/lib/auth/password";
 import { getBudgetStatus, type BudgetStatus } from "@/lib/ai/budget-status";
+import { unreadCount } from "@/modules/notifications/store";
 
 // ---- reads (shell + settings) ---------------------------------------------
 
@@ -29,6 +30,8 @@ export interface ShellContext {
   mustEnrollTotp: boolean;
   /** Today's real Claude spend vs this workspace's cap — drives the shell meter. */
   budget: BudgetStatus;
+  /** Unread notifications for this user in this workspace — the bell badge. */
+  unreadNotifications: number;
 }
 
 function initials(name: string): string {
@@ -59,6 +62,9 @@ export async function getShellContext(): Promise<ShellContext> {
   }));
   const role = memberships.find((m) => m.workspaceId === workspaceId)?.role ?? "BDR";
   const budget = await getBudgetStatus(workspaceId);
+  // Server-rendered so the bell badge is right on first paint rather than
+  // popping in. A count on an indexed column — cheap enough for every page.
+  const unreadNotifications = await unreadCount(workspaceId, userId);
   return {
     user: {
       id: userId,
@@ -71,6 +77,7 @@ export async function getShellContext(): Promise<ShellContext> {
     role,
     mustEnrollTotp: user?.mustEnrollTotp ?? false,
     budget,
+    unreadNotifications,
   };
 }
 
