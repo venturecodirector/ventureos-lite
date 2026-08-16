@@ -13,6 +13,7 @@ import { computeQuoteTotals, type QuoteItem } from "./quote-math";
 import { buildDocumentData } from "./data";
 import { enqueueDocumentPdf } from "./enqueue";
 import { notifyQuoteDeclined } from "../notifications/notify";
+import { brandFrom } from "@/modules/workspaces/brand";
 import {
   canCreateContract,
   canCreateCertificate,
@@ -260,14 +261,14 @@ async function partyFor(
   if (!quote || quote.type !== "QUOTE") throw new Error("Quote not found");
   const ws = await prismaUnsafe.workspace.findUnique({
     where: { id: workspaceId },
-    select: { legalName: true },
+    select: { legalName: true, brand: true },
   });
   const company = quote.lead?.company;
   const registry = company?.registry;
   const party: ContractParty = {
     clientLegalName: registry?.legalName ?? company?.name ?? "",
     clientTaxId: registry?.taxId ?? company?.taxId ?? "",
-    contractorLegalName: ws?.legalName ?? "Venture CO Group Kft.",
+    contractorLegalName: ws?.legalName ?? brandFrom(ws?.brand).legalName,
   };
   const items = ((quote.payload ?? {}) as { items?: QuoteItem[] }).items ?? [];
   return { party, items, leadId: quote.leadId ?? "", status: quote.status };

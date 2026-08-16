@@ -211,8 +211,10 @@ export async function AppShell({
         </div>
 
         <div className="flex-none px-2.5 pb-5 pt-3 font-display text-[22px] tracking-display">
-          <b className="font-extrabold">venture</b>
-          <span className="ml-1.5 font-light text-muted">os</span>
+          <b className="font-extrabold">{shell.brand.markBold}</b>
+          {shell.brand.markLight ? (
+            <span className="ml-1.5 font-light text-muted">{shell.brand.markLight}</span>
+          ) : null}
           <em className="ml-1.5 rounded-[5px] border border-line px-1.5 py-px align-middle text-[9px] font-semibold not-italic uppercase tracking-[0.14em] text-muted">
             lite
           </em>

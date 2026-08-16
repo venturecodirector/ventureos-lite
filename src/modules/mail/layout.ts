@@ -21,17 +21,58 @@ import { VENTURE_BRAND, brandFooterLine, type WorkspaceBrand } from "@/modules/w
  * likewise, ink #EFF1F8, muted #858CAE, accent #7427C6.
  */
 
-const CANVAS = "#00051D";
-/** Flattened equivalents of the translucent panel/border tokens over canvas. */
-const PANEL = "#0A0F26";
-const BORDER = "#1B2138";
-const INK = "#EFF1F8";
-const MUTED = "#858CAE";
-const ACCENT = "#7427C6";
-const GRADIENT = "linear-gradient(135deg, #310B59, #7427C6)";
+/**
+ * The email palette, derived per send from the sending workspace's brand
+ * (audit-v2 item 6).
+ *
+ * HTML email cannot use CSS custom properties — Outlook and several webmail
+ * clients strip or ignore them — so the values are interpolated as literal hex
+ * at render time instead. That is why this file computes a palette rather than
+ * emitting `var(--brand-*)` like the PDF templates do.
+ *
+ * PANEL and BORDER are derived by mixing the accent-free surface toward the
+ * text colour, so a light-canvas workspace gets a light panel rather than the
+ * seed's near-black one.
+ */
+function paletteOf(brand: WorkspaceBrand) {
+  return {
+    canvas: brand.canvas,
+    panel: mix(brand.canvas, brand.ink, 0.04),
+    border: mix(brand.canvas, brand.ink, 0.12),
+    ink: brand.ink,
+    muted: brand.muted,
+    accent: brand.color,
+    gradient: `linear-gradient(135deg, ${brand.gradientFrom}, ${brand.gradientTo})`,
+  };
+}
 
-const FONT =
+/** Blend two hex colours. Used only to derive the panel and border surfaces. */
+function mix(from: string, to: string, amount: number): string {
+  const parse = (hex: string) => {
+    const v = hex.replace("#", "");
+    const full = v.length === 3 ? v.split("").map((c) => c + c).join("") : v.slice(0, 6);
+    return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+  };
+  const a = parse(from);
+  const b = parse(to);
+  const out = a.map((c, i) => Math.round(c + (b[i] - c) * amount));
+  return `#${out.map((c) => c.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+/** Flattened equivalents of the translucent panel/border tokens over canvas. */
+
+/**
+ * The historical email font chain, kept verbatim so an unconfigured workspace's
+ * mail renders exactly as it did. A configured body font is prepended.
+ */
+const EMAIL_FONT_FALLBACK =
   "-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif";
+
+function emailFont(brand: WorkspaceBrand): string {
+  return brand.fontBody === VENTURE_BRAND.fontBody
+    ? EMAIL_FONT_FALLBACK
+    : `'${brand.fontBody}', ${EMAIL_FONT_FALLBACK}`;
+}
 
 export interface EmailButton {
   label: string;
@@ -116,10 +157,13 @@ export function brandEmailText(o: BrandEmailOptions): string {
 }
 
 export function brandEmail(o: BrandEmailOptions): string {
+  const brand = o.brand ?? VENTURE_BRAND;
+  const pal = paletteOf(brand);
+  const font = emailFont(brand);
   const paragraphs = o.paragraphs
     .map(
       (p) =>
-        `<p style="margin:0 0 14px;font-family:${FONT};font-size:15px;line-height:1.6;color:${INK};">${escapeHtml(
+        `<p style="margin:0 0 14px;font-family:${font};font-size:15px;line-height:1.6;color:${pal.ink};">${escapeHtml(
           p,
         )}</p>`,
     )
@@ -131,10 +175,10 @@ export function brandEmail(o: BrandEmailOptions): string {
         .map(
           (r) =>
             `<tr>` +
-            `<td style="padding:8px 0;border-bottom:1px solid ${BORDER};font-family:${FONT};font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:${MUTED};white-space:nowrap;">${escapeHtml(
+            `<td style="padding:8px 0;border-bottom:1px solid ${pal.border};font-family:${font};font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:${pal.muted};white-space:nowrap;">${escapeHtml(
               r.label,
             )}</td>` +
-            `<td style="padding:8px 0 8px 16px;border-bottom:1px solid ${BORDER};font-family:${FONT};font-size:14px;font-weight:600;color:${INK};text-align:right;">${escapeHtml(
+            `<td style="padding:8px 0 8px 16px;border-bottom:1px solid ${pal.border};font-family:${font};font-size:14px;font-weight:600;color:${pal.ink};text-align:right;">${escapeHtml(
               r.value,
             )}</td>` +
             `</tr>`,
@@ -147,15 +191,15 @@ export function brandEmail(o: BrandEmailOptions): string {
   // on border-radius or background-image support.
   const button = o.button
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:22px 0 6px;">` +
-      `<tr><td align="center" bgcolor="${ACCENT}" style="border-radius:10px;background-color:${ACCENT};background-image:${GRADIENT};">` +
-      `<a href="${escapeHtml(o.button.url)}" style="display:inline-block;padding:12px 22px;font-family:${FONT};font-size:14px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:10px;">${escapeHtml(
+      `<tr><td align="center" bgcolor="${pal.accent}" style="border-radius:10px;background-color:${pal.accent};background-image:${pal.gradient};">` +
+      `<a href="${escapeHtml(o.button.url)}" style="display:inline-block;padding:12px 22px;font-family:${font};font-size:14px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:10px;">${escapeHtml(
         o.button.label,
       )}</a>` +
       `</td></tr></table>`
     : "";
 
   const footNote = o.footNote
-    ? `<p style="margin:16px 0 0;font-family:${FONT};font-size:12px;line-height:1.5;color:${MUTED};">${escapeHtml(
+    ? `<p style="margin:16px 0 0;font-family:${font};font-size:12px;line-height:1.5;color:${pal.muted};">${escapeHtml(
         o.footNote,
       )}</p>`
     : "";
@@ -167,20 +211,20 @@ export function brandEmail(o: BrandEmailOptions): string {
 <meta name="color-scheme" content="dark light">
 <title>${escapeHtml(o.heading)}</title>
 </head>
-<body style="margin:0;padding:0;background-color:${CANVAS};">
+<body style="margin:0;padding:0;background-color:${pal.canvas};">
 <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${escapeHtml(
     o.preheader,
   )}</div>
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${CANVAS};">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${pal.canvas};">
   <tr><td align="center" style="padding:32px 16px;">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;">
 
-      <tr><td style="padding:0 0 18px;font-family:${FONT};font-size:17px;color:${INK};">
-        <span style="font-weight:800;">${escapeHtml(identityOf(o).markBold)}</span><span style="font-weight:300;color:${MUTED};"> ${escapeHtml(identityOf(o).markLight)}</span>
+      <tr><td style="padding:0 0 18px;font-family:${font};font-size:17px;color:${pal.ink};">
+        <span style="font-weight:800;">${escapeHtml(identityOf(o).markBold)}</span><span style="font-weight:300;color:${pal.muted};"> ${escapeHtml(identityOf(o).markLight)}</span>
       </td></tr>
 
-      <tr><td style="background-color:${PANEL};border:1px solid ${BORDER};border-radius:14px;padding:28px;">
-        <h1 style="margin:0 0 14px;font-family:${FONT};font-size:22px;line-height:1.3;font-weight:700;color:${INK};">${escapeHtml(
+      <tr><td style="background-color:${pal.panel};border:1px solid ${pal.border};border-radius:14px;padding:28px;">
+        <h1 style="margin:0 0 14px;font-family:${font};font-size:22px;line-height:1.3;font-weight:700;color:${pal.ink};">${escapeHtml(
           o.heading,
         )}</h1>
         ${paragraphs}
@@ -190,7 +234,7 @@ export function brandEmail(o: BrandEmailOptions): string {
 
       <tr><td style="padding:14px 4px 0;">
         ${footNote}
-        <p style="margin:14px 0 0;font-family:${FONT};font-size:11px;line-height:1.5;color:${MUTED};">
+        <p style="margin:14px 0 0;font-family:${font};font-size:11px;line-height:1.5;color:${pal.muted};">
           ${escapeHtml(identityOf(o).footer)} · this message was sent because of a
           direct interaction with us.
         </p>

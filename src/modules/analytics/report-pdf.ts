@@ -48,8 +48,8 @@ export function buildReportPdfHtml(
   body { font-family: var(--brand-font-body); background: var(--brand-canvas); color: var(--brand-ink); padding: 44px 42px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   ${brandBaseCss()}
   .brand { margin-bottom: 2px; }
-  .brand b { font-weight: 800; } .brand span { font-weight: 300; color: #858CAE; margin-left: 6px; }
-  .kicker { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #858CAE; margin-bottom: 18px; }
+  .brand b { font-weight: 800; } .brand span { font-weight: 300; color: var(--brand-muted); margin-left: 6px; }
+  .kicker { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brand-muted); margin-bottom: 18px; }
   h2 { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--brand-accent); margin: 18px 0 6px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   td, th { text-align: left; padding: 5px 0; border-bottom: 1px solid rgba(239,241,248,0.09); color: #C9CEE3; }

@@ -1,3 +1,4 @@
+import { VENTURE_BRAND } from "@/modules/workspaces/brand";
 /**
  * Variable catalog for {{...}} autocompletion, and sample data for the live
  * preview (spec §4.10).
@@ -38,7 +39,9 @@ export function isKnownVariable(path: string): boolean {
 
 export const SAMPLE_DATA: Record<string, unknown> = {
   workspace: {
-    legal_name: "Venture CO Group Kft.",
+    // Sample data for the template preview. The seed's legal name, read
+    // from the brand module rather than written here (audit-v2 item 6).
+    legal_name: VENTURE_BRAND.legalName,
     address: "1052 Budapest, Váci utca 1.",
     tax_id: "26841512-2-41",
   },

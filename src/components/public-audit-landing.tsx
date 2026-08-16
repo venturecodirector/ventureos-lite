@@ -74,7 +74,7 @@ export function PublicAuditLanding({
           {copy.hero.sub}
         </p>
 
-        <AuditRunnerIsland locale={locale} />
+        <AuditRunnerIsland locale={locale} brandName={brand.name} />
 
         {/* ---- how it works ---- */}
         <section className="mt-20">

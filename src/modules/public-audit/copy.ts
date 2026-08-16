@@ -185,8 +185,12 @@ const hu: LandingCopy = {
     email: "E-mail cím",
     company: "Cég neve",
     serviceConsent: "Kérem a teljes riportot e-mailben.",
+    // `{brand}` is replaced with the workspace's own name at render. The
+    // controller named in a consent record has to be the company actually
+    // collecting the data — naming a different one makes the record wrong in
+    // the way that matters (audit-v2 item 6).
     marketingConsent:
-      "Hozzájárulok, hogy a Venture CO Group a riport eredményei kapcsán megkeressen. Ezt bármikor visszavonhatom.",
+      "Hozzájárulok, hogy a {brand} a riport eredményei kapcsán megkeressen. Ezt bármikor visszavonhatom.",
     submit: "Riport kérése",
     submitBusy: "Küldjük…",
     success: "Elküldtük.",
@@ -312,7 +316,7 @@ const en: LandingCopy = {
     company: "Company",
     serviceConsent: "Send me the full report by email.",
     marketingConsent:
-      "I agree that Venture CO Group may contact me about the findings in this report. I can withdraw this at any time.",
+      "I agree that {brand} may contact me about the findings in this report. I can withdraw this at any time.",
     submit: "Send the report",
     submitBusy: "Sending…",
     success: "On its way.",
@@ -367,6 +371,22 @@ const en: LandingCopy = {
 };
 
 export const LANDING_COPY: Record<Locale, LandingCopy> = { hu, en };
+
+/**
+ * Fill the brand placeholders in a copy deck.
+ *
+ * Only the consent line carries one today, and it is the one that must: the
+ * controller a prospect consents to has to be the company collecting their
+ * data. Applied at render rather than baked in, so the STORED consent text
+ * version stays comparable across workspaces.
+ */
+export function withBrand(copy: LandingCopy, brandName: string): LandingCopy {
+  const fill = (s: string) => s.replace(/\{brand\}/g, brandName);
+  return {
+    ...copy,
+    unlock: { ...copy.unlock, marketingConsent: fill(copy.unlock.marketingConsent) },
+  };
+}
 
 export function copyFor(locale: Locale): LandingCopy {
   return LANDING_COPY[locale];

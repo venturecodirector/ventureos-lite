@@ -7,7 +7,7 @@ import {
   type PublicAuditStatus,
 } from "@/modules/public-audit/actions";
 import { unlockFullReport } from "@/modules/public-audit/unlock";
-import { copyFor } from "@/modules/public-audit/copy";
+import { copyFor, withBrand } from "@/modules/public-audit/copy";
 import type { Locale } from "@/lib/locale";
 import { JobProgress } from "./job-progress";
 
@@ -32,7 +32,14 @@ type Phase =
   | { kind: "done"; status: PublicAuditStatus }
   | { kind: "refused"; message: string; friendly: boolean };
 
-export function AuditRunnerIsland({ locale }: { locale: Locale }) {
+export function AuditRunnerIsland({
+  locale,
+  brandName,
+}: {
+  locale: Locale;
+  /** The workspace collecting the data — it is named in the consent line. */
+  brandName: string;
+}) {
   const copy = copyFor(locale);
   const [url, setUrl] = useState("");
   const [honeypot, setHoneypot] = useState("");
@@ -173,14 +180,22 @@ export function AuditRunnerIsland({ locale }: { locale: Locale }) {
       )}
 
       {phase.kind === "done" && phase.status.status === "done" && (
-        <Teaser status={phase.status} locale={locale} />
+        <Teaser status={phase.status} locale={locale} brandName={brandName} />
       )}
     </div>
   );
 }
 
 /** Score, the three findings that matter most, both screenshots. */
-function Teaser({ status, locale }: { status: PublicAuditStatus; locale: Locale }) {
+function Teaser({
+  status,
+  locale,
+  brandName,
+}: {
+  status: PublicAuditStatus;
+  locale: Locale;
+  brandName: string;
+}) {
   const copy = copyFor(locale);
   const site = status.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
@@ -239,14 +254,23 @@ function Teaser({ status, locale }: { status: PublicAuditStatus; locale: Locale 
         )}
       </div>
 
-      <UnlockForm publicAuditId={status.id} locale={locale} />
+      <UnlockForm publicAuditId={status.id} locale={locale} brandName={brandName} />
     </div>
   );
 }
 
 /** Name, email, company, and two separate consents (P12/1b). */
-function UnlockForm({ publicAuditId, locale }: { publicAuditId: string; locale: Locale }) {
-  const copy = copyFor(locale);
+function UnlockForm({
+  publicAuditId,
+  locale,
+  brandName,
+}: {
+  publicAuditId: string;
+  locale: Locale;
+  /** Named in the consent line — it has to be the controller (item 6). */
+  brandName: string;
+}) {
+  const copy = withBrand(copyFor(locale), brandName);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");

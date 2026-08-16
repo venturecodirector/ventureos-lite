@@ -93,7 +93,7 @@ export async function getPublicQuote(slug: string): Promise<PublicQuote | null> 
 
   return {
     quoteNumber: payload.quoteNumber ?? "",
-    workspaceLegalName: ws?.legalName ?? "Venture CO Group",
+    workspaceLegalName: ws?.legalName ?? brandFrom(ws?.brand).legalName,
     clientCompany: doc.lead?.company?.name ?? "",
     validUntil: payload.validUntil ?? "",
     items: (payload.items ?? []).map((i) => ({

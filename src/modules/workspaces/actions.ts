@@ -11,6 +11,7 @@ import { GRANTS, OWNER_GRANTS, type Grant } from "@/lib/grants";
 import { NO_PASSWORD } from "@/lib/auth/password";
 import { getBudgetStatus, type BudgetStatus } from "@/lib/ai/budget-status";
 import { unreadCount } from "@/modules/notifications/store";
+import { brandFrom, type WorkspaceBrand } from "@/modules/workspaces/brand";
 
 // ---- reads (shell + settings) ---------------------------------------------
 
@@ -32,6 +33,8 @@ export interface ShellContext {
   budget: BudgetStatus;
   /** Unread notifications for this user in this workspace — the bell badge. */
   unreadNotifications: number;
+  /** The workspace's letterhead, for the shell wordmark. */
+  brand: WorkspaceBrand;
 }
 
 function initials(name: string): string {
@@ -62,6 +65,12 @@ export async function getShellContext(): Promise<ShellContext> {
   }));
   const role = memberships.find((m) => m.workspaceId === workspaceId)?.role ?? "BDR";
   const budget = await getBudgetStatus(workspaceId);
+  // The shell's wordmark is the WORKSPACE's, not the product's: once someone is
+  // signed in there is a workspace to brand with (audit-v2 item 6).
+  const brandRow = await prismaUnsafe.workspace.findUnique({
+    where: { id: workspaceId },
+    select: { brand: true },
+  });
   // Server-rendered so the bell badge is right on first paint rather than
   // popping in. A count on an indexed column — cheap enough for every page.
   const unreadNotifications = await unreadCount(workspaceId, userId);
@@ -78,6 +87,7 @@ export async function getShellContext(): Promise<ShellContext> {
     mustEnrollTotp: user?.mustEnrollTotp ?? false,
     budget,
     unreadNotifications,
+    brand: brandFrom(brandRow?.brand),
   };
 }
 

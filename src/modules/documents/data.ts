@@ -1,6 +1,7 @@
 import { buildQuoteData, type QuotePayload } from "./pdf-template";
 import type { QuoteTotals } from "./quote-math";
 import type { ContractPayload, CertificatePayload } from "./prefill";
+import { brandFrom } from "@/modules/workspaces/brand";
 
 /**
  * Assemble {{variable}} data for a stored document (quote / contract /
@@ -30,7 +31,9 @@ function baseData(doc: DocLike, workspace: WorkspaceLike | null) {
       : {};
   return {
     workspace: {
-      legal_name: workspace?.legalName ?? "Venture CO Group",
+      // The brand is the letterhead; legalName on the row is the older
+      // field and still wins when set (audit-v2 item 6).
+      legal_name: workspace?.legalName ?? brandFrom(workspace?.brand).legalName,
       tax_id: String(brand.tax_id ?? ""),
       address: String(brand.address ?? ""),
     },

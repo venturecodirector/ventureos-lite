@@ -6,6 +6,7 @@ import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { callClaude } from "@/lib/ai/call-claude";
 import { BudgetExceededError } from "@/lib/ai/budget";
+import { brandFrom } from "@/modules/workspaces/brand";
 import {
   CONTENT_DRAFT_SYSTEM,
   buildContentMessage,
@@ -311,7 +312,7 @@ export async function draftPostWithClaude(
 
   const workspace = await prismaUnsafe.workspace.findUnique({
     where: { id: workspaceId },
-    select: { legalName: true, name: true },
+    select: { legalName: true, name: true, brand: true },
   });
 
   let draft: ContentDraft;
@@ -328,7 +329,8 @@ export async function draftPostWithClaude(
             channel: post.channel,
             language: parsed.data.language,
             notes: parsed.data.notes,
-            companyName: workspace?.legalName || workspace?.name || "Venture CO Group",
+            companyName:
+              workspace?.legalName || workspace?.name || brandFrom(workspace?.brand).name,
           }),
         },
       ],

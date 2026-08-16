@@ -35,15 +35,15 @@ export function buildBriefPdfHtml(
   body { font-family: var(--brand-font-body); background: var(--brand-canvas); color: var(--brand-ink); padding: 44px 42px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   ${brandBaseCss()}
   .brand { margin-bottom: 4px; }
-  .brand b { font-weight: 800; } .brand span { font-weight: 300; color: #858CAE; margin-left: 6px; }
-  .kicker { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #858CAE; margin-bottom: 18px; }
+  .brand b { font-weight: 800; } .brand span { font-weight: 300; color: var(--brand-muted); margin-left: 6px; }
+  .kicker { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brand-muted); margin-bottom: 18px; }
   h1 { font-size: 19px; font-weight: 800; }
-  .meta { font-size: 12px; color: #858CAE; margin: 2px 0 18px; }
+  .meta { font-size: 12px; color: var(--brand-muted); margin: 2px 0 18px; }
   h2 { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--brand-accent); margin: 16px 0 5px; }
   p, li { font-size: 12.5px; line-height: 1.6; color: #C9CEE3; }
   ul { padding-left: 18px; } li { margin: 2px 0; }
-  ol { padding-left: 18px; } ol li { margin: 5px 0; color: #EFF1F8; }
-  .muted { color: #858CAE; }
+  ol { padding-left: 18px; } ol li { margin: 5px 0; color: var(--brand-ink); }
+  .muted { color: var(--brand-muted); }
 </style></head>
 <body style="${brandRootStyle(brand)}">
   ${brandMarkHtml(brand)}

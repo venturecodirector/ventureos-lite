@@ -6,6 +6,7 @@
  * Venture-specific.
  */
 import { VENTURE_BRAND, brandGradient, type WorkspaceBrand } from "../workspaces/brand";
+import { brandRootStyle } from "../workspaces/letterhead";
 import type { LogAnalysis } from "./analyze";
 
 function esc(s: string): string {
@@ -60,27 +61,27 @@ export function buildLogAppendixHtml(
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: #00051D; color: #EFF1F8; padding: 44px 40px;
+    background: var(--brand-canvas); color: var(--brand-ink); padding: 44px 40px;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   .brand { font-size: 20px; letter-spacing: -0.02em; margin-bottom: 4px; }
-  .brand b { font-weight: 800; } .brand span { font-weight: 300; color: #858CAE; margin-left: 6px; }
+  .brand b { font-weight: 800; } .brand span { font-weight: 300; color: var(--brand-muted); margin-left: 6px; }
   .logo { max-height: 30px; max-width: 200px; }
-  .kicker { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #858CAE; margin-bottom: 24px; }
+  .kicker { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brand-muted); margin-bottom: 24px; }
   h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 4px;
        background: ${brandGradient(brand)}; -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .lede { font-size: 11.5px; color: #858CAE; margin-bottom: 20px; }
+  .lede { font-size: 11.5px; color: var(--brand-muted); margin-bottom: 20px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 26px; }
   .block { break-inside: avoid; }
   .h { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-       color: #858CAE; border-bottom: 1px solid rgba(239,241,248,0.09); padding-bottom: 3px; margin-bottom: 5px; }
+       color: var(--brand-muted); border-bottom: 1px solid rgba(239,241,248,0.09); padding-bottom: 3px; margin-bottom: 5px; }
   table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
   td { padding: 2.5px 0; color: #C9CEE3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
-  td.num { text-align: right; color: #858CAE; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .muted { color: #858CAE; font-size: 10.5px; }
-  .foot { margin-top: 28px; padding-top: 12px; border-top: 1px solid rgba(239,241,248,0.09); font-size: 10px; color: #858CAE; }
+  td.num { text-align: right; color: var(--brand-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .muted { color: var(--brand-muted); font-size: 10.5px; }
+  .foot { margin-top: 28px; padding-top: 12px; border-top: 1px solid rgba(239,241,248,0.09); font-size: 10px; color: var(--brand-muted); }
 </style></head>
-<body>
+<body style="${brandRootStyle(brand)}">
   <div class="brand">${mark}</div>
   <div class="kicker">Szerverlog-elemzés</div>
   <h1>${esc(opts.companyName ?? "Szerverlog-elemzés")}</h1>
