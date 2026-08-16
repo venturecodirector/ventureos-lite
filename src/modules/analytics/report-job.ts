@@ -14,6 +14,7 @@ import {
 import { collectReportInput } from "./report-data";
 import { buildWeeklyReport, type WeeklyReport } from "./reports";
 import { buildReportPdfHtml } from "./report-pdf";
+import { brandFrom } from "@/modules/workspaces/brand";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
 
@@ -60,8 +61,12 @@ export async function generateWeeklyReport(
     data: { workspaceId, weekLabel: label, data: report as unknown as object, commentary },
   });
 
-  // Branded PDF via the shared pipeline.
-  const html = buildReportPdfHtml(report, commentary, null);
+  // Branded PDF via the shared pipeline — per workspace (audit-v2 item 6).
+  const brandRow = await prismaUnsafe.workspace.findUnique({
+    where: { id: workspaceId },
+    select: { brand: true },
+  });
+  const html = buildReportPdfHtml(report, commentary, null, brandFrom(brandRow?.brand));
   const pdf = await renderHtmlToPdf(html);
   const rel = `reports/${created.id}.pdf`;
   await mkdir(join(FILES_DIR, "reports"), { recursive: true });

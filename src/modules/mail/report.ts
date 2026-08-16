@@ -2,6 +2,7 @@ import { prismaUnsafe, getWorkspaceClient } from "../../lib/db";
 import { getMailProvider } from "./provider";
 import { resolveSendingIdentity } from "./identity";
 import { getTopReferrers } from "../referrals/data";
+import { brandFrom } from "@/modules/workspaces/brand";
 
 function huf(n: number): string {
   return `${n.toLocaleString("en-US").replace(/,/g, " ")} Ft`;
@@ -22,9 +23,10 @@ export async function sendFridayReport(workspaceId: string): Promise<void> {
 
   const ws = await prismaUnsafe.workspace.findUnique({
     where: { id: workspaceId },
-    select: { mailgunConfig: true },
+    select: { mailgunConfig: true, brand: true },
   });
-  const identity = resolveSendingIdentity(ws?.mailgunConfig);
+  const brand = brandFrom(ws?.brand);
+  const identity = resolveSendingIdentity(ws?.mailgunConfig, brand);
 
   const owners = await prismaUnsafe.membership.findMany({
     where: { workspaceId, role: "OWNER" },
@@ -37,8 +39,11 @@ export async function sendFridayReport(workspaceId: string): Promise<void> {
         .map((r) => `<li>${r.name} — ${huf(r.attributedRevenue)} (${r.won}/${r.referred} won)</li>`)
         .join("")}</ul>`
     : "";
+  // The workspace's own name, not the product's: a second workspace's Owner
+  // should not receive a report headed by this agency (audit-v2 item 6).
+  const reportTitle = `${brand.name} — Friday report`;
   const html =
-    `<h2>Venture OS — Friday report</h2>` +
+    `<h2>${reportTitle}</h2>` +
     `<p>${leads} leads · ${meetings} meetings so far. Full analytics land with the Reports module.</p>` +
     referrersHtml;
   for (const owner of owners) {
@@ -47,7 +52,7 @@ export async function sendFridayReport(workspaceId: string): Promise<void> {
       to: owner.user.email,
       from: identity.from,
       replyTo: identity.replyTo || undefined,
-      subject: "Venture OS — Friday report",
+      subject: reportTitle,
       html,
     });
     await db.emailLog.create({

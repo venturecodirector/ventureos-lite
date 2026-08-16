@@ -1,6 +1,7 @@
 import { prismaUnsafe } from "@/lib/db";
 import { getBusyAccounts, saveRefreshedTokens } from "./credentials";
 import { getCalendarProvider, type CalendarCredentials, type BusyPeriod } from "./calendar";
+import { brandFrom, type WorkspaceBrand } from "@/modules/workspaces/brand";
 import {
   parseSlotConfig,
   parseMeetingTypes,
@@ -29,6 +30,7 @@ export interface BookingHost {
   horizonDays: number;
   meetingTypes: MeetingType[];
   mailgunConfig: unknown;
+  brand: WorkspaceBrand;
 }
 
 export async function getBookingHost(slug: string): Promise<BookingHost | null> {
@@ -40,7 +42,9 @@ export async function getBookingHost(slug: string): Promise<BookingHost | null> 
   });
   const ws = await prismaUnsafe.workspace.findUnique({
     where: { id: page.workspaceId },
-    select: { mailgunConfig: true },
+    // Public, cross-tenant page: the brand is the OWNING workspace's, never a
+    // session's (audit-v2 item 6).
+    select: { mailgunConfig: true, brand: true },
   });
   const config = parseSlotConfig(page.config);
   return {
@@ -54,6 +58,7 @@ export async function getBookingHost(slug: string): Promise<BookingHost | null> 
     horizonDays: horizonDays(page.config),
     meetingTypes: parseMeetingTypes(page.meetingTypes),
     mailgunConfig: ws?.mailgunConfig ?? null,
+    brand: brandFrom(ws?.brand),
   };
 }
 

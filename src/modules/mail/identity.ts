@@ -5,6 +5,7 @@
  * workspace fails loudly rather than sending from a guessed host.
  */
 import { transactionalMailDomain } from "../../lib/env";
+import { VENTURE_BRAND, type WorkspaceBrand } from "@/modules/workspaces/brand";
 
 export interface SendingIdentity {
   domain: string;
@@ -14,7 +15,11 @@ export interface SendingIdentity {
   replyTo: string;
 }
 
-export function resolveSendingIdentity(mailgunConfig: unknown): SendingIdentity {
+export function resolveSendingIdentity(
+  mailgunConfig: unknown,
+  /** The workspace's brand, when the caller knows it (audit-v2 item 6). */
+  brand?: WorkspaceBrand,
+): SendingIdentity {
   const cfg =
     mailgunConfig && typeof mailgunConfig === "object" && !Array.isArray(mailgunConfig)
       ? (mailgunConfig as Record<string, unknown>)
@@ -26,8 +31,11 @@ export function resolveSendingIdentity(mailgunConfig: unknown): SendingIdentity 
         "or the workspace's mailgunConfig.domain.",
     );
   }
-  const fromName = String(cfg.fromName ?? "Venture CO Group");
-  const fromEmail = String(cfg.fromEmail ?? `noreply@${domain}`);
+  // The seed's name, read from the brand module rather than written here: a
+  // workspace that set a sender identity uses it, and there is no literal in
+  // this file for another workspace's mail to inherit (audit-v2 item 6).
+  const fromName = String(cfg.fromName ?? brand?.senderName ?? VENTURE_BRAND.senderName);
+  const fromEmail = String(cfg.fromEmail ?? brand?.senderEmail ?? `noreply@${domain}`);
   const replyTo = String(cfg.replyTo ?? "");
   return { domain, fromEmail, fromName, from: `${fromName} <${fromEmail}>`, replyTo };
 }

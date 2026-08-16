@@ -14,6 +14,7 @@ import { enqueueMeetingBrief } from "./enqueue";
 import { botVerdict, MIN_FILL_MS } from "./botcheck";
 import { takeRateLimit } from "./ratelimit";
 import { notifyMeetingBooked } from "../notifications/notify";
+import type { WorkspaceBrand } from "@/modules/workspaces/brand";
 
 const bookSchema = z.object({
   slug: z.string().min(1),
@@ -192,7 +193,8 @@ export async function submitPublicBooking(raw: unknown): Promise<BookingResult> 
   // --- confirmations both ways (Mailgun; best-effort) ---
   const whenLabel = formatWhen(input.startMs, host.config.timezone);
   await sendConfirmations({
-    identity: resolveSendingIdentity(host.mailgunConfig),
+    identity: resolveSendingIdentity(host.mailgunConfig, host.brand),
+    brand: host.brand,
     hostName: host.hostName,
     hostEmail: host.hostEmail,
     guestName: input.name,
@@ -219,6 +221,8 @@ function formatWhen(startMs: number, tz: string): string {
 
 async function sendConfirmations(p: {
   identity: ReturnType<typeof resolveSendingIdentity>;
+  /** The owning workspace's brand — this is a prospect-facing confirmation. */
+  brand: WorkspaceBrand;
   hostName: string;
   hostEmail: string | null;
   guestName: string;
@@ -230,6 +234,7 @@ async function sendConfirmations(p: {
 
   // Prospect-facing, so it carries the brand rather than browser defaults.
   const guest = {
+    brand: p.brand,
     preheader: `${p.typeLabel} with ${p.hostName} — ${p.whenLabel}`,
     heading: "Your meeting is confirmed",
     paragraphs: [
@@ -246,6 +251,7 @@ async function sendConfirmations(p: {
   const guestText = brandEmailText(guest);
 
   const host = {
+    brand: p.brand,
     preheader: `${p.guestName} booked ${p.typeLabel}`,
     heading: "New booking from your page",
     paragraphs: [

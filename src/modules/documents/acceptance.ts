@@ -14,6 +14,7 @@ import { resolveSendingIdentity } from "@/modules/mail/identity";
 import { computeLineTotal, formatHuf, type QuoteItem } from "./quote-math";
 import { getAcceptanceProvider } from "./acceptance-provider";
 import { notifyQuoteAccepted } from "../notifications/notify";
+import { brandFrom, type WorkspaceBrand } from "@/modules/workspaces/brand";
 
 export interface PublicQuote {
   quoteNumber: string;
@@ -27,6 +28,8 @@ export interface PublicQuote {
   vatRatePct: number;
   accepted: boolean;
   acceptedByName: string | null;
+  /** The OWNING workspace's brand — this page is public and cross-tenant. */
+  brand: WorkspaceBrand;
 }
 
 /** Publish (or reuse) the unlisted public accept URL for a sent quote. */
@@ -68,7 +71,9 @@ export async function getPublicQuote(slug: string): Promise<PublicQuote | null> 
 
   const ws = await prismaUnsafe.workspace.findUnique({
     where: { id: doc.workspaceId },
-    select: { legalName: true },
+    // The brand comes from the OWNING workspace, never from a session: this
+    // page is public and cross-tenant by design (audit-v2 item 6).
+    select: { legalName: true, brand: true },
   });
   const payload = (doc.payload ?? {}) as {
     items?: QuoteItem[];
@@ -101,6 +106,7 @@ export async function getPublicQuote(slug: string): Promise<PublicQuote | null> 
     vatRatePct: payload.vatRatePct ?? 27,
     accepted: !!accepted,
     acceptedByName: accepted?.acceptedByName ?? null,
+    brand: brandFrom(ws?.brand),
   };
 }
 
@@ -119,9 +125,10 @@ async function notifyOwners(
 ): Promise<void> {
   const ws = await prismaUnsafe.workspace.findUnique({
     where: { id: workspaceId },
-    select: { mailgunConfig: true },
+    select: { mailgunConfig: true, brand: true },
   });
-  const identity = resolveSendingIdentity(ws?.mailgunConfig);
+  const brand = brandFrom(ws?.brand);
+  const identity = resolveSendingIdentity(ws?.mailgunConfig, brand);
   const owners = await prismaUnsafe.membership.findMany({
     where: { workspaceId, role: "OWNER" },
     include: { user: { select: { email: true } } },
@@ -135,6 +142,7 @@ async function notifyOwners(
       replyTo: identity.replyTo || undefined,
       subject: `Quote ${number} accepted`,
       html: brandEmail({
+        brand,
         preheader: `${name} accepted quote ${number}`,
         heading: `Quote ${number} accepted`,
         paragraphs: [

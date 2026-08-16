@@ -1,10 +1,12 @@
 import { notFound } from "next/navigation";
 import { getBookingHost, getAvailability } from "@/modules/meetings/public-booking";
 import { BookingWidget } from "@/components/booking-widget";
+import { BrandFooter, BrandMark, brandPanelStyle, brandStyle } from "@/components/brand-mark";
 
 /**
  * Public booking page (spec §4.21): meet.{domain}/{slug} → /book/{slug} (see
- * middleware). Prospect-facing, Venture letterhead, no product chrome.
+ * middleware). Prospect-facing, carrying the OWNING
+ * workspace's letterhead, no product chrome (audit-v2 item 6).
  */
 export const dynamic = "force-dynamic";
 
@@ -21,14 +23,14 @@ export default async function BookPage({
   const subtitle = `${host.meetingTypes[0].label} · ${host.config.timezone}`;
 
   return (
-    <main className="relative z-10 min-h-screen">
+    <main className="relative z-10 min-h-screen" style={brandStyle(host.brand)}>
       <div className="mx-auto max-w-[460px] px-5 py-14">
-        <div className="mb-6 font-display text-[16px]">
-          <b className="font-extrabold">venture</b>{" "}
-          <span className="font-light text-muted">co.group</span>
-        </div>
+        <BrandMark brand={host.brand} className="mb-6 font-display text-[16px]" />
 
-        <div className="rounded-card border border-line bg-[radial-gradient(500px_300px_at_90%_-10%,rgba(116,39,198,0.18),transparent_60%),rgba(239,241,248,0.02)] p-7">
+        <div
+          className="rounded-card border border-line p-7"
+          style={brandPanelStyle(host.brand)}
+        >
           <h1 className="mb-1.5 font-display text-[22px] font-extrabold lowercase leading-[1.15] tracking-display">
             {host.title}
           </h1>
@@ -41,6 +43,7 @@ export default async function BookPage({
             initial={initial}
           />
         </div>
+        <BrandFooter brand={host.brand} />
       </div>
     </main>
   );

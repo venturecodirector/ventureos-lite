@@ -63,8 +63,8 @@ export async function processPublicAuditReport(data: ReportEmailJobData): Promis
     where: { id: data.workspaceId },
     select: { mailgunConfig: true, brand: true },
   });
-  const identity = resolveSendingIdentity(ws?.mailgunConfig);
   const brand = brandFrom(ws?.brand);
+  const identity = resolveSendingIdentity(ws?.mailgunConfig, brand);
   const site = audit.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
   const hu = data.locale === "hu";
@@ -103,6 +103,7 @@ export async function processPublicAuditReport(data: ReportEmailJobData): Promis
   }
 
   const options = {
+    brand,
     preheader: hu
       ? `${site} — a részletes átvilágítási riport`
       : `${site} — your detailed website audit`,

@@ -23,6 +23,7 @@ import {
 } from "./qualification";
 import { detectMoneyTalk, escalationReason } from "./escalation";
 import { notifyEscalation } from "../notifications/notify";
+import { brandFrom } from "@/modules/workspaces/brand";
 
 export interface ThreadSummary {
   leadId: string;
@@ -120,9 +121,10 @@ export async function getThread(leadId: string): Promise<ThreadView | null> {
 async function notifyOwners(workspaceId: string, leadName: string, reason: string): Promise<void> {
   const ws = await prismaUnsafe.workspace.findUnique({
     where: { id: workspaceId },
-    select: { mailgunConfig: true },
+    select: { mailgunConfig: true, brand: true },
   });
-  const identity = resolveSendingIdentity(ws?.mailgunConfig);
+  const brand = brandFrom(ws?.brand);
+  const identity = resolveSendingIdentity(ws?.mailgunConfig, brand);
   const owners = await prismaUnsafe.membership.findMany({
     where: { workspaceId, role: "OWNER" },
     include: { user: { select: { email: true } } },
@@ -135,6 +137,7 @@ async function notifyOwners(workspaceId: string, leadName: string, reason: strin
       replyTo: identity.replyTo || undefined,
       subject: `Price escalation — ${leadName}`,
       html: brandEmail({
+        brand,
         preheader: `${leadName} — ${reason}`,
         heading: "A thread needs you",
         paragraphs: [

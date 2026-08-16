@@ -271,7 +271,15 @@ export function validateBrandContrast(brand: WorkspaceBrand): ContrastResult {
  */
 export function brandFontStack(family: string): string {
   const serif = /(serif|georgia|times|garamond|playfair|merriweather)/i.test(family);
-  return `"${family}", ${serif ? "Georgia, serif" : "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"}`;
+  // The sans fallback is the EXACT chain the PDF templates used before the
+  // brand became configurable. Prepending the family is a no-op when it is not
+  // installed — which it never is in the headless renderer — so the seed's
+  // output stays pixel-identical while a configured font still takes effect
+  // wherever it is available. `system-ui` is deliberately absent: it resolves
+  // on Linux and would have changed what the existing PDFs render with.
+  return serif
+    ? `"${family}", Georgia, "Times New Roman", serif`
+    : `"${family}", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
 }
 
 /**

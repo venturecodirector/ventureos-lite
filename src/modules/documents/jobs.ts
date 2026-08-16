@@ -6,6 +6,7 @@ import { renderTemplate } from "../templates/render";
 import { buildDocumentData } from "./data";
 import { buildDocumentPdfHtml } from "./pdf-template";
 import type { DocumentPdfJobData } from "./enqueue";
+import { brandFrom } from "@/modules/workspaces/brand";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
 
@@ -28,7 +29,7 @@ export async function processDocumentPdf(data: DocumentPdfJobData): Promise<void
 
   const templateData = buildDocumentData(doc, workspace);
   const { output } = renderTemplate(doc.template.body, templateData);
-  const html = buildDocumentPdfHtml(output, doc.watermark);
+  const html = buildDocumentPdfHtml(output, doc.watermark, brandFrom(workspace?.brand));
   const pdf = await renderHtmlToPdf(html);
 
   const rel = `documents/${data.documentId}.pdf`;

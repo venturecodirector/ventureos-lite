@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getPublicQuote } from "@/modules/documents/acceptance";
 import { AcceptForm } from "@/components/accept-form";
+import { BrandFooter, BrandMark, brandPanelStyle, brandStyle } from "@/components/brand-mark";
 
 // Public, prospect-facing, no product chrome (spec §4.9). Cross-tenant read by
 // the unlisted slug.
@@ -16,14 +17,14 @@ export default async function AcceptPage({
   if (!q) notFound();
 
   return (
-    <main className="relative z-10 min-h-screen">
+    <main className="relative z-10 min-h-screen" style={brandStyle(q.brand)}>
       <div className="mx-auto max-w-[560px] px-5 py-14">
-        <div className="mb-7 font-display text-[16px]">
-          <b className="font-extrabold">venture</b>{" "}
-          <span className="font-light text-muted">co.group</span>
-        </div>
+        <BrandMark brand={q.brand} className="mb-7 font-display text-[16px]" />
 
-        <div className="rounded-card border border-line bg-[radial-gradient(500px_300px_at_90%_-10%,rgba(116,39,198,0.18),transparent_60%),rgba(239,241,248,0.02)] p-7">
+        <div
+          className="rounded-card border border-line p-7"
+          style={brandPanelStyle(q.brand)}
+        >
           <h1 className="font-display text-[22px] font-extrabold lowercase tracking-display">
             árajánlat · {q.clientCompany.toLowerCase()}
           </h1>
@@ -66,6 +67,7 @@ export default async function AcceptPage({
             elektronikus aláírás. · A jövőbeli saját e-aláírás modul ide csatlakozik.
           </p>
         </div>
+        <BrandFooter brand={q.brand} />
       </div>
     </main>
   );

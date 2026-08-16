@@ -15,6 +15,7 @@ import { buildBriefPdfHtml } from "./brief-pdf";
 import { getCalendarProvider } from "./calendar";
 import { getWriteAccount, saveRefreshedTokens } from "./credentials";
 import type { BriefJobData } from "./enqueue";
+import { brandFrom } from "@/modules/workspaces/brand";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
 
@@ -108,7 +109,11 @@ export async function processMeetingBrief(data: BriefJobData): Promise<void> {
     });
     const brief = result as MeetingBrief;
 
-    // Render branded PDF via the shared pipeline.
+    // Render branded PDF via the shared pipeline — per workspace (item 6).
+    const brandRow = await prismaUnsafe.workspace.findUnique({
+      where: { id: data.workspaceId },
+      select: { brand: true },
+    });
     const whenLabel = meeting.scheduledAt.toISOString().slice(0, 16).replace("T", " ") + " UTC";
     const html = buildBriefPdfHtml(
       {
@@ -117,6 +122,7 @@ export async function processMeetingBrief(data: BriefJobData): Promise<void> {
         whenLabel,
       },
       brief,
+      brandFrom(brandRow?.brand),
     );
     const pdf = await renderHtmlToPdf(html);
     const rel = `briefs/${data.meetingId}.pdf`;

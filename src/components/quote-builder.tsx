@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import type { WorkspaceBrand } from "@/modules/workspaces/brand";
+import { BrandMark } from "./brand-mark";
 import {
   computeLineTotal,
   computeQuoteTotals,
@@ -34,10 +36,13 @@ export function QuoteBuilder({
   clients,
   canCreate,
   isOwner,
+  brand,
 }: {
   clients: QuoteClient[];
   canCreate: boolean;
   isOwner: boolean;
+  /** The workspace's own letterhead — the preview has to match the PDF. */
+  brand: WorkspaceBrand;
 }) {
   const [leadId, setLeadId] = useState(clients[0]?.leadId ?? "");
   const [rows, setRows] = useState<Row[]>([
@@ -253,9 +258,7 @@ export function QuoteBuilder({
         {/* preview with DRAFT watermark */}
         <div className="relative min-h-[340px] overflow-hidden rounded-[12px] border border-line bg-[#0A0F2E] p-7">
           <div className="relative z-10">
-            <div className="font-display text-[15px] font-extrabold">
-              venture <span className="font-light text-muted">co.group</span>
-            </div>
+            <BrandMark brand={brand} className="font-display text-[15px] font-extrabold" />
             <div className="mb-4 text-[10.5px] text-muted">
               ÁRAJÁNLAT {doc ? `· ${doc.quoteNumber}` : ""}
               {clients.find((c) => c.leadId === leadId)?.company

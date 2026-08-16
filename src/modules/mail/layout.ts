@@ -1,9 +1,10 @@
+import { VENTURE_BRAND, brandFooterLine, type WorkspaceBrand } from "@/modules/workspaces/brand";
 /**
  * Brand layout for transactional email.
  *
  * Every sender built its own `<p>` soup, so booking confirmations, quote
  * notifications and the weekly report all arrived as unstyled browser-default
- * text with no Venture identity on them.
+ * text with no sender identity on them.
  *
  * Written for email clients, not browsers, which is why it looks dated:
  *   - tables for layout; Outlook (Word rendering engine) ignores flex/grid
@@ -56,16 +57,36 @@ export interface BrandEmailOptions {
   /** Small print under the panel, above the wordmark. */
   footNote?: string;
 
-  // ---- Workspace identity (P2/6) -----------------------------------------
-  // All optional and all defaulting to Venture, so every existing call site
-  // keeps sending exactly what it sent before. A caller that knows which
-  // workspace it is sending for passes these instead.
+  // ---- Workspace identity (P2/6, completed in audit-v2 item 6) ------------
+  /**
+   * The sending workspace's brand. Preferred over the four fields below, which
+   * remain for callers that only know a name.
+   *
+   * The defaults resolve to VENTURE_BRAND — the SEED, read from the brand
+   * module rather than written here as a literal. That distinction is the whole
+   * point: an unconfigured workspace still sends exactly what it sent before,
+   * and there is no brand string in this template for a second workspace's
+   * email to accidentally inherit.
+   */
+  brand?: WorkspaceBrand;
   /** Signature line on the plain-text part. */
   brandName?: string;
   brandMarkBold?: string;
   brandMarkLight?: string;
   /** Legal identity line in the footer. */
   brandFooter?: string;
+}
+
+/** Resolve the four identity strings from whichever form the caller used. */
+function identityOf(o: BrandEmailOptions) {
+  const brand = o.brand ?? VENTURE_BRAND;
+  return {
+    name: o.brandName ?? brand.name,
+    markBold: o.brandMarkBold ?? brand.markBold,
+    markLight: o.brandMarkLight ?? brand.markLight,
+    footer: o.brandFooter ?? brandFooterLine(brand),
+    accent: brand.color,
+  };
 }
 
 export function escapeHtml(s: string): string {
@@ -90,7 +111,7 @@ export function brandEmailText(o: BrandEmailOptions): string {
   }
   if (o.button) lines.push(`${o.button.label}: ${o.button.url}`, "");
   if (o.footNote) lines.push(o.footNote, "");
-  lines.push(`— ${o.brandName ?? "Venture CO Group"}`);
+  lines.push(`— ${identityOf(o).name}`);
   return lines.join("\n");
 }
 
@@ -155,7 +176,7 @@ export function brandEmail(o: BrandEmailOptions): string {
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;">
 
       <tr><td style="padding:0 0 18px;font-family:${FONT};font-size:17px;color:${INK};">
-        <span style="font-weight:800;">${escapeHtml(o.brandMarkBold ?? "venture")}</span><span style="font-weight:300;color:${MUTED};"> ${escapeHtml(o.brandMarkLight ?? "co.group")}</span>
+        <span style="font-weight:800;">${escapeHtml(identityOf(o).markBold)}</span><span style="font-weight:300;color:${MUTED};"> ${escapeHtml(identityOf(o).markLight)}</span>
       </td></tr>
 
       <tr><td style="background-color:${PANEL};border:1px solid ${BORDER};border-radius:14px;padding:28px;">
@@ -170,7 +191,7 @@ export function brandEmail(o: BrandEmailOptions): string {
       <tr><td style="padding:14px 4px 0;">
         ${footNote}
         <p style="margin:14px 0 0;font-family:${FONT};font-size:11px;line-height:1.5;color:${MUTED};">
-          ${escapeHtml(o.brandFooter ?? "Venture CO Group · Budapest")} · this message was sent because of a
+          ${escapeHtml(identityOf(o).footer)} · this message was sent because of a
           direct interaction with us.
         </p>
       </td></tr>

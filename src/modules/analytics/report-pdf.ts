@@ -1,4 +1,6 @@
 import type { WeeklyReport } from "./reports";
+import type { WorkspaceBrand } from "@/modules/workspaces/brand";
+import { brandBaseCss, brandMarkHtml, brandRootStyle } from "@/modules/workspaces/letterhead";
 
 /**
  * Branded Friday-report PDF (spec §4.14), rendered through the shared
@@ -19,6 +21,7 @@ export function buildReportPdfHtml(
   r: WeeklyReport,
   commentary: string | null,
   comment: string | null,
+  brand: WorkspaceBrand,
 ): string {
   const kpis = r.kpis
     .map(
@@ -42,19 +45,20 @@ export function buildReportPdfHtml(
 <html lang="en"><head><meta charset="utf-8"><style>
   @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background: #00051D; color: #EFF1F8; padding: 44px 42px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .brand { font-size: 22px; letter-spacing: -0.02em; margin-bottom: 2px; }
+  body { font-family: var(--brand-font-body); background: var(--brand-canvas); color: var(--brand-ink); padding: 44px 42px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  ${brandBaseCss()}
+  .brand { margin-bottom: 2px; }
   .brand b { font-weight: 800; } .brand span { font-weight: 300; color: #858CAE; margin-left: 6px; }
   .kicker { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #858CAE; margin-bottom: 18px; }
-  h2 { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #7427C6; margin: 18px 0 6px; }
+  h2 { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--brand-accent); margin: 18px 0 6px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   td, th { text-align: left; padding: 5px 0; border-bottom: 1px solid rgba(239,241,248,0.09); color: #C9CEE3; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   p { font-size: 12.5px; line-height: 1.6; color: #C9CEE3; }
   .note { border: 1px solid rgba(116,39,198,0.4); background: rgba(116,39,198,0.08); border-radius: 10px; padding: 10px 12px; margin-top: 6px; }
 </style></head>
-<body>
-  <div class="brand"><b>venture</b><span>co.group</span></div>
+<body style="${brandRootStyle(brand)}">
+  ${brandMarkHtml(brand)}
   <div class="kicker">Weekly report · ${esc(r.weekLabel)}</div>
 
   ${commentary ? `<h2>What worked</h2><div class="note"><p>${esc(commentary)}</p></div>` : ""}

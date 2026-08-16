@@ -1,4 +1,6 @@
 import type { MeetingBrief } from "../../lib/ai/prompts/meeting-brief";
+import type { WorkspaceBrand } from "@/modules/workspaces/brand";
+import { brandBaseCss, brandFooterHtml, brandMarkHtml, brandRootStyle } from "@/modules/workspaces/letterhead";
 
 /**
  * Branded one-page meeting-brief PDF (spec §4.8), rendered through the shared
@@ -15,7 +17,11 @@ export interface BriefPdfMeta {
   whenLabel: string;
 }
 
-export function buildBriefPdfHtml(meta: BriefPdfMeta, b: MeetingBrief): string {
+export function buildBriefPdfHtml(
+  meta: BriefPdfMeta,
+  b: MeetingBrief,
+  brand: WorkspaceBrand,
+): string {
   const findings = b.auditFindings.length
     ? `<ul>${b.auditFindings.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>`
     : `<p class="muted">No website audit on file.</p>`;
@@ -26,20 +32,22 @@ export function buildBriefPdfHtml(meta: BriefPdfMeta, b: MeetingBrief): string {
 <html lang="en"><head><meta charset="utf-8"><style>
   @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background: #00051D; color: #EFF1F8; padding: 44px 42px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .brand { font-size: 22px; letter-spacing: -0.02em; margin-bottom: 4px; }
+  body { font-family: var(--brand-font-body); background: var(--brand-canvas); color: var(--brand-ink); padding: 44px 42px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  ${brandBaseCss()}
+  .brand { margin-bottom: 4px; }
   .brand b { font-weight: 800; } .brand span { font-weight: 300; color: #858CAE; margin-left: 6px; }
   .kicker { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #858CAE; margin-bottom: 18px; }
   h1 { font-size: 19px; font-weight: 800; }
   .meta { font-size: 12px; color: #858CAE; margin: 2px 0 18px; }
-  h2 { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #7427C6; margin: 16px 0 5px; }
+  h2 { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--brand-accent); margin: 16px 0 5px; }
   p, li { font-size: 12.5px; line-height: 1.6; color: #C9CEE3; }
   ul { padding-left: 18px; } li { margin: 2px 0; }
   ol { padding-left: 18px; } ol li { margin: 5px 0; color: #EFF1F8; }
   .muted { color: #858CAE; }
 </style></head>
-<body>
-  <div class="brand"><b>venture</b><span>co.group</span></div>
+<body style="${brandRootStyle(brand)}">
+  ${brandMarkHtml(brand)}
+  <div class="brand-footer">${brandFooterHtml(brand)}</div>
   <div class="kicker">Meeting brief</div>
   <h1>${esc(meta.companyName)}</h1>
   <div class="meta">${esc(meta.contactName || "Contact unknown")} · ${esc(meta.whenLabel)}</div>

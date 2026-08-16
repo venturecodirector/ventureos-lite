@@ -15,6 +15,7 @@ import { resolveSendingIdentity } from "./identity";
 import { isRecipientSuppressed } from "./suppression";
 import { brandEmail } from "./layout";
 import { quoteAcceptLink } from "@/lib/public-links";
+import { brandFrom } from "@/modules/workspaces/brand";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
 
@@ -100,9 +101,10 @@ export async function sendDocument(
 
   const ws = await prismaUnsafe.workspace.findUnique({
     where: { id: workspaceId },
-    select: { mailgunConfig: true },
+    select: { mailgunConfig: true, brand: true },
   });
-  const identity = resolveSendingIdentity(ws?.mailgunConfig);
+  const brand = brandFrom(ws?.brand);
+  const identity = resolveSendingIdentity(ws?.mailgunConfig, brand);
 
   const attachments: MailAttachment[] = [];
   if (doc.pdfUrl) {
@@ -128,6 +130,7 @@ export async function sendDocument(
       // its acceptance page, which previously only appeared as a bare URL in
       // the body if the sender remembered to paste one.
       html: brandEmail({
+        brand,
         preheader: input.subject,
         heading: input.subject,
         paragraphs: input.body.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean),
