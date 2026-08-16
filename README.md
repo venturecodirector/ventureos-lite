@@ -34,7 +34,7 @@ Common scripts:
 | `npm run dev` | Next.js dev server |
 | `npm run build` / `npm start` | Production build / serve |
 | `npm run typecheck` | `tsc --noEmit` (strict) |
-| `npm run lint` | `next lint` |
+| `npm run lint` | `eslint src` |
 | `npm test` | vitest unit tests |
 | `npm run test:e2e` | Playwright critical-flow tests |
 | `npm run worker` | BullMQ background worker |
