@@ -159,6 +159,8 @@ export interface DigestInput {
   pendingApprovals: number;
   topReferrer: { name: string; revenue: number } | null;
   isOwner: boolean;
+  /** Clients scored red by the health rules (playbook-v3 P11/1c). */
+  redClients?: number;
   /**
    * Unread notifications whose type this user has left on for the email digest
    * (playbook-v2 P6/1). The digest is the EMAIL channel: the playbook is
@@ -185,6 +187,15 @@ export function buildDigestModel(input: DigestInput): DigestModel {
   ];
   if (input.isOwner) {
     sections.push({ key: "pendingApprovals", label: "Pending approvals", value: `${input.pendingApprovals}` });
+  }
+  // Red clients earn a line only when there are some — a standing "0" is a
+  // line people stop reading, and this one has to be noticed.
+  if (input.redClients && input.redClients > 0) {
+    sections.push({
+      key: "redClients",
+      label: "Clients needing attention",
+      value: `${input.redClients}`,
+    });
   }
   // Only when there is something: a permanent "Unread notifications: 0" line
   // trains people to skip the whole block.

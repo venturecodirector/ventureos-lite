@@ -1,6 +1,7 @@
 import type { WorkspaceClient } from "../../lib/db";
 import { getTopReferrers } from "../referrals/data";
 import { countDigestableUnread } from "../notifications/digest";
+import { loadClientHealth } from "../revenue/health-data";
 import type { DigestInput } from "./reports";
 
 /**
@@ -10,7 +11,14 @@ import type { DigestInput } from "./reports";
  */
 export async function collectDigestData(
   db: WorkspaceClient,
-  opts: { isOwner: boolean; nowMs: number; userId?: string; role?: string },
+  opts: {
+    isOwner: boolean;
+    nowMs: number;
+    userId?: string;
+    role?: string;
+    /** Needed for the client-health section, which reads outside `db`. */
+    workspaceId?: string;
+  },
 ): Promise<DigestInput> {
   const now = new Date(opts.nowMs);
   const weekAgo = new Date(opts.nowMs - 7 * 24 * 60 * 60_000);
@@ -31,7 +39,13 @@ export async function collectDigestData(
     ? await countDigestableUnread(db, opts.userId, opts.role ?? "BDR")
     : 0;
 
+  // P11/1c — how many clients the health rules put in the red this week.
+  const redClients = opts.workspaceId
+    ? (await loadClientHealth(opts.workspaceId, now)).filter((c) => c.level === "red").length
+    : 0;
+
   return {
+    redClients,
     unreadNotifications,
     todayQueueCount: dueCallbacks + overdueFollowups + researchedLeads,
     dueCallbacks,

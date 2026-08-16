@@ -6,6 +6,7 @@ import { SettingsIntegrations } from "@/components/settings-integrations";
 import { ApiCosts } from "@/components/api-costs";
 import { SettingsEmail } from "@/components/settings-email";
 import { SettingsNotifications } from "@/components/settings-notifications";
+import { SettingsHealthRules } from "@/components/settings-health-rules";
 import { SettingsExtension } from "@/components/settings-extension";
 import { ProposalQueue } from "@/components/proposal-queue";
 import { GdprPanel } from "@/components/gdpr-panel";
@@ -19,6 +20,7 @@ import { getSecurityStatus } from "@/modules/auth/actions";
 import { listWorkspaceUsers } from "@/modules/users/actions";
 import { getIntegrations } from "@/modules/integrations/actions";
 import { getNotificationPreferences } from "@/modules/notifications/preference-actions";
+import { getHealthRules } from "@/modules/revenue/health-actions";
 import { listCaptureTokens } from "@/modules/capture/actions";
 import { buildExtensionPackage } from "@/modules/extension/package";
 import { listProposals } from "@/modules/signal/actions";
@@ -58,6 +60,9 @@ export default async function SettingsPage({
   const captureTokens = await listCaptureTokens();
   // Also personal — what reaches ME, and how (P6/1).
   const notificationPrefs = await getNotificationPreferences();
+  // Workspace-wide, Owner-edited: the thresholds decide who lands on a list the
+  // whole team works from (P11/1c).
+  const healthRules = await getHealthRules();
   // Version only — the zip itself is built on demand by the download route.
   const extensionVersion = (await buildExtensionPackage()).version;
   return (
@@ -65,6 +70,7 @@ export default async function SettingsPage({
       <div className="grid gap-4">
         <SecurityPanel status={securityStatus} focusPassword={security === "password"} />
         <SettingsNotifications initial={notificationPrefs} />
+        <SettingsHealthRules initial={healthRules} isOwner={owner} />
         <SettingsExtension tokens={captureTokens} version={extensionVersion} />
         {owner && (
           <SettingsUsers

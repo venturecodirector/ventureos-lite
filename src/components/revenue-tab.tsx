@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { RevenueView, SubscriptionRow } from "@/modules/revenue/dashboard";
+import type { ClientHealthRow } from "@/modules/revenue/health-data";
+import { createHealthTask, setSupportFlag } from "@/modules/revenue/health-actions";
 import { CHURN_REASONS } from "@/modules/revenue/subscriptions";
 
 /**
@@ -111,6 +114,139 @@ function MovementColumn({
   );
 }
 
+const LEVEL_STYLE: Record<string, string> = {
+  red: "bg-[rgba(255,92,122,0.15)] text-neg",
+  amber: "bg-[rgba(245,184,65,0.15)] text-warn",
+  green: "bg-[rgba(61,220,151,0.15)] text-pos",
+};
+
+/**
+ * "Figyelmet igényel" — the clients worth ringing (P11/1c).
+ *
+ * Reds first and sorted by MRR within a level, because when there is time for
+ * one phone call it should be the expensive one. Every row shows WHY, since a
+ * traffic light with no explanation is a colour people learn to ignore.
+ */
+function HealthPanel({ rows }: { rows: ClientHealthRow[] }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+
+  const attention = rows.filter((r) => r.level !== "green");
+  const visible = showAll ? rows : attention;
+
+  async function queueTask(row: ClientHealthRow) {
+    setBusy(row.companyId);
+    setNote(null);
+    try {
+      const res = await createHealthTask(row.companyId);
+      setNote(
+        !res.ok
+          ? res.error
+          : res.created
+            ? `Task queued for ${row.companyName}.`
+            : `Already queued for ${row.companyName} today.`,
+      );
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleFlag(row: ClientHealthRow) {
+    setBusy(row.companyId);
+    try {
+      await setSupportFlag(row.companyId, !row.supportFlag);
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="rounded-card border border-line bg-panel p-[18px]">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+          Figyelmet igényel
+        </span>
+        {attention.length > 0 && (
+          <span className="rounded-full bg-[rgba(255,92,122,0.15)] px-2 py-0.5 text-[11px] text-neg">
+            {rows.filter((r) => r.level === "red").length} red · {rows.filter((r) => r.level === "amber").length} amber
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          data-testid="health-show-all"
+          className="ml-auto text-[12px] text-muted underline hover:text-ink"
+        >
+          {showAll ? "only those needing attention" : `show all ${rows.length}`}
+        </button>
+      </div>
+
+      {note && <p className="mb-2 text-[12px] text-accent-ink">{note}</p>}
+
+      {visible.length === 0 ? (
+        <p data-testid="health-empty" className="py-4 text-[12.5px] text-muted">
+          {rows.length === 0
+            ? "No clients yet."
+            : "Every client is green — nothing needs chasing."}
+        </p>
+      ) : (
+        <div data-testid="health-list" className="grid gap-1.5">
+          {visible.map((row) => (
+            <div
+              key={row.companyId}
+              data-testid="health-row"
+              data-level={row.level}
+              className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line bg-[rgba(0,5,29,0.35)] px-3 py-2"
+            >
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${LEVEL_STYLE[row.level]}`}
+              >
+                {row.level}
+              </span>
+              <span className="min-w-0 flex-1">
+                <b className="block text-[12.5px]">{row.companyName}</b>
+                <span className="block text-[11.5px] text-muted">
+                  {row.reasons.length > 0 ? row.reasons.join(" · ") : "Healthy"}
+                </span>
+              </span>
+              <span className="tabular-nums text-[12px] text-muted">{huf(row.mrr)}/mo</span>
+              <button
+                type="button"
+                onClick={() => toggleFlag(row)}
+                disabled={busy === row.companyId}
+                data-testid="health-flag"
+                title="Manual support flag"
+                className={`rounded-[8px] border px-2 py-1 text-[11.5px] ${
+                  row.supportFlag
+                    ? "border-warn text-warn"
+                    : "border-line text-muted hover:text-ink"
+                }`}
+              >
+                {row.supportFlag ? "flagged" : "flag"}
+              </button>
+              {row.level === "red" && (
+                <button
+                  type="button"
+                  onClick={() => queueTask(row)}
+                  disabled={busy === row.companyId}
+                  data-testid="health-task"
+                  className="rounded-[8px] border border-line bg-panel px-2 py-1 text-[11.5px] hover:bg-panel-2 disabled:opacity-50"
+                >
+                  Queue call
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const STATUS_FILTERS = ["ALL", "ACTIVE", "PAUSED", "CHURNED"] as const;
 
 export function RevenueTab({ view }: { view: RevenueView }) {
@@ -197,6 +333,8 @@ export function RevenueTab({ view }: { view: RevenueView }) {
           </>
         )}
       </div>
+
+      <HealthPanel rows={view.health} />
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <div className="min-w-0 rounded-card border border-line bg-panel p-[18px]">

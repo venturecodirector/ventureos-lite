@@ -16,6 +16,7 @@ import {
   type MovementRow,
 } from "./mrr";
 import type { EventKind } from "./subscriptions";
+import { loadClientHealth, type ClientHealthRow } from "./health-data";
 
 /** How far back the movement chart looks by default. */
 export const MOVEMENT_MONTHS = 12;
@@ -38,6 +39,8 @@ export interface RevenueView {
   movement: MovementRow[];
   subscriptions: SubscriptionRow[];
   churn: ChurnRow[];
+  /** "Figyelmet igényel" — every client scored, worst first (P11/1c). */
+  health: ClientHealthRow[];
 }
 
 export async function loadRevenue(
@@ -46,7 +49,7 @@ export async function loadRevenue(
 ): Promise<RevenueView> {
   const db = getWorkspaceClient(workspaceId);
 
-  const [subs, events] = await Promise.all([
+  const [subs, events, health] = await Promise.all([
     db.subscription.findMany({
       orderBy: [{ status: "asc" }, { monthlyNet: "desc" }],
       select: {
@@ -68,6 +71,7 @@ export async function loadRevenue(
       orderBy: { at: "asc" },
       select: { kind: true, deltaNet: true, at: true, reason: true },
     }),
+    loadClientHealth(workspaceId, now),
   ]);
 
   const from = new Date(
@@ -99,6 +103,7 @@ export async function loadRevenue(
       churnedAt: s.churnedAt,
       churnReason: s.churnReason,
     })),
+    health,
     churn: churnBreakdown(
       events
         .filter((e) => e.kind === "churn")

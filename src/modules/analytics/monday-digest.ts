@@ -39,6 +39,7 @@ export async function processMondayDigests(nowMs: number = Date.now()): Promise<
         nowMs,
         userId: m.userId,
         role: m.role,
+        workspaceId: ws.id,
       });
       const model = buildDigestModel(input);
 

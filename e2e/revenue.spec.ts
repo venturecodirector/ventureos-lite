@@ -232,3 +232,106 @@ test("the status filter narrows the subscriptions table", async ({ page }) => {
   await expect(page.getByTestId("subscription-row")).toHaveCount(1);
   await expect(page.getByTestId("subscriptions-table")).toContainText("budget cut");
 });
+
+test("red clients surface in the attention list with a reason", async ({ page }) => {
+  await reset();
+  // Healthy: recent start, no unpaid invoice, touched today.
+  await seedSubscription({ monthlyNet: 100_000, startedAt: monthsAgo(20), plan: "Healthy" });
+  const lead = await prisma.lead.create({
+    data: { workspaceId, companyId, contactName: `${TAG} contact`, lastActivityAt: new Date() },
+  });
+
+  await page.goto("/analytics?tab=revenue");
+  await expect(page.getByTestId("health-empty")).toBeVisible();
+
+  // Now make it red: an invoice issued 60 days ago and still unpaid.
+  const issued = new Date();
+  issued.setUTCDate(issued.getUTCDate() - 60);
+  await prisma.invoice.create({
+    data: { workspaceId, companyId, netAmount: 400_000, status: "ISSUED", at: issued },
+  });
+
+  await page.reload();
+  const row = page.getByTestId("health-row").first();
+  await expect(row).toHaveAttribute("data-level", "red");
+  await expect(row).toContainText("60 days past due");
+
+  await prisma.lead.delete({ where: { id: lead.id } });
+  await prisma.invoice.deleteMany({ where: { workspaceId, companyId } });
+});
+
+test("a red client can be turned into a task, once per day", async ({ page }) => {
+  await reset();
+  await seedSubscription({ monthlyNet: 100_000, startedAt: monthsAgo(20) });
+  const issued = new Date();
+  issued.setUTCDate(issued.getUTCDate() - 60);
+  await prisma.invoice.create({
+    data: { workspaceId, companyId, netAmount: 400_000, status: "ISSUED", at: issued },
+  });
+  await prisma.task.deleteMany({ where: { workspaceId, source: "client_health" } });
+
+  await page.goto("/analytics?tab=revenue");
+  await page.getByTestId("health-task").first().click();
+  await expect(page.getByText(/Task queued/i)).toBeVisible();
+
+  let tasks = await prisma.task.count({ where: { workspaceId, source: "client_health" } });
+  expect(tasks).toBe(1);
+
+  // Asking again the same day does not queue a second call.
+  await page.getByTestId("health-task").first().click();
+  await expect(page.getByText(/Already queued/i)).toBeVisible();
+  tasks = await prisma.task.count({ where: { workspaceId, source: "client_health" } });
+  expect(tasks).toBe(1);
+
+  await prisma.task.deleteMany({ where: { workspaceId, source: "client_health" } });
+  await prisma.invoice.deleteMany({ where: { workspaceId, companyId } });
+});
+
+test("the manual support flag makes an otherwise healthy client amber", async ({ page }) => {
+  await reset();
+  await seedSubscription({ monthlyNet: 100_000, startedAt: monthsAgo(20) });
+  await prisma.lead.create({
+    data: { workspaceId, companyId, contactName: `${TAG} contact`, lastActivityAt: new Date() },
+  });
+
+  await page.goto("/analytics?tab=revenue");
+  await expect(page.getByTestId("health-empty")).toBeVisible();
+
+  await page.getByTestId("health-show-all").click();
+  await page.getByTestId("health-flag").first().click();
+  await expect(page.getByTestId("health-row").first()).toHaveAttribute("data-level", "amber");
+  await expect(page.getByTestId("health-row").first()).toContainText("Support flag is open");
+
+  await prisma.company.update({ where: { id: companyId }, data: { supportFlag: false } });
+  await prisma.lead.deleteMany({ where: { workspaceId, companyId } });
+});
+
+test("the health thresholds are editable in Settings and change the scoring", async ({ page }) => {
+  await reset();
+  await seedSubscription({ monthlyNet: 100_000, startedAt: monthsAgo(20) });
+  const touched = new Date();
+  touched.setUTCMonth(touched.getUTCMonth() - 2);
+  await prisma.lead.create({
+    data: { workspaceId, companyId, contactName: `${TAG} contact`, lastActivityAt: touched },
+  });
+
+  // Default amber threshold is 2 months of silence.
+  await page.goto("/analytics?tab=revenue");
+  await expect(page.getByTestId("health-row").first()).toHaveAttribute("data-level", "amber");
+
+  // Loosen it to 6 months: the same client is now green.
+  await page.goto("/settings");
+  const amber = page.getByTestId("health-rule-quietAmberMonths");
+  await amber.fill("6");
+  await amber.blur();
+  await expect(page.getByText("Saved.")).toBeVisible();
+
+  await page.goto("/analytics?tab=revenue");
+  await expect(page.getByTestId("health-empty")).toBeVisible();
+
+  await page.getByTestId("health-rules-reset").isVisible().catch(() => {});
+  await page.goto("/settings");
+  await page.getByTestId("health-rules-reset").click();
+  await expect(page.getByTestId("health-rule-quietAmberMonths")).toHaveValue("2");
+  await prisma.lead.deleteMany({ where: { workspaceId, companyId } });
+});
