@@ -27,9 +27,15 @@ function esc(s: string): string {
  *
  * On the root rather than in a `:root {}` rule so a template can be embedded in
  * a page that already has its own variables without them colliding.
+ *
+ * ESCAPED, and that is not incidental. A font stack contains `"Segoe UI"`, and
+ * a double quote inside a double-quoted HTML attribute terminates it — which
+ * silently threw away every variable after it and left the PDFs rendering in
+ * the browser's default serif. A pixel comparison against the pre-change build
+ * is what surfaced it; nothing about the markup looked wrong.
  */
 export function brandRootStyle(brand: WorkspaceBrand): string {
-  return brandCssVarsInline(brand);
+  return brandCssVarsInline(brand).replace(/"/g, "&quot;");
 }
 
 /**

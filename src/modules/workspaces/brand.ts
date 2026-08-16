@@ -278,17 +278,63 @@ export function validateBrandContrast(brand: WorkspaceBrand): ContrastResult {
  * installed, and a bare family would silently resolve to whatever the renderer
  * felt like rather than to something chosen.
  */
+/** The exact chain the PDF templates used before the brand was configurable. */
+const LEGACY_SANS = `-apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+
+/**
+ * The seed's hand-picked softened values, kept exactly.
+ *
+ * These live here, with the seed, rather than in the templates that used them:
+ * that is the whole point of the module, and it is what lets the "no hardcoded
+ * colour in a template" test be absolute rather than a list of exceptions.
+ */
+const SEED_INK_SOFT = "#C9CEE3";
+const SEED_ACCENT_INK = "#E4D3FF";
+/** Flattened equivalents of the translucent panel/border tokens over canvas. */
+export const SEED_EMAIL_PANEL = "#0A0F26";
+export const SEED_EMAIL_BORDER = "#1B2138";
+
+function isSeedSurface(brand: WorkspaceBrand): boolean {
+  return (
+    brand.canvas === VENTURE_BRAND.canvas &&
+    brand.ink === VENTURE_BRAND.ink &&
+    brand.color === VENTURE_BRAND.color
+  );
+}
+
+/** Blend two hex colours. Used to derive the softened surfaces. */
+export function mixHex(from: string, to: string, amount: number): string {
+  const parse = (hex: string) => {
+    const v = hex.replace("#", "");
+    const full = v.length === 3 ? v.split("").map((c) => c + c).join("") : v.slice(0, 6);
+    return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+  };
+  const a = parse(from);
+  const b = parse(to);
+  return `#${a
+    .map((c, i) => Math.round(c + (b[i] - c) * amount).toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase()}`;
+}
+
 export function brandFontStack(family: string): string {
+  // THE SEED EMITS THE HISTORICAL CHAIN UNCHANGED, with nothing prepended.
+  //
+  // "prepending a font that is not installed is a no-op" was the assumption,
+  // and it was wrong: Inter IS installed on plenty of machines, and where it is
+  // it beats -apple-system and silently changes the typeface of every existing
+  // PDF. A pixel comparison against the pre-change build caught it. A workspace
+  // that chose a font gets it prepended; one that did not gets exactly what it
+  // had before.
+  if (family === VENTURE_BRAND.fontBody || family === VENTURE_BRAND.fontDisplay) {
+    return LEGACY_SANS;
+  }
   const serif = /(serif|georgia|times|garamond|playfair|merriweather)/i.test(family);
-  // The sans fallback is the EXACT chain the PDF templates used before the
-  // brand became configurable. Prepending the family is a no-op when it is not
-  // installed — which it never is in the headless renderer — so the seed's
-  // output stays pixel-identical while a configured font still takes effect
-  // wherever it is available. `system-ui` is deliberately absent: it resolves
-  // on Linux and would have changed what the existing PDFs render with.
+  // `system-ui` is deliberately absent from the fallback: it resolves on Linux
+  // and would change what the existing PDFs render with.
   return serif
     ? `"${family}", Georgia, "Times New Roman", serif`
-    : `"${family}", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+    : `"${family}", ${LEGACY_SANS}`;
 }
 
 /**
@@ -302,6 +348,16 @@ export function brandCssVars(brand: WorkspaceBrand): Record<string, string> {
   return {
     "--brand-canvas": brand.canvas,
     "--brand-ink": brand.ink,
+    // Dimmed body text and the light accent. Both were fixed light values in
+    // the templates (#C9CEE3, #E4D3FF) and therefore invisible on a light
+    // canvas. Derived by mixing toward the canvas so they dim in whichever
+    // direction the theme runs — but the SEED keeps its hand-picked values
+    // verbatim, because a mix lands near them and not on them, and "near" is a
+    // changed document. (The same lesson the email panel taught.)
+    "--brand-ink-soft": isSeedSurface(brand) ? SEED_INK_SOFT : mixHex(brand.ink, brand.canvas, 0.22),
+    "--brand-accent-ink": isSeedSurface(brand)
+      ? SEED_ACCENT_INK
+      : mixHex(brand.color, brand.ink, 0.55),
     "--brand-muted": brand.muted,
     "--brand-accent": brand.color,
     "--brand-gradient-from": brand.gradientFrom,

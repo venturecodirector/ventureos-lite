@@ -1,4 +1,10 @@
-import { VENTURE_BRAND, brandFooterLine, type WorkspaceBrand } from "@/modules/workspaces/brand";
+import {
+  SEED_EMAIL_BORDER,
+  SEED_EMAIL_PANEL,
+  VENTURE_BRAND,
+  brandFooterLine,
+  type WorkspaceBrand,
+} from "@/modules/workspaces/brand";
 /**
  * Brand layout for transactional email.
  *
@@ -34,11 +40,22 @@ import { VENTURE_BRAND, brandFooterLine, type WorkspaceBrand } from "@/modules/w
  * text colour, so a light-canvas workspace gets a light panel rather than the
  * seed's near-black one.
  */
+/**
+ * The seed's panel and border were hand-picked flattenings of the translucent
+ * tokens over the navy canvas, not the output of a formula — so they are kept
+ * verbatim rather than approximated. Mixing produced #0A0E26 and #1D2137
+ * against the originals' #0A0F26 and #1B2138: close, and visibly not the same
+ * email. A configured workspace gets the mix, which is what it is for.
+ */
+
+
 function paletteOf(brand: WorkspaceBrand) {
+  const seedSurfaces =
+    brand.canvas === VENTURE_BRAND.canvas && brand.ink === VENTURE_BRAND.ink;
   return {
     canvas: brand.canvas,
-    panel: mix(brand.canvas, brand.ink, 0.04),
-    border: mix(brand.canvas, brand.ink, 0.12),
+    panel: seedSurfaces ? SEED_EMAIL_PANEL : mix(brand.canvas, brand.ink, 0.04),
+    border: seedSurfaces ? SEED_EMAIL_BORDER : mix(brand.canvas, brand.ink, 0.12),
     ink: brand.ink,
     muted: brand.muted,
     accent: brand.color,

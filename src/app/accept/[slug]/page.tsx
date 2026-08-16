@@ -34,7 +34,7 @@ export default async function AcceptPage({
           </div>
 
           {q.items.map((it, i) => (
-            <div key={i} className="flex justify-between border-b border-line py-1.5 text-[12px] text-[#C9CEE3]">
+            <div key={i} className="flex justify-between border-b border-line py-1.5 text-[12px] text-[var(--brand-ink-soft)]">
               <span>{it.description}</span>
               <span className="tabular-nums">{it.line}</span>
             </div>

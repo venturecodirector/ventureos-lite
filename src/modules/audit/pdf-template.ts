@@ -421,7 +421,7 @@ export function buildAuditPdfHtml(
   }
   .eyebrow { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brand-muted); margin: 26px 0 12px; }
   .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; }
-  .check { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: #C9CEE3; }
+  .check { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--brand-ink-soft); }
   .ic { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; font-size: 10px; }
   .ic.p { background: rgba(61,220,151,0.15); color: #3DDC97; }
   .ic.f { background: rgba(255,92,122,0.15); color: #FF5C7A; }
@@ -434,7 +434,7 @@ export function buildAuditPdfHtml(
   }
   .crux th:first-child, .crux td:first-child { text-align: left; }
   .crux td {
-    padding: 4px 6px 4px 0; color: #C9CEE3; text-align: right;
+    padding: 4px 6px 4px 0; color: var(--brand-ink-soft); text-align: right;
     border-bottom: 1px solid rgba(239,241,248,0.05); font-variant-numeric: tabular-nums;
   }
   .crux td.v-poor { color: #FF5C7A; }
@@ -445,7 +445,7 @@ export function buildAuditPdfHtml(
     color: var(--brand-muted); border-bottom: 1px solid rgba(239,241,248,0.09); padding: 4px 6px 4px 0;
   }
   .pages td {
-    padding: 4px 6px 4px 0; color: #C9CEE3; vertical-align: top;
+    padding: 4px 6px 4px 0; color: var(--brand-ink-soft); vertical-align: top;
     border-bottom: 1px solid rgba(239,241,248,0.05);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
@@ -460,7 +460,7 @@ export function buildAuditPdfHtml(
   }
   .cmp th:first-child, .cmp td:first-child { text-align: left; }
   .cmp td {
-    padding: 5px 6px 5px 0; color: #C9CEE3; text-align: right;
+    padding: 5px 6px 5px 0; color: var(--brand-ink-soft); text-align: right;
     border-bottom: 1px solid rgba(239,241,248,0.05); font-variant-numeric: tabular-nums;
   }
   .cmp td.d-better { color: #3DDC97; font-weight: 700; }
@@ -470,7 +470,7 @@ export function buildAuditPdfHtml(
   .prio { margin-bottom: 14px; break-inside: avoid; }
   .prio-head { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
   .prio ol { margin: 0 0 0 16px; padding: 0; }
-  .prio li { font-size: 11px; color: #C9CEE3; margin-bottom: 3px; }
+  .prio li { font-size: 11px; color: var(--brand-ink-soft); margin-bottom: 3px; }
   .eff {
     font-size: 9px; color: var(--brand-muted); border: 1px solid rgba(239,241,248,0.12);
     border-radius: 10px; padding: 1px 6px; margin-left: 4px;
@@ -478,7 +478,7 @@ export function buildAuditPdfHtml(
   .broken { margin-top: 10px; font-size: 10px; }
   .broken b { display: block; margin-bottom: 3px; font-size: 10px; }
   .pitch { margin-top: 26px; border: 1px solid ${brand.color}66; background: ${brand.color}1A; border-radius: 12px; padding: 16px 18px; }
-  .pitch p { font-size: 12.5px; line-height: 1.6; color: #E4D3FF; }
+  .pitch p { font-size: 12.5px; line-height: 1.6; color: var(--brand-accent-ink); }
   .foot { margin-top: 40px; padding-top: 14px; border-top: 1px solid rgba(239,241,248,0.09); font-size: 10.5px; color: var(--brand-muted); }
 </style></head>
 <body style="${brandRootStyle(brand)}">

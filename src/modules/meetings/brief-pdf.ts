@@ -1,6 +1,6 @@
 import type { MeetingBrief } from "../../lib/ai/prompts/meeting-brief";
 import type { WorkspaceBrand } from "@/modules/workspaces/brand";
-import { brandBaseCss, brandFooterHtml, brandMarkHtml, brandRootStyle } from "@/modules/workspaces/letterhead";
+import { brandBaseCss, brandMarkHtml, brandRootStyle } from "@/modules/workspaces/letterhead";
 
 /**
  * Branded one-page meeting-brief PDF (spec §4.8), rendered through the shared
@@ -40,14 +40,13 @@ export function buildBriefPdfHtml(
   h1 { font-size: 19px; font-weight: 800; }
   .meta { font-size: 12px; color: var(--brand-muted); margin: 2px 0 18px; }
   h2 { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--brand-accent); margin: 16px 0 5px; }
-  p, li { font-size: 12.5px; line-height: 1.6; color: #C9CEE3; }
+  p, li { font-size: 12.5px; line-height: 1.6; color: var(--brand-ink-soft); }
   ul { padding-left: 18px; } li { margin: 2px 0; }
   ol { padding-left: 18px; } ol li { margin: 5px 0; color: var(--brand-ink); }
   .muted { color: var(--brand-muted); }
 </style></head>
 <body style="${brandRootStyle(brand)}">
   ${brandMarkHtml(brand)}
-  <div class="brand-footer">${brandFooterHtml(brand)}</div>
   <div class="kicker">Meeting brief</div>
   <h1>${esc(meta.companyName)}</h1>
   <div class="meta">${esc(meta.contactName || "Contact unknown")} · ${esc(meta.whenLabel)}</div>

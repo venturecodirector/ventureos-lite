@@ -1,6 +1,6 @@
 import { formatHuf, computeLineTotal, type QuoteItem, type QuoteTotals } from "./quote-math";
 import type { WorkspaceBrand } from "@/modules/workspaces/brand";
-import { brandBaseCss, brandFooterHtml, brandMarkHtml, brandRootStyle } from "@/modules/workspaces/letterhead";
+import { brandBaseCss, brandMarkHtml, brandRootStyle } from "@/modules/workspaces/letterhead";
 
 /**
  * Quote → template data + branded PDF wrapper (spec §4.9). Rendered from the
@@ -88,7 +88,7 @@ export function buildDocumentPdfHtml(
   body { font-family: var(--brand-font-body); background: var(--brand-canvas); color: var(--brand-ink); padding: 48px 44px; position: relative; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   ${brandBaseCss()}
   .brand { margin-bottom: 28px; }
-  .doc { position: relative; z-index: 1; font-size: 12.5px; line-height: 1.6; color: #C9CEE3; }
+  .doc { position: relative; z-index: 1; font-size: 12.5px; line-height: 1.6; color: var(--brand-ink-soft); }
   .doc h1 { font-size: 20px; font-weight: 800; margin-bottom: 10px; color: var(--brand-ink); }
   .doc h2 { font-size: 13px; margin: 14px 0 4px; color: var(--brand-ink); }
   .doc table { margin: 10px 0; }
@@ -101,6 +101,5 @@ export function buildDocumentPdfHtml(
   ${wm}
   ${brandMarkHtml(brand)}
   <div class="doc">${renderedBody}</div>
-  <div class="brand-footer" style="margin-top:28px">${brandFooterHtml(brand)}</div>
 </body></html>`;
 }

@@ -161,7 +161,7 @@ export default async function SharePage({
                   </div>
                   <div className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
                     {g.checks.map((c) => (
-                <div key={c.key} className="flex items-center gap-2.5 py-1 text-[12.5px] text-[#C9CEE3]">
+                <div key={c.key} className="flex items-center gap-2.5 py-1 text-[12.5px] text-[var(--brand-ink-soft)]">
                   <span
                     className={`grid h-[17px] w-[17px] flex-none place-items-center rounded-full text-[10px] ${
                       c.pass

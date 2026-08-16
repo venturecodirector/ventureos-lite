@@ -52,9 +52,9 @@ export function buildReportPdfHtml(
   .kicker { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brand-muted); margin-bottom: 18px; }
   h2 { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--brand-accent); margin: 18px 0 6px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  td, th { text-align: left; padding: 5px 0; border-bottom: 1px solid rgba(239,241,248,0.09); color: #C9CEE3; }
+  td, th { text-align: left; padding: 5px 0; border-bottom: 1px solid rgba(239,241,248,0.09); color: var(--brand-ink-soft); }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
-  p { font-size: 12.5px; line-height: 1.6; color: #C9CEE3; }
+  p { font-size: 12.5px; line-height: 1.6; color: var(--brand-ink-soft); }
   .note { border: 1px solid rgba(116,39,198,0.4); background: rgba(116,39,198,0.08); border-radius: 10px; padding: 10px 12px; margin-top: 6px; }
 </style></head>
 <body style="${brandRootStyle(brand)}">

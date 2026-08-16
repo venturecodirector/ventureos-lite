@@ -136,4 +136,39 @@ describe("no template hardcodes a design token", () => {
       expect(offenders).toEqual([]);
     });
   }
+
+  /**
+   * Semantic status colours, which are NOT brand identity: green means "passed"
+   * in anybody's palette, and re-tinting a pass/warn/fail chip per workspace
+   * would make the audit report harder to read rather than more theirs.
+   */
+  const SEMANTIC = new Set(["#3DDC97", "#F5B841", "#FF5C7A", "#8FE9C3"]);
+
+  /**
+   * The payroll PDF is deliberately a LIGHT document — dark ink on paper,
+   * unlike every prospect-facing artefact, because it is printed and filed
+   * rather than sent to a client. Its greys are paper and rule colours, not
+   * brand identity; the wordmark, accent rule, footer and fonts all come from
+   * the brand. Mapping its text to --brand-ink would have made it near-white on
+   * white for the seed workspace.
+   */
+  const PAPER = new Set(["#12162B", "#6B7290", "#D7DAE6", "#EEF0F6", "#F4F5FA", "#444B66"]);
+
+  it("has no OTHER hardcoded colour either", () => {
+    // The narrow five-token list is what let #C9CEE3 through — a fixed light
+    // grey that is invisible on a light canvas, so a second workspace's quote
+    // body text came out unreadable. Any hex that is not a semantic status
+    // colour has to be a brand variable.
+    const offenders: string[] = [];
+    for (const f of OUTPUT_SURFACES) {
+      for (const hex of f.code.match(/#[0-9A-Fa-f]{6}\b/g) ?? []) {
+        const h = hex.toUpperCase();
+        if (SEMANTIC.has(h) || PAPER.has(h)) continue;
+        // Pure white on a coloured button is contrast, not identity.
+        if (h === "#FFFFFF") continue;
+        offenders.push(`${f.rel}: ${hex}`);
+      }
+    }
+    expect([...new Set(offenders)]).toEqual([]);
+  });
 });

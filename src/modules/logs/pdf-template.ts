@@ -76,7 +76,7 @@ export function buildLogAppendixHtml(
   .h { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
        color: var(--brand-muted); border-bottom: 1px solid rgba(239,241,248,0.09); padding-bottom: 3px; margin-bottom: 5px; }
   table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
-  td { padding: 2.5px 0; color: #C9CEE3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+  td { padding: 2.5px 0; color: var(--brand-ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
   td.num { text-align: right; color: var(--brand-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .muted { color: var(--brand-muted); font-size: 10.5px; }
   .foot { margin-top: 28px; padding-top: 12px; border-top: 1px solid rgba(239,241,248,0.09); font-size: 10px; color: var(--brand-muted); }
