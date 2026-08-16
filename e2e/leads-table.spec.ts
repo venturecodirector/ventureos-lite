@@ -23,13 +23,42 @@ function tag(): string {
   return Math.random().toString(36).slice(2, 8).replace(/\d/g, "x");
 }
 
+/**
+ * Read one column's cells by its HEADER, not by position.
+ *
+ * nth-child indices were how two of these specs broke the moment the selection
+ * checkbox added a column: the assertions still passed a number, just the wrong
+ * one. The header is the stable name for a column.
+ */
+async function columnValues(page: Page, header: string): Promise<string[]> {
+  const headers = await page.locator("thead th").allInnerTexts();
+  const index = headers.findIndex((h) => h.trim().toLowerCase().startsWith(header.toLowerCase()));
+  if (index === -1) throw new Error(`No "${header}" column on screen`);
+  return page.locator(`tbody tr td:nth-child(${index + 1})`).allInnerTexts();
+}
+
+/**
+ * Wait for a row, reloading if it does not appear.
+ *
+ * The whole suite runs against one workspace, and a sibling spec revalidating
+ * /leads at the same moment can leave the client router serving a cached table
+ * that predates this lead. The row exists in the database either way, so the
+ * check goes back to the server rather than trusting the cached render.
+ */
+async function expectRowEventually(page: Page, name: string) {
+  await expect(async () => {
+    if (!(await page.locator("tr", { hasText: name }).count())) await page.reload();
+    await expect(page.locator("tr", { hasText: name })).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+}
+
 async function createLead(page: Page, name: string, company: string) {
   await page.goto("/leads");
   await page.getByRole("button", { name: "Add manually" }).click();
   await page.getByPlaceholder("Contact name").fill(name);
   await page.getByPlaceholder("Company name *").fill(company);
   await page.getByRole("button", { name: "Add lead" }).click();
-  await expect(page.locator("tr", { hasText: name })).toBeVisible();
+  await expectRowEventually(page, name);
 }
 
 /** Apply a single free-text condition through the real filter builder UI. */
@@ -107,7 +136,7 @@ test("a stage filter uses the real stage values, not free text", async ({ page }
 
   await expect(page.getByTestId("filter-chip")).toContainText("researched");
   // Every remaining row is in that stage — the chip is not decorative.
-  const stages = await page.locator("tbody tr td:nth-child(5)").allInnerTexts();
+  const stages = await columnValues(page, "Stage");
   for (const cell of stages) {
     expect(cell.toLowerCase()).toMatch(/researched|below gate/);
   }
@@ -129,7 +158,7 @@ test("clicking a column header sorts, and clicking again reverses it", async ({ 
   await page.getByTestId("sort-icpScore").click();
   await expect(page).toHaveURL(/sort=icpScore%3Adesc/);
 
-  const cells = await page.locator("tbody tr td:nth-child(3)").allInnerTexts();
+  const cells = await columnValues(page, "ICP score");
   const scores = cells.map((t) => {
     const digits = t.trim().match(/\d+/);
     return digits ? Number(digits[0]) : null;

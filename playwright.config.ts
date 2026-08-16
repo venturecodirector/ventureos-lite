@@ -27,7 +27,22 @@ process.env.FILES_DIR ??= resolve(__dirname, "data/files");
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: true,
+  /**
+   * One worker, deliberately.
+   *
+   * Every spec runs against the SAME seeded workspace and the SAME dev server.
+   * That was survivable while the suite was mostly read-only, but the P3/2 lead
+   * specs create, filter, re-stage and delete leads — and in parallel they were
+   * revalidating /leads underneath each other, so a worker could be served a
+   * cached render that predated its own write. The failures moved around every
+   * run, which is the signature of contention rather than of a bug.
+   *
+   * The honest fixes are per-worker workspaces or a mutex; neither is worth the
+   * machinery for a suite of this size. Serial costs roughly two extra minutes
+   * and makes a red result mean something.
+   */
+  workers: 1,
+  fullyParallel: false,
   reporter: "list",
   use: {
     baseURL: process.env.APP_URL ?? "http://localhost:3000",

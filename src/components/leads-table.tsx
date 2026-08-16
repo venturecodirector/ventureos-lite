@@ -8,6 +8,7 @@ import type { FilterSet, SortField, SortSpec } from "@/modules/leads/filters";
 import type { LeadFacets, LeadTableRow } from "@/modules/leads/table";
 import { serializeColumns, serializeFilterSet, serializeSort } from "@/modules/leads/view-params";
 import type { LeadView } from "@/modules/leads/views";
+import { LeadBulkBar } from "./lead-bulk-bar";
 import { LeadFilterBuilder } from "./lead-filter-builder";
 import { LeadViewTabs } from "./lead-view-tabs";
 import { LeadDetailModal } from "./lead-detail-modal";
@@ -40,6 +41,10 @@ export interface LeadsTableProps {
   activeViewId: string | null;
   currentUserId: string;
   canCurateViews: boolean;
+  /** Owner-only, matching the single-lead delete. */
+  canDelete: boolean;
+  /** `exports.run` grant (spec §3). */
+  canExport: boolean;
 }
 
 function Notches({ score }: { score: number | null }) {
@@ -93,6 +98,8 @@ export function LeadsTable(props: LeadsTableProps) {
     activeViewId,
     currentUserId,
     canCurateViews,
+    canDelete,
+    canExport,
   } = props;
   const router = useRouter();
   const pathname = usePathname();
@@ -103,6 +110,14 @@ export function LeadsTable(props: LeadsTableProps) {
   const [enrichFor, setEnrichFor] = useState<string | null>(null);
   const [showColumns, setShowColumns] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Ticked rows. Ids rather than indices, so paging cannot shift the meaning. */
+  const [selected, setSelected] = useState<string[]>([]);
+  /**
+   * "Select all matching" is a MODE, not 5,000 ids in component state: the
+   * server resolves the filter when the action runs, so the selection cannot go
+   * stale between ticking it and using it.
+   */
+  const [allMatching, setAllMatching] = useState(false);
 
   const visible = useMemo(
     () => columns.map(columnDef).filter((c): c is NonNullable<typeof c> => !!c),
@@ -167,6 +182,27 @@ export function LeadsTable(props: LeadsTableProps) {
   }
 
   const filtered = filters.conditions.length > 0;
+  const pageIds = rows.map((r) => r.id);
+  const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.includes(id));
+
+  function toggleRow(id: string) {
+    // Ticking a row leaves the "all matching" mode: the user is now naming
+    // rows, so the selection must stop meaning "everything the filter finds".
+    setAllMatching(false);
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  }
+
+  function togglePage() {
+    setAllMatching(false);
+    setSelected((s) =>
+      allOnPage ? s.filter((id) => !pageIds.includes(id)) : [...new Set([...s, ...pageIds])],
+    );
+  }
+
+  function clearSelection() {
+    setSelected([]);
+    setAllMatching(false);
+  }
 
   return (
     <div>
@@ -238,10 +274,34 @@ export function LeadsTable(props: LeadsTableProps) {
         </div>
       </div>
 
+      <LeadBulkBar
+        ids={selected}
+        allMatching={allMatching}
+        filters={filters}
+        matchingTotal={total}
+        pageIds={pageIds}
+        columns={columns}
+        facets={facets}
+        canDelete={canDelete}
+        canExport={canExport}
+        onSelectAllMatching={() => setAllMatching(true)}
+        onClear={clearSelection}
+      />
+
       <div className="overflow-x-auto rounded-card border border-line bg-panel">
         <table className="w-full border-collapse">
           <thead>
             <tr>
+              <th className="w-8 border-b border-line px-3 py-2.5 text-left">
+                <input
+                  type="checkbox"
+                  checked={allOnPage}
+                  onChange={togglePage}
+                  aria-label="Select every lead on this page"
+                  data-testid="select-page"
+                  className="accent-[#7427C6]"
+                />
+              </th>
               {visible.map((c) => (
                 <th
                   key={c.key}
@@ -276,7 +336,7 @@ export function LeadsTable(props: LeadsTableProps) {
               <tr>
                 <td
                   className="px-3 py-8 text-center text-[13px] text-muted"
-                  colSpan={visible.length + 1}
+                  colSpan={visible.length + 2}
                 >
                   {filtered ? (
                     <>
@@ -299,7 +359,22 @@ export function LeadsTable(props: LeadsTableProps) {
             {rows.map((l) => {
               const ready = (l.icpScore ?? 0) >= threshold;
               return (
-                <tr key={l.id} className="hover:[&>td]:bg-panel">
+                <tr
+                  key={l.id}
+                  className={`hover:[&>td]:bg-panel ${
+                    allMatching || selected.includes(l.id) ? "[&>td]:bg-accent-soft/20" : ""
+                  }`}
+                >
+                  <td className="border-b border-line px-3 py-3 align-middle">
+                    <input
+                      type="checkbox"
+                      checked={allMatching || selected.includes(l.id)}
+                      onChange={() => toggleRow(l.id)}
+                      aria-label={`Select ${l.contactName ?? "lead"}`}
+                      data-testid="select-row"
+                      className="accent-[#7427C6]"
+                    />
+                  </td>
                   {visible.map((c) => (
                     <td
                       key={c.key}

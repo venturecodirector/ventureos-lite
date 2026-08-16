@@ -469,9 +469,17 @@ npx playwright test --ui                  # pick and re-run interactively
 npx playwright show-report                # after a failure
 ```
 
-**Expected result: 70 passed, 1 skipped.** The skip is deliberate — one public
-audit test needs a real registrable domain and cannot mean anything on
-`localhost`, so it opts out rather than asserting something false.
+**Expected result: 94 passed, 1 skipped, in about 3–4 minutes.** The skip is
+deliberate — one public audit test needs a real registrable domain and cannot
+mean anything on `localhost`, so it opts out rather than asserting something
+false.
+
+The suite runs on a single worker on purpose. Every spec shares one seeded
+workspace and one dev server, and the lead specs create, filter, re-stage and
+delete leads; in parallel they revalidated pages underneath one another and
+produced failures that moved around between runs. Serial costs a couple of
+minutes and makes a red result mean something. Do not raise `workers` in
+`playwright.config.ts` without first giving each worker its own workspace.
 
 ### Two things that look like failures but are not
 
