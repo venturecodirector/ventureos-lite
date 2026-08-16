@@ -68,10 +68,39 @@ const itemSchema = z.object({
 
 const createSchema = z.object({
   leadId: z.string().min(1),
+  /** Which deal this quote belongs to. Resolved from the lead when omitted. */
+  dealId: z.string().min(1).optional(),
   items: z.array(itemSchema).min(1),
   vatRatePct: z.number().int().min(0).max(100),
   validUntil: z.string().min(1),
 });
+
+/**
+ * The deal a document belongs to (P4/b).
+ *
+ * The chain hangs off the DEAL once one exists — a company that buys twice has
+ * two quotes, and hanging both off the lead made them read as one chain with a
+ * duplicate step. Prefers the newest OPEN deal: a quote written today is for
+ * the sale still being worked, not for the one that closed last spring.
+ */
+async function dealIdForLead(
+  db: ReturnType<typeof getWorkspaceClient>,
+  leadId: string | null,
+): Promise<string | null> {
+  if (!leadId) return null;
+  const open = await db.deal.findFirst({
+    where: { leadId, status: "OPEN" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  if (open) return open.id;
+  const any = await db.deal.findFirst({
+    where: { leadId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  return any?.id ?? null;
+}
 
 export async function createQuote(raw: unknown): Promise<{ documentId: string }> {
   const input = createSchema.parse(raw);
@@ -97,6 +126,7 @@ export async function createQuote(raw: unknown): Promise<{ documentId: string }>
     data: {
       workspaceId,
       leadId: input.leadId,
+      dealId: input.dealId ?? (await dealIdForLead(db, input.leadId)),
       templateVersionId: template?.id ?? null,
       type: "QUOTE",
       status: "DRAFT",
@@ -252,7 +282,13 @@ function docNumber(payload: unknown): string {
 async function partyFor(
   quoteId: string,
   workspaceId: string,
-): Promise<{ party: ContractParty; items: QuoteItem[]; leadId: string; status: DocumentStatus }> {
+): Promise<{
+  party: ContractParty;
+  items: QuoteItem[];
+  leadId: string;
+  dealId: string | null;
+  status: DocumentStatus;
+}> {
   const db = getWorkspaceClient(workspaceId);
   const quote = await db.document.findUnique({
     where: { id: quoteId },
@@ -271,7 +307,13 @@ async function partyFor(
     contractorLegalName: ws?.legalName ?? brandFrom(ws?.brand).legalName,
   };
   const items = ((quote.payload ?? {}) as { items?: QuoteItem[] }).items ?? [];
-  return { party, items, leadId: quote.leadId ?? "", status: quote.status };
+  return {
+    party,
+    items,
+    leadId: quote.leadId ?? "",
+    dealId: quote.dealId ?? null,
+    status: quote.status,
+  };
 }
 
 export async function getContractPrefill(quoteId: string): Promise<ContractPrefill> {
@@ -296,7 +338,7 @@ export async function createContractFromQuote(
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
 
-  const { party, items, leadId, status } = await partyFor(quoteId, workspaceId);
+  const { party, items, leadId, status, dealId } = await partyFor(quoteId, workspaceId);
   if (!canCreateContract(status)) {
     return { ok: false, error: "The quote must be accepted before generating a contract." };
   }
@@ -315,6 +357,9 @@ export async function createContractFromQuote(
     data: {
       workspaceId,
       leadId: leadId || null,
+      // A chained document inherits its parent's deal, which is what keeps
+      // quote -> contract -> certificate one chain rather than three orphans.
+      dealId,
       chainParentId: quoteId,
       templateVersionId: template?.id ?? null,
       type: "CONTRACT",
@@ -360,6 +405,7 @@ export async function createCertificateFromContract(
     data: {
       workspaceId,
       leadId: contract.leadId,
+      dealId: contract.dealId,
       chainParentId: contractId,
       templateVersionId: template?.id ?? null,
       type: "CERTIFICATE",

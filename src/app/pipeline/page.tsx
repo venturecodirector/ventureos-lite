@@ -3,6 +3,7 @@ import { PipelineBoard, type PipelineCard } from "@/components/pipeline-board";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { daysInStage } from "@/modules/pipeline/schedule";
+import { dealChipsForLeads } from "@/modules/deals/store";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,11 @@ export default async function PipelinePage() {
   const outcomeByLead = new Map<string, string>();
   for (const o of outcomes) if (!outcomeByLead.has(o.leadId)) outcomeByLead.set(o.leadId, o.result);
 
+  // Which leads have crossed into the money journey (P4/b). The card says so
+  // and links across, so the split between the two boards is visible on the
+  // board itself rather than only in a doc nobody opens.
+  const dealChips = await dealChipsForLeads(workspaceId, leads.map((l) => l.id));
+
   const now = new Date();
   const cards: PipelineCard[] = leads.map((l) => ({
     id: l.id,
@@ -64,6 +70,7 @@ export default async function PipelinePage() {
     chainTypes: chainByLead.get(l.id) ?? [],
     closedResult: outcomeByLead.get(l.id) ?? null,
     invoiceStatus: invoiceByLead.get(l.id) ?? null,
+    deal: dealChips.get(l.id) ?? null,
   }));
 
   return (

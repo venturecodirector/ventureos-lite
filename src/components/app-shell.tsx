@@ -19,6 +19,7 @@ import {
   SearchIcon,
   AuditIcon,
   PipelineIcon,
+  DealsIcon,
   InboxIcon,
   CallsIcon,
   MeetingsIcon,
@@ -49,6 +50,9 @@ const NAV: NavItem[] = [
   { label: "Lead Engine", icon: <SearchIcon />, href: "/leads" },
   { label: "Site Audit", icon: <AuditIcon />, href: "/audit" },
   { label: "Pipeline", icon: <PipelineIcon />, href: "/pipeline" },
+  // Deliberately right after Pipeline: the two boards are one journey split at
+  // Qualified, and putting them side by side is half of explaining the boundary.
+  { label: "Deals", icon: <DealsIcon />, href: "/deals" },
   { label: "Outreach", icon: <OutreachIcon />, href: "/outreach" },
   { label: "Inbox", icon: <InboxIcon />, href: "/inbox" },
   { label: "Calls", icon: <CallsIcon />, href: "/calls" },

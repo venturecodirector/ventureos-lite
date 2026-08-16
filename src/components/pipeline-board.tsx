@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Stage } from "@prisma/client";
 import {
@@ -33,6 +34,8 @@ export interface PipelineCard {
   chainTypes: string[];
   closedResult: string | null;
   invoiceStatus: string | null;
+  /** Set once this lead has crossed into the money journey (P4/b). */
+  deal: { dealId: string; value: number; status: string } | null;
 }
 
 const INVOICE_CHIP: Record<string, string> = {
@@ -67,6 +70,16 @@ function ChainDots({ types }: { types: string[] }) {
 }
 
 const ALL_STAGES: Stage[] = [...PIPELINE_STAGES, ...SIDE_STAGES];
+
+/**
+ * Where the lead board stops owning the story (playbook-v2 P4/a).
+ *
+ * A lead owns the pre-deal journey; from Qualified onward the money lives on a
+ * Deal. The columns are still here — hiding them would lose 55 leads from view
+ * on upgrade — but they are labelled as belonging to the deals board, and every
+ * card that has a deal links straight to it.
+ */
+const DEAL_OWNED: Stage[] = ["QUALIFIED", "MEETING_BOOKED", "HANDED_OFF"];
 
 function Notches({ score }: { score: number | null }) {
   const n = score ?? 0;
@@ -115,6 +128,20 @@ export function PipelineBoard({ cards }: { cards: PipelineCard[] }) {
 
   return (
     <div className="max-w-full">
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11.5px] text-muted">
+        <span>
+          <b className="font-semibold text-ink">Researched → Replied</b> is the lead journey.
+        </span>
+        <span aria-hidden>·</span>
+        <span>
+          <b className="font-semibold text-ink">Qualified onward</b> is money, and lives on{" "}
+          <Link href="/deals" className="text-accent-ink underline-offset-2 hover:underline">
+            Deals
+          </Link>
+          .
+        </span>
+      </div>
+
       {error && (
         <div className="mb-3 rounded-[10px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.1)] px-3.5 py-2.5 text-[12.5px] text-[#FFB3C2]">
           {error}
@@ -145,9 +172,12 @@ export function PipelineBoard({ cards }: { cards: PipelineCard[] }) {
                   : "border-line"
               } ${isSide ? "bg-[rgba(239,241,248,0.015)]" : "bg-[rgba(239,241,248,0.025)]"}`}
             >
-              <div className="flex items-center gap-2 px-1.5 pb-2.5 pt-1 text-[12px] font-semibold">
+              <div className="flex items-center gap-2 px-1.5 pt-1 text-[12px] font-semibold">
                 {STAGE_LABELS[stage]}
                 <span className="ml-auto font-medium text-muted">{list.length}</span>
+              </div>
+              <div className="px-1.5 pb-2.5 pt-0.5 text-[10px] uppercase tracking-[0.1em] text-muted">
+                {DEAL_OWNED.includes(stage) ? "deal territory" : isSide ? "parked" : "lead journey"}
               </div>
 
               {list.map((c) => (
@@ -207,6 +237,16 @@ export function PipelineBoard({ cards }: { cards: PipelineCard[] }) {
                       </span>
                     )}
                   </div>
+                  {c.deal && (
+                    <Link
+                      href={`/deals`}
+                      onClick={(e) => e.stopPropagation()}
+                      data-testid="lead-deal-chip"
+                      className="mt-2 inline-block rounded-full border border-accent-soft bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent-ink hover:bg-panel-2"
+                    >
+                      deal · {c.deal.value.toLocaleString("hu-HU")} Ft
+                    </Link>
+                  )}
                   {stage === "DISQUALIFIED" && c.reason && (
                     <p className="mt-1.5 text-[11px] text-muted">{c.reason}</p>
                   )}

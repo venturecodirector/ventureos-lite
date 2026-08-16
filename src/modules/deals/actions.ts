@@ -1,0 +1,147 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { getWorkspaceClient } from "@/lib/db";
+import { getActiveContext } from "@/lib/session";
+import { workspaceMembers } from "@/modules/leads/table";
+import { DEFAULT_PIPELINES } from "./pipelines";
+import {
+  createDealIn,
+  convertLeadIn,
+  moveStageIn,
+  patchDealIn,
+  type DealResult,
+  type MoveResult,
+} from "./mutations";
+import {
+  defaultPipeline,
+  ensurePipelines,
+  listPipelines,
+  loadPipelineBoard,
+  type DealCardView,
+  type PipelineView,
+} from "./store";
+
+/**
+ * The session-facing surface of the deals layer (playbook-v2 P4/b).
+ *
+ * Thin by design: every rule lives in `mutations.ts`, where a test can reach it
+ * without a cookie. What is left here is resolving the tenant from the session
+ * and telling Next which pages to revalidate.
+ */
+
+export interface DealsBoardData {
+  pipelines: PipelineView[];
+  activePipelineId: string | null;
+  cards: DealCardView[];
+  members: Array<{ id: string; name: string }>;
+}
+
+export async function getDealsBoard(pipelineId?: string): Promise<DealsBoardData> {
+  const { workspaceId } = await getActiveContext();
+  const db = getWorkspaceClient(workspaceId);
+
+  let pipelines = await listPipelines(db);
+  // A workspace created before P4 has no pipelines. Provisioning on first view
+  // rather than only in a migration means a brand-new workspace is never
+  // staring at an empty screen it cannot fix from the UI.
+  if (pipelines.length === 0) pipelines = await ensurePipelines(workspaceId, DEFAULT_PIPELINES);
+
+  const active = pipelines.find((p) => p.id === pipelineId) ?? defaultPipeline(pipelines) ?? null;
+  const members = await workspaceMembers(workspaceId);
+  const ownerNames = new Map(members.map((m) => [m.id, m.name]));
+
+  return {
+    pipelines,
+    activePipelineId: active?.id ?? null,
+    cards: active ? await loadPipelineBoard(workspaceId, active.id, { ownerNames }) : [],
+    members,
+  };
+}
+
+export async function createDeal(raw: unknown): Promise<DealResult> {
+  const { workspaceId, userId } = await getActiveContext();
+  const res = await createDealIn(workspaceId, userId, raw);
+  if (res.ok) {
+    revalidatePath("/deals");
+    revalidatePath("/pipeline");
+  }
+  return res;
+}
+
+export async function convertLeadToDeal(raw: unknown): Promise<DealResult> {
+  const { workspaceId } = await getActiveContext();
+  const res = await convertLeadIn(workspaceId, raw);
+  if (res.ok) {
+    revalidatePath("/deals");
+    revalidatePath("/leads");
+    revalidatePath("/pipeline");
+  }
+  return res;
+}
+
+export async function moveDealStage(
+  dealId: string,
+  stageId: string,
+  opts?: { lostReason?: string },
+): Promise<MoveResult> {
+  const { workspaceId, userId } = await getActiveContext();
+  const res = await moveStageIn(workspaceId, userId, dealId, stageId, opts);
+  if (res.ok) {
+    revalidatePath("/deals");
+    revalidatePath("/analytics");
+  }
+  return res;
+}
+
+export async function updateDeal(raw: unknown): Promise<MoveResult> {
+  const { workspaceId } = await getActiveContext();
+  const res = await patchDealIn(workspaceId, raw);
+  if (res.ok) {
+    revalidatePath("/deals");
+    revalidatePath("/analytics");
+  }
+  return res;
+}
+
+/** Every pipeline + stage, for the convert dialog and the board tabs. */
+export async function listPipelinesForUi(): Promise<PipelineView[]> {
+  const { workspaceId } = await getActiveContext();
+  const db = getWorkspaceClient(workspaceId);
+  const pipelines = await listPipelines(db);
+  return pipelines.length ? pipelines : ensurePipelines(workspaceId, DEFAULT_PIPELINES);
+}
+
+export interface LeadDealLink {
+  id: string;
+  title: string;
+  value: number;
+  status: string;
+  stageName: string;
+  pipelineName: string;
+}
+
+/** The deals hanging off one lead, for the lead modal's cross-link. */
+export async function getDealsForLead(leadId: string): Promise<LeadDealLink[]> {
+  const { workspaceId } = await getActiveContext();
+  const db = getWorkspaceClient(workspaceId);
+  const deals = await db.deal.findMany({
+    where: { leadId },
+    orderBy: { createdAt: "desc" },
+    include: { stage: { select: { name: true } }, pipeline: { select: { name: true } } },
+  });
+  return deals.map((d) => ({
+    id: d.id,
+    title: d.title,
+    value: d.value,
+    status: d.status,
+    stageName: d.stage.name,
+    pipelineName: d.pipeline.name,
+  }));
+}
+
+/** Workspace members, for the owner picker on a deal. */
+export async function listDealOwners(): Promise<Array<{ id: string; name: string }>> {
+  const { workspaceId } = await getActiveContext();
+  return workspaceMembers(workspaceId);
+}

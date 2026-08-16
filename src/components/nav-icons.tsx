@@ -62,6 +62,13 @@ export const PipelineIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const DealsIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <rect x="3" y="7" width="18" height="13" rx="2" />
+    <path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4h5A1.5 1.5 0 0 1 16 5.5V7M3 12h18" />
+  </svg>
+);
+
 export const InboxIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="M21 12h-5l-2 3h-4l-2-3H3" />

@@ -244,6 +244,30 @@ export async function loadForecastDeals(
   }));
 }
 
+/**
+ * Which leads already have a deal, so the lead board can say so and link
+ * across (P4/b — "document the boundary clearly in the UI"). Two boards that
+ * never mention each other is how a split like this confuses people.
+ */
+export async function dealChipsForLeads(
+  workspaceId: string,
+  leadIds: string[],
+): Promise<Map<string, { dealId: string; value: number; status: string }>> {
+  const out = new Map<string, { dealId: string; value: number; status: string }>();
+  if (leadIds.length === 0) return out;
+  const db = getWorkspaceClient(workspaceId);
+  const deals = await db.deal.findMany({
+    where: { leadId: { in: leadIds } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, leadId: true, value: true, status: true },
+  });
+  for (const d of deals) {
+    if (!d.leadId || out.has(d.leadId)) continue;
+    out.set(d.leadId, { dealId: d.id, value: d.value, status: d.status });
+  }
+  return out;
+}
+
 /** The deals attached to a lead, for the lead modal's cross-link (P4/b). */
 export async function dealsForLead(
   db: WorkspaceClient,

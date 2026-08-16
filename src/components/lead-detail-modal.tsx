@@ -10,6 +10,11 @@ import {
   type LeadDetail,
 } from "@/modules/leads/detail";
 import { moveLeadStage, deleteLead } from "@/modules/leads/actions";
+import {
+  convertLeadToDeal,
+  getDealsForLead,
+  type LeadDealLink,
+} from "@/modules/deals/actions";
 import { PIPELINE_STAGES, SIDE_STAGES, STAGE_LABELS } from "@/modules/pipeline/transitions";
 import { LeadAvatar } from "./lead-avatar";
 import { Modal } from "./modal";
@@ -43,6 +48,9 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
   // on disk with no undo, so it does not hang off a single click.
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [erasingDocs, setErasingDocs] = useState(false);
+  // The money side of this lead (P4/b). Loaded alongside the detail so the
+  // modal can say "this became a deal" instead of leaving the two apart.
+  const [deals, setDeals] = useState<LeadDealLink[] | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -58,6 +66,9 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
         setScoreDraft(d.icpScore);
       })
       .catch(() => live && setLoadError(true));
+    getDealsForLead(leadId)
+      .then((d) => live && setDeals(d))
+      .catch(() => live && setDeals([]));
     return () => {
       live = false;
     };
@@ -494,6 +505,62 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
             </div>
             {detail.stageReason && (
               <p className="text-[11.5px] text-muted">Reason: {detail.stageReason}</p>
+            )}
+          </section>
+
+          <section className="grid gap-2 rounded-[11px] border border-line p-3">
+            <p className={LABEL}>Deals</p>
+            {deals === null ? (
+              <p className="text-[12px] text-muted">Loading…</p>
+            ) : deals.length === 0 ? (
+              <>
+                <p className="text-[12px] text-muted">
+                  No deal yet. A lead carries the conversation; a deal carries the money.
+                </p>
+                <button
+                  type="button"
+                  className={BTN}
+                  data-testid="convert-to-deal"
+                  disabled={pending}
+                  onClick={() =>
+                    startTransition(async () => {
+                      const res = await convertLeadToDeal({ leadId: form.id });
+                      if (!res.ok) {
+                        setMsg({ kind: "err", text: res.error });
+                        return;
+                      }
+                      setDeals(await getDealsForLead(form.id));
+                      setMsg({ kind: "ok", text: "Deal created." });
+                      router.refresh();
+                    })
+                  }
+                >
+                  Convert to deal
+                </button>
+              </>
+            ) : (
+              <ul className="grid gap-1.5" data-testid="lead-deals">
+                {deals.map((d) => (
+                  <li
+                    key={d.id}
+                    className="flex items-baseline gap-2 rounded-[9px] border border-line bg-panel px-2.5 py-2 text-[12px]"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                    <span className="text-[11px] text-muted">
+                      {d.pipelineName} · {d.stageName}
+                    </span>
+                    <b className="tabular-nums">{d.value.toLocaleString("hu-HU")} Ft</b>
+                  </li>
+                ))}
+                <li>
+                  <a
+                    href="/deals"
+                    className="text-[11.5px] text-accent-ink underline-offset-2 hover:underline"
+                  >
+                    Open the deals board →
+                  </a>
+                </li>
+              </ul>
             )}
           </section>
 

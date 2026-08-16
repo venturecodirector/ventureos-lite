@@ -1,0 +1,39 @@
+import { AppShell } from "@/components/app-shell";
+import { DealsBoard } from "@/components/deals-board";
+import { getDealsBoard } from "@/modules/deals/actions";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * The deals board (playbook-v2 P4/b).
+ *
+ * One pipeline at a time, chosen by the `pipeline` query parameter, so a board
+ * is a place with a URL rather than a client-side toggle.
+ */
+export default async function DealsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ pipeline?: string }>;
+}) {
+  const { pipeline } = await searchParams;
+  const board = await getDealsBoard(pipeline);
+
+  return (
+    <AppShell activePath="/deals">
+      {board.pipelines.length === 0 ? (
+        <div className="rounded-card border border-line bg-panel p-8 text-center">
+          <h2 className="font-display text-[22px] lowercase tracking-display">no pipelines yet</h2>
+          <p className="mx-auto mt-2 max-w-[420px] text-[13px] text-muted">
+            A pipeline is where a qualified lead becomes money you can forecast.
+          </p>
+        </div>
+      ) : (
+        <DealsBoard
+          pipelines={board.pipelines}
+          activePipelineId={board.activePipelineId}
+          cards={board.cards}
+        />
+      )}
+    </AppShell>
+  );
+}
