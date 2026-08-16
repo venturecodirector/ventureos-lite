@@ -6,7 +6,8 @@ import { renderTemplate } from "../templates/render";
 import { buildDocumentData } from "./data";
 import { buildDocumentPdfHtml } from "./pdf-template";
 import type { DocumentPdfJobData } from "./enqueue";
-import { brandFrom } from "@/modules/workspaces/brand";
+import type { Prisma } from "@prisma/client";
+import { resolveDocumentBrand } from "./brand-snapshot";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
 
@@ -29,12 +30,26 @@ export async function processDocumentPdf(data: DocumentPdfJobData): Promise<void
 
   const templateData = buildDocumentData(doc, workspace);
   const { output } = renderTemplate(doc.template.body, templateData);
-  const html = buildDocumentPdfHtml(output, doc.watermark, brandFrom(workspace?.brand));
+  // A document that has already been rendered keeps the letterhead it was
+  // issued under; the first render captures it (audit-v2 item 6).
+  const pinned = resolveDocumentBrand(doc.brandSnapshot, workspace?.brand);
+  const html = buildDocumentPdfHtml(output, doc.watermark, pinned.brand);
   const pdf = await renderHtmlToPdf(html);
 
   const rel = `documents/${data.documentId}.pdf`;
   await mkdir(join(FILES_DIR, "documents"), { recursive: true });
   await writeFile(join(FILES_DIR, rel), pdf);
 
-  await db.document.update({ where: { id: data.documentId }, data: { pdfUrl: rel } });
+  await db.document.update({
+    where: { id: data.documentId },
+    data: {
+      pdfUrl: rel,
+      ...(pinned.shouldPersist
+        ? {
+            brandSnapshot: pinned.brand as unknown as Prisma.InputJsonValue,
+            brandVersion: pinned.version,
+          }
+        : {}),
+    },
+  });
 }

@@ -1154,6 +1154,15 @@ model Document {
   totals            Json?          @map("totals_json")
   pdfUrl            String?        @map("pdf_url")
   acceptSlug        String?        @unique @map("accept_slug")
+  /// The branding this document was RENDERED under (audit-v2 item 6).
+  ///
+  /// Pinned for the same reason templateVersionId pins the wording: a document
+  /// that has been sent to a client is a record of what was sent, and
+  /// re-rendering it after the letterhead changed would quietly reissue it with
+  /// a different identity on it. Null means "never rendered" — the first render
+  /// captures the snapshot.
+  brandSnapshot     Json?          @map("brand_snapshot")
+  brandVersion      Int?           @map("brand_version")
   finalizedAt       DateTime?      @map("finalized_at")
   finalizedBy       String?        @map("finalized_by")
   createdAt         DateTime       @default(now()) @map("created_at")
