@@ -5,6 +5,7 @@ import { SettingsUsers } from "@/components/settings-users";
 import { SettingsIntegrations } from "@/components/settings-integrations";
 import { ApiCosts } from "@/components/api-costs";
 import { SettingsEmail } from "@/components/settings-email";
+import { SettingsNotifications } from "@/components/settings-notifications";
 import { SettingsExtension } from "@/components/settings-extension";
 import { ProposalQueue } from "@/components/proposal-queue";
 import { GdprPanel } from "@/components/gdpr-panel";
@@ -17,6 +18,7 @@ import { listMembers } from "@/modules/settings/actions";
 import { getSecurityStatus } from "@/modules/auth/actions";
 import { listWorkspaceUsers } from "@/modules/users/actions";
 import { getIntegrations } from "@/modules/integrations/actions";
+import { getNotificationPreferences } from "@/modules/notifications/preference-actions";
 import { listCaptureTokens } from "@/modules/capture/actions";
 import { buildExtensionPackage } from "@/modules/extension/package";
 import { listProposals } from "@/modules/signal/actions";
@@ -54,12 +56,15 @@ export default async function SettingsPage({
   const apiCosts = owner ? await getApiCostReport(workspaceId) : null;
   // Personal, not workspace-wide: every user manages their own extension tokens.
   const captureTokens = await listCaptureTokens();
+  // Also personal — what reaches ME, and how (P6/1).
+  const notificationPrefs = await getNotificationPreferences();
   // Version only — the zip itself is built on demand by the download route.
   const extensionVersion = (await buildExtensionPackage()).version;
   return (
     <AppShell activePath="/settings">
       <div className="grid gap-4">
         <SecurityPanel status={securityStatus} focusPassword={security === "password"} />
+        <SettingsNotifications initial={notificationPrefs} />
         <SettingsExtension tokens={captureTokens} version={extensionVersion} />
         {owner && (
           <SettingsUsers

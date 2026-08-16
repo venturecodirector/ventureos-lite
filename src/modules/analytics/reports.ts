@@ -159,6 +159,13 @@ export interface DigestInput {
   pendingApprovals: number;
   topReferrer: { name: string; revenue: number } | null;
   isOwner: boolean;
+  /**
+   * Unread notifications whose type this user has left on for the email digest
+   * (playbook-v2 P6/1). The digest is the EMAIL channel: the playbook is
+   * explicit that a notification must never become a message per event, so it
+   * arrives here as one batched line.
+   */
+  unreadNotifications?: number;
 }
 export interface DigestSection {
   key: string;
@@ -178,6 +185,15 @@ export function buildDigestModel(input: DigestInput): DigestModel {
   ];
   if (input.isOwner) {
     sections.push({ key: "pendingApprovals", label: "Pending approvals", value: `${input.pendingApprovals}` });
+  }
+  // Only when there is something: a permanent "Unread notifications: 0" line
+  // trains people to skip the whole block.
+  if (input.unreadNotifications && input.unreadNotifications > 0) {
+    sections.push({
+      key: "notifications",
+      label: "Unread notifications",
+      value: `${input.unreadNotifications}`,
+    });
   }
   sections.push({
     key: "topReferrer",

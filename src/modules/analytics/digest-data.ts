@@ -1,5 +1,6 @@
 import type { WorkspaceClient } from "../../lib/db";
 import { getTopReferrers } from "../referrals/data";
+import { countDigestableUnread } from "../notifications/digest";
 import type { DigestInput } from "./reports";
 
 /**
@@ -9,7 +10,7 @@ import type { DigestInput } from "./reports";
  */
 export async function collectDigestData(
   db: WorkspaceClient,
-  opts: { isOwner: boolean; nowMs: number },
+  opts: { isOwner: boolean; nowMs: number; userId?: string; role?: string },
 ): Promise<DigestInput> {
   const now = new Date(opts.nowMs);
   const weekAgo = new Date(opts.nowMs - 7 * 24 * 60 * 60_000);
@@ -24,7 +25,14 @@ export async function collectDigestData(
       getTopReferrers(db, 1),
     ]);
 
+  // P6/1 email fallback: unread notifications of the types this user left on
+  // for the digest. Counted here rather than mailed per event.
+  const unreadNotifications = opts.userId
+    ? await countDigestableUnread(db, opts.userId, opts.role ?? "BDR")
+    : 0;
+
   return {
+    unreadNotifications,
     todayQueueCount: dueCallbacks + overdueFollowups + researchedLeads,
     dueCallbacks,
     overdueFollowups,

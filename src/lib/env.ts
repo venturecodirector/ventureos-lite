@@ -109,6 +109,18 @@ export function buildEnvSchema(strict: boolean) {
         ? z.string().min(32, "must be at least 32 characters (openssl rand -base64 32)")
         : z.string().optional(),
 
+      // ---- web push (playbook-v2 P6/1) --------------------------------------
+      // Optional even in production: with no keys, push is simply unavailable
+      // and the Settings toggle says so. Everything still lands in the bell.
+      // Generate a pair with `npm run vapid`.
+      VAPID_PUBLIC_KEY: z.string().min(1).optional(),
+      VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+      /** mailto: the push service can reach if our sending misbehaves. */
+      VAPID_SUBJECT: z
+        .string()
+        .refine((v) => /^mailto:.+@.+/.test(v), "must be a mailto: address")
+        .optional(),
+
       // ---- mail ------------------------------------------------------------
       MAIL_PROVIDER: z.enum(["mailgun", "mock"]).optional(),
       MAILGUN_EU: strict
@@ -205,6 +217,16 @@ export function buildEnvSchema(strict: boolean) {
       }
       if (env.REGISTRY_PROVIDER === "opten" && !env.REGISTRY_API_KEY) {
         issue("REGISTRY_API_KEY", "is required when REGISTRY_PROVIDER=opten");
+      }
+
+      // --- VAPID is all-or-nothing (P6/1) -----------------------------------
+      // Half a key pair is worse than none: the browser would be handed a
+      // public key, subscribe successfully, and then never receive anything.
+      if (env.VAPID_PUBLIC_KEY && !env.VAPID_PRIVATE_KEY) {
+        issue("VAPID_PRIVATE_KEY", "is required whenever VAPID_PUBLIC_KEY is set");
+      }
+      if (env.VAPID_PRIVATE_KEY && !env.VAPID_PUBLIC_KEY) {
+        issue("VAPID_PUBLIC_KEY", "is required whenever VAPID_PRIVATE_KEY is set");
       }
 
       // --- the four surfaces must be four distinct origins -------------------

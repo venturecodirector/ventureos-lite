@@ -32,7 +32,14 @@ export async function processMondayDigests(nowMs: number = Date.now()): Promise<
 
     for (const m of members) {
       const isOwner = m.role === "OWNER";
-      const input = await collectDigestData(db, { isOwner, nowMs });
+      // userId + role so the digest can carry this person's unread
+      // notifications (P6/1) — the email channel is this line, not per-event mail.
+      const input = await collectDigestData(db, {
+        isOwner,
+        nowMs,
+        userId: m.userId,
+        role: m.role,
+      });
       const model = buildDigestModel(input);
 
       let intro = "Here's your week at a glance.";

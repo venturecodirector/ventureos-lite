@@ -18,7 +18,11 @@ let userId = "";
 let workspaceId = "";
 
 async function seed(count: number, hrefs: string[] = []) {
-  await prisma.notification.deleteMany({ where: { userId, dedupeKey: { startsWith: TAG } } });
+  // Clear EVERYTHING for this user, not just this spec's rows. The runner is an
+  // Owner, so sibling specs that book a meeting or accept a quote now genuinely
+  // produce notifications for them — which is the wiring working, and which
+  // makes any count assertion meaningless without a known starting state.
+  await prisma.notification.deleteMany({ where: { userId } });
   for (let i = 0; i < count; i += 1) {
     await prisma.notification.create({
       data: {
@@ -44,7 +48,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await prisma.notification.deleteMany({ where: { userId, dedupeKey: { startsWith: TAG } } });
+  await prisma.notification.deleteMany({ where: { userId } });
   await prisma.$disconnect();
 });
 
@@ -140,4 +144,69 @@ test("the bell is reachable on a phone", async ({ page }) => {
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test("the preference matrix lists every type this role may receive", async ({ page }) => {
+  await page.goto("/settings");
+  const panel = page.getByTestId("settings-notifications");
+  await expect(panel).toBeVisible();
+
+  const rows = page.getByTestId("preference-row");
+  // The seeded runner is an Owner, so the Owner-only type is present too.
+  await expect(rows).toHaveCount(10);
+  await expect(panel).toContainText("Signal Engine proposal");
+  await expect(panel).toContainText("Callback due");
+});
+
+test("a preference toggle persists across a reload", async ({ page }) => {
+  await page.goto("/settings");
+
+  const push = page.getByTestId("pref-callback_due-push");
+  const wasOn = await push.isChecked();
+  // Push toggles are disabled when the server has no VAPID keys — then the
+  // in-app column is the one to exercise.
+  const target = (await push.isDisabled())
+    ? page.getByTestId("pref-callback_due-emailDigest")
+    : push;
+
+  const before = await target.isChecked();
+  await target.setChecked(!before);
+  await expect(target).toBeChecked({ checked: !before });
+
+  await page.reload();
+  await expect(target).toBeChecked({ checked: !before });
+
+  // Put it back.
+  await target.setChecked(before);
+  await expect(target).toBeChecked({ checked: before });
+  expect(typeof wasOn).toBe("boolean");
+});
+
+test("flipping one channel leaves the other two alone", async ({ page }) => {
+  await page.goto("/settings");
+  const inApp = page.getByTestId("pref-escalation-inApp");
+  const digest = page.getByTestId("pref-escalation-emailDigest");
+
+  const digestBefore = await digest.isChecked();
+  await inApp.setChecked(false);
+  await page.reload();
+
+  // The row is written from the RESOLVED state, so turning in-app off must not
+  // have silently reset the digest column to its default.
+  await expect(digest).toBeChecked({ checked: digestBefore });
+  await expect(inApp).not.toBeChecked();
+
+  await inApp.setChecked(true);
+});
+
+test("push says why it is unavailable rather than failing silently", async ({ page }) => {
+  await page.goto("/settings");
+  const panel = page.getByTestId("settings-notifications");
+  const enable = page.getByTestId("push-enable");
+
+  if (await enable.isDisabled()) {
+    await expect(panel).toContainText("no VAPID keys are configured");
+  } else {
+    await expect(panel).toContainText(/registered|Not registered/);
+  }
 });

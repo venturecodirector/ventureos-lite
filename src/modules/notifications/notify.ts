@@ -15,14 +15,37 @@
 
 import { getWorkspaceClient } from "@/lib/db";
 import { deliverNotification, type DeliverInput } from "./store";
+import { sendPushToUsers } from "./push";
 import { allMembers, leadAndOwners, leadRecipients, workspaceOwners } from "./recipients";
 
+/**
+ * Deliver in-app, then push to whoever asked for it.
+ *
+ * The store returns the push audience rather than sending itself, so it can
+ * stay free of network I/O and testable. Push failure is swallowed separately
+ * from in-app failure: a dead phone endpoint must not lose the bell entry.
+ */
 async function safeDeliver(input: DeliverInput): Promise<void> {
+  let pushUserIds: string[] = [];
   try {
-    await deliverNotification(input);
+    ({ pushUserIds } = await deliverNotification(input));
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(`[notify] ${input.type} failed`, e);
+    return;
+  }
+
+  if (pushUserIds.length === 0) return;
+  try {
+    await sendPushToUsers(input.workspaceId, pushUserIds, {
+      title: input.title,
+      body: input.body ?? null,
+      href: input.href,
+      tag: input.type,
+    });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(`[notify] push for ${input.type} failed`, e);
   }
 }
 

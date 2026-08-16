@@ -17,7 +17,8 @@
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
     "rls:apply": "tsx scripts/apply-rls.ts",
-    "set-password": "tsx scripts/set-password.ts"
+    "set-password": "tsx scripts/set-password.ts",
+    "vapid": "tsx scripts/generate-vapid.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -26,6 +27,7 @@
     "@anthropic-ai/sdk": "^0.116.0",
     "@prisma/client": "^6.0.0",
     "@types/sanitize-html": "^2.16.1",
+    "@types/web-push": "^3.6.4",
     "axe-core": "^4.13.0",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.0.0",
@@ -37,6 +39,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sanitize-html": "^2.17.5",
+    "web-push": "^3.6.7",
     "zod": "^3.23.0"
   },
   "devDependencies": {
