@@ -50,6 +50,7 @@ const BUSINESS_TABLES = [
   "claude_usage",
   "content_posts",
   "integrations",
+  "saved_views",
 ];
 
 const CURRENT_WS = "current_setting('app.current_workspace', true)";

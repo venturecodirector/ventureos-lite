@@ -340,24 +340,24 @@ model Company {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  leads     Lead[]
-  audits    AuditResult[]
-  auditWatch AuditWatch?
-  keywords   TrackedKeyword[]
-  logUploads LogUpload[]
-  registry  RegistryData?
-  referrers Referrer[]
+  leads         Lead[]
+  audits        AuditResult[]
+  auditWatch    AuditWatch?
+  keywords      TrackedKeyword[]
+  logUploads    LogUpload[]
+  registry      RegistryData?
+  referrers     Referrer[]
+  /// Homepage prose, fetched once and cached for 30 days (P1/1c). Feeds the
+  /// research prompt so Claude has the company's own words rather than three
+  /// fields. Null when the site is unreachable or robots.txt forbids it.
+  siteText      String?          @map("site_text") @db.Text
+  /// When the fetch was last ATTEMPTED — set even on failure, so a dead site
+  /// is not re-fetched on every research run.
+  siteFetchedAt DateTime?        @map("site_fetched_at")
 
   @@unique([workspaceId, taxId])
   @@index([workspaceId])
   @@map("companies")
-  /// Homepage prose, fetched once and cached for 30 days (P1/1c). Feeds the
-  /// research prompt so Claude has the company's own words rather than three
-  /// fields. Null when the site is unreachable or robots.txt forbids it.
-  siteText      String?   @map("site_text") @db.Text
-  /// When the fetch was last ATTEMPTED — set even on failure, so a dead site
-  /// is not re-fetched on every research run.
-  siteFetchedAt DateTime? @map("site_fetched_at")
 }
 
 model Lead {
@@ -371,6 +371,13 @@ model Lead {
   phone          String?
   linkedinUrl    String?    @map("linkedin_url")
   source         LeadSource @default(MANUAL)
+  /// Who works this lead (playbook-v2 P3/2 — a filter field and a bulk action).
+  /// A plain column rather than a relation, like Activity.byUserId and
+  /// Task.assigneeId: users are global and leads are tenant-scoped, so a real
+  /// foreign key would tie a business table to the identity tables across the
+  /// tenancy boundary. Null means unassigned, which is a state worth filtering
+  /// FOR ("nobody owns these") rather than hiding.
+  ownerId        String?    @map("owner_id")
   /// Language to write to this contact in. Feeds the outreach drafter, which
   /// previously always assumed Hungarian.
   language       Lang       @default(HU)
@@ -389,25 +396,26 @@ model Lead {
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
-  company    Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  referrer   Referrer?     @relation(fields: [referrerId], references: [id], onDelete: SetNull)
-  activities Activity[]
-  messages   Message[]
-  calls      Call[]
-  meetings   Meeting[]
-  documents  Document[]
-  emailLogs  EmailLog[]
-  outcomes   DealOutcome[]
+  company     Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  referrer    Referrer?     @relation(fields: [referrerId], references: [id], onDelete: SetNull)
+  activities  Activity[]
+  messages    Message[]
+  calls       Call[]
+  meetings    Meeting[]
+  documents   Document[]
+  emailLogs   EmailLog[]
+  outcomes    DealOutcome[]
+  /// Captured from the page the user was viewing (P1/1e). Personal data:
+  /// all three join the erasure cascade and the anonymization job.
+  avatarPath  String?       @map("avatar_path")
+  bio         String?       @db.Text
+  personBrief String?       @map("person_brief") @db.Text
+  briefAt     DateTime?     @map("brief_at")
 
   @@index([workspaceId])
   @@index([companyId])
+  @@index([workspaceId, ownerId])
   @@map("leads")
-  /// Captured from the page the user was viewing (P1/1e). Personal data:
-  /// all three join the erasure cascade and the anonymization job.
-  avatarPath    String?   @map("avatar_path")
-  bio           String?   @db.Text
-  personBrief   String?   @map("person_brief") @db.Text
-  briefAt       DateTime? @map("brief_at")
 }
 
 model Activity {
@@ -688,17 +696,17 @@ model AuditResult {
   createdAt    DateTime     @default(now()) @map("created_at")
   expiresAt    DateTime     @map("expires_at")
 
-  company      Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  shares       AuditShare[]
-  publicAudits PublicAudit[]
+  company       Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  shares        AuditShare[]
+  publicAudits  PublicAudit[]
+  /// Which check set and category mapping this audit was scored under.
+  /// Reports render a cached audit with ITS version, so an older run keeps the
+  /// grouping it was actually scored with instead of being reinterpreted.
+  schemaVersion Int           @default(1) @map("schema_version")
 
   @@index([workspaceId])
   @@index([companyId])
   @@map("audit_results")
-  /// Which check set and category mapping this audit was scored under.
-  /// Reports render a cached audit with ITS version, so an older run keeps the
-  /// grouping it was actually scored with instead of being reinterpreted.
-  schemaVersion Int      @default(1) @map("schema_version")
 }
 
 /// A self-serve audit requested from the public landing page, before any
@@ -816,27 +824,27 @@ model Task {
 /// and so a token that expired at 3am is visible before someone wonders why the
 /// timeline went quiet.
 model MailAccount {
-  id           String    @id @default(cuid())
-  workspaceId  String    @map("workspace_id")
-  userId       String    @map("user_id")
+  id             String    @id @default(cuid())
+  workspaceId    String    @map("workspace_id")
+  userId         String    @map("user_id")
   /// gmail — the only provider today. IMAP arrives behind the same interface.
-  provider     String    @default("gmail")
+  provider       String    @default("gmail")
   /// Which mailbox this is, for the UI and to keep reconnects idempotent.
-  accountEmail String    @map("account_email")
+  accountEmail   String    @map("account_email")
   /// The GoogleCredential carrying the mail scopes (purpose = "MAIL").
-  credentialId String?   @map("credential_id")
+  credentialId   String?   @map("credential_id")
   /// The `after:` boundary the next incremental pass starts from.
-  watermark    DateTime?
+  watermark      DateTime?
   /// How far the 90-day backfill has walked back, so it can resume.
   backfillCursor DateTime? @map("backfill_cursor")
-  backfillDone Boolean   @default(false) @map("backfill_done")
+  backfillDone   Boolean   @default(false) @map("backfill_done")
   /// ok | reconnect_needed | rate_limited | error
-  health       String    @default("ok")
-  lastError    String?   @db.Text @map("last_error")
-  lastSyncAt   DateTime? @map("last_sync_at")
-  enabled      Boolean   @default(true)
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  health         String    @default("ok")
+  lastError      String?   @map("last_error") @db.Text
+  lastSyncAt     DateTime? @map("last_sync_at")
+  enabled        Boolean   @default(true)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   threads EmailThread[]
 
@@ -847,23 +855,23 @@ model MailAccount {
 
 /// A conversation, matched to a lead or company.
 model EmailThread {
-  id              String   @id @default(cuid())
-  workspaceId     String   @map("workspace_id")
-  accountId       String   @map("account_id")
+  id               String   @id @default(cuid())
+  workspaceId      String   @map("workspace_id")
+  accountId        String   @map("account_id")
   /// Gmail's thread id, so a reply threads correctly for the recipient.
-  providerThreadId String  @map("provider_thread_id")
-  subject         String?  @db.Text
-  leadId          String?  @map("lead_id")
-  companyId       String?  @map("company_id")
+  providerThreadId String   @map("provider_thread_id")
+  subject          String?  @db.Text
+  leadId           String?  @map("lead_id")
+  companyId        String?  @map("company_id")
   /// address | domain | manual. Recording HOW it matched is what lets a
   /// domain guess be corrected without the next sync re-matching it the same
   /// wrong way.
-  matchType       String   @default("address") @map("match_type")
-  lastMessageAt   DateTime @map("last_message_at")
-  messageCount    Int      @default(0) @map("message_count")
-  unread          Boolean  @default(false)
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  matchType        String   @default("address") @map("match_type")
+  lastMessageAt    DateTime @map("last_message_at")
+  messageCount     Int      @default(0) @map("message_count")
+  unread           Boolean  @default(false)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   account  MailAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
   messages EmailMessage[]
@@ -878,30 +886,30 @@ model EmailThread {
 /// here, so a synced mailbox does not become a second copy of every PDF a
 /// client ever sent.
 model EmailMessage {
-  id                String   @id @default(cuid())
-  workspaceId       String   @map("workspace_id")
-  threadId          String   @map("thread_id")
-  providerMessageId String   @map("provider_message_id")
+  id                String    @id @default(cuid())
+  workspaceId       String    @map("workspace_id")
+  threadId          String    @map("thread_id")
+  providerMessageId String    @map("provider_message_id")
   /// INBOUND | OUTBOUND, from the mailbox owner's point of view.
   direction         String
-  fromAddress       String   @map("from_address")
-  fromName          String?  @map("from_name")
+  fromAddress       String    @map("from_address")
+  fromName          String?   @map("from_name")
   /// JSON arrays of addresses.
-  toAddresses       Json     @map("to_addresses")
-  ccAddresses       Json?    @map("cc_addresses")
-  subject           String?  @db.Text
-  snippet           String?  @db.Text
+  toAddresses       Json      @map("to_addresses")
+  ccAddresses       Json?     @map("cc_addresses")
+  subject           String?   @db.Text
+  snippet           String?   @db.Text
   /// Sanitized on ingest AND rendered in a sandboxed iframe. Email HTML is
   /// hostile input from strangers; one layer is not enough.
-  bodyHtml          String?  @db.Text @map("body_html")
-  bodyText          String?  @db.Text @map("body_text")
-  hasAttachments    Boolean  @default(false) @map("has_attachments")
+  bodyHtml          String?   @map("body_html") @db.Text
+  bodyText          String?   @map("body_text") @db.Text
+  hasAttachments    Boolean   @default(false) @map("has_attachments")
   /// [{ filename, mimeType, sizeBytes, providerAttachmentId, storedPath? }]
   attachments       Json?
-  sentAt            DateTime @map("sent_at")
+  sentAt            DateTime  @map("sent_at")
   /// When the Haiku reply analysis ran, if it ever did. Never set by backfill.
   analyzedAt        DateTime? @map("analyzed_at")
-  createdAt         DateTime @default(now()) @map("created_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
 
   thread EmailThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 
@@ -940,30 +948,30 @@ model AddressLink {
 /// because that is abuse control; this stores the whole address because the
 /// visitor asked us for something and we may have to show that they did.
 model PublicAuditConsent {
-  id            String   @id @default(cuid())
-  workspaceId   String   @map("workspace_id")
-  publicAuditId String   @map("public_audit_id")
-  name          String
-  email         String
-  companyName   String?  @map("company_name")
+  id                 String    @id @default(cuid())
+  workspaceId        String    @map("workspace_id")
+  publicAuditId      String    @map("public_audit_id")
+  name               String
+  email              String
+  companyName        String?   @map("company_name")
   /// Always true — a row cannot exist without it, since it is what authorises
   /// the delivery. Stored anyway so the record is self-describing.
-  serviceConsent   Boolean @default(true) @map("service_consent")
+  serviceConsent     Boolean   @default(true) @map("service_consent")
   /// The lawful basis for any later outreach. Defaults FALSE and is only ever
   /// set by an affirmative tick: a pre-checked box is not consent.
-  marketingConsent Boolean @default(false) @map("marketing_consent")
+  marketingConsent   Boolean   @default(false) @map("marketing_consent")
   /// Which wording they saw, e.g. "hu-2026-08-14". Replacing the text later
   /// must not invalidate consent collected under the old one.
-  consentTextVersion String @map("consent_text_version")
+  consentTextVersion String    @map("consent_text_version")
   /// The language the form was presented in.
-  locale        String   @default("hu")
-  ip            String?
-  userAgent     String?  @map("user_agent")
+  locale             String    @default("hu")
+  ip                 String?
+  userAgent          String?   @map("user_agent")
   /// The lead this became, once created.
-  leadId        String?  @map("lead_id")
+  leadId             String?   @map("lead_id")
   /// When the report was actually delivered, for support questions.
-  reportSentAt  DateTime? @map("report_sent_at")
-  createdAt     DateTime @default(now()) @map("created_at")
+  reportSentAt       DateTime? @map("report_sent_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
 
   @@index([workspaceId, createdAt])
   @@index([publicAuditId])
@@ -1034,27 +1042,27 @@ model CaptureToken {
 }
 
 model PublicAudit {
-  id          String   @id @default(cuid())
+  id            String   @id @default(cuid())
   /// Which workspace receives this inbound. Resolved by getPublicIntakeWorkspace().
-  workspaceId String   @map("workspace_id")
-  url         String
+  workspaceId   String   @map("workspace_id")
+  url           String
   /// Registrable host, lower-cased — what dedupe and the client blocklist match on.
-  domain      String
-  auditId     String?  @map("audit_id")
+  domain        String
+  auditId       String?  @map("audit_id")
   /// queued | running | done | error | blocked
-  status      String   @default("queued")
+  status        String   @default("queued")
   /// Set when the request was refused, e.g. rate_limited, client_domain, bot.
-  blockedReason String? @map("blocked_reason")
+  blockedReason String?  @map("blocked_reason")
   /// Truncated to a /24 (IPv4) or /48 (IPv6): enough for rate limiting, not a
   /// precise location. The full address is only stored on a consent record,
   /// where it is evidence the visitor asked for something.
-  ipPrefix    String?  @map("ip_prefix")
-  userAgent   String?  @map("user_agent")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  ipPrefix      String?  @map("ip_prefix")
+  userAgent     String?  @map("user_agent")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   /// The audit this request produced, once the worker has one.
-  audit       AuditResult? @relation(fields: [auditId], references: [id], onDelete: SetNull)
+  audit AuditResult? @relation(fields: [auditId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
   @@index([domain])
@@ -1377,4 +1385,42 @@ model ClaudeUsage {
 
   @@index([workspaceId])
   @@map("claude_usage")
+}
+
+/// A named filter set + column selection + sort over a list surface
+/// (playbook-v2 P3/2). Rendered as the tabs above the leads table.
+model SavedView {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  name        String
+  /// Which list this view is over. "lead" is the only one today; deals and
+  /// companies get their own tabs in P4/P5 without a schema change.
+  entity      String   @default("lead")
+  /// The creator. Kept even on a shared view so the tab can say whose it is,
+  /// and so "my views" survives sharing.
+  ownerId     String   @map("owner_id")
+  /// false = personal (only ownerId sees it); true = workspace-shared.
+  /// Not a grant: sharing a saved filter reveals nothing the viewer could not
+  /// already filter for themselves inside their own workspace.
+  shared      Boolean  @default(false)
+  /// FilterSet — { match, conditions[] }. Json rather than columns because the
+  /// condition list is variable-length; validated with zod on the way in, so a
+  /// hand-edited row cannot reach the evaluator.
+  filters     Json     @default("{}")
+  /// Ordered column keys. Empty means "the default column set".
+  columns     Json     @default("[]")
+  /// { field, direction } — null means the default sort.
+  sort        Json?
+  /// Tab order within the workspace, lowest first.
+  position    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  /// Two views with the same name in one workspace are a UI bug, not a feature.
+  @@unique([workspaceId, entity, ownerId, name])
+  /// The tab strip reads by workspace + entity on every page load.
+  @@index([workspaceId, entity, position])
+  /// A person's own views, for the personal/shared split.
+  @@index([workspaceId, ownerId])
+  @@map("saved_views")
 }
