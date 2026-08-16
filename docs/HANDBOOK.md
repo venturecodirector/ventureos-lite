@@ -1,9 +1,9 @@
 # Venture OS Lite — Operator Handbook
 
-For the Owner of a Venture OS Lite installation. Covers the six things only you
-can do: managing people and their permissions, provisioning workspaces, editing
-legal document templates, controlling AI spend, verifying backups, and executing
-a GDPR erasure request.
+For the Owner of a Venture OS Lite installation. Covers the things only you can
+do: managing people and their permissions, provisioning workspaces, editing
+legal document templates, controlling AI spend, verifying backups, executing a
+GDPR erasure request, and running the test suites before you ship a change.
 
 Installation and server maintenance live in [`DEPLOY.md`](DEPLOY.md).
 Feature-level behaviour lives in [`spec.md`](spec.md).
@@ -426,6 +426,76 @@ in your privacy policy.
 
 ---
 
+## 8. Running the tests yourself
+
+Three checks gate every change (CLAUDE.md, "definition of done"). The first
+three are instant and need nothing running:
+
+```bash
+npm run typecheck     # tsc --noEmit
+npm run lint          # ESLint
+npm test              # vitest — unit + DB-backed integration
+```
+
+`npm test` needs Postgres up, because the integration tests prove tenant
+isolation against the real database rather than a mock.
+
+### The browser suite (Playwright)
+
+This one drives a real browser through the critical flows: capture → score →
+gate, quote → PDF → send, and workspace isolation.
+
+```bash
+# 1. Database and Redis (leave running; they persist between runs).
+docker compose up -d db redis
+
+# 2. Schema — only after a schema change, or on a fresh database.
+npx prisma db push
+npm run db:seed
+
+# 3. Browser binaries — once per machine.
+npx playwright install chromium
+
+# 4. Run everything. The dev server starts and stops on its own.
+npx playwright test
+```
+
+Useful variations:
+
+```bash
+npx playwright test workspace-isolation   # one spec by name
+npx playwright test --headed              # watch it happen
+npx playwright test --ui                  # pick and re-run interactively
+npx playwright show-report                # after a failure
+```
+
+**Expected result: 70 passed, 1 skipped.** The skip is deliberate — one public
+audit test needs a real registrable domain and cannot mean anything on
+`localhost`, so it opts out rather than asserting something false.
+
+### Two things that look like failures but are not
+
+**The environment warning on startup.** Every run prints:
+
+```
+Environment check failed — 2 problems:
+  ✗ MAILGUN_WEBHOOK_SIGNING_KEY — is required when MAIL_PROVIDER=mailgun
+  ✗ NEXTAUTH_SECRET — is still the placeholder
+```
+
+That is the boot check doing its job on a development `.env`. It refuses to
+start in production and continues in development, which is what you want
+locally. Do not "fix" it by putting real secrets in the development `.env`.
+
+**`FILES_DIR`.** `.env` sets `FILES_DIR=/data/files` — that path is *inside* the
+app and worker containers, where docker-compose mounts the files volume. A test
+run on your own machine cannot create `/data`, so `playwright.config.ts` points
+host-side runs at `data/files` in the repo instead (already gitignored). Nothing
+about the container changes, and you do not need to edit `.env`. If you ever
+want a different location, export `FILES_DIR` before running and it is honoured.
+
+---
+
 ## Quick reference
 
 | Task | Where |
@@ -443,6 +513,8 @@ in your privacy policy.
 | Run an export | Settings → Data & privacy → Run export |
 | Check backups | `ls -lht /var/backups/ventureos/` |
 | Restore a backup | [`DEPLOY.md`](DEPLOY.md) → Troubleshooting §4 |
+| Run the fast checks | `npm run typecheck && npm run lint && npm test` |
+| Run the browser suite | `npx playwright test` (see §8) |
 
 ### Audited actions
 
