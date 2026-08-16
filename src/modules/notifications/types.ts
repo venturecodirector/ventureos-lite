@@ -1,0 +1,206 @@
+/**
+ * The notification catalogue (playbook-v2 P6/1).
+ *
+ * Pure: what can be notified about, who is allowed to receive it, which
+ * channels are on before anyone chooses, and how one event is kept from
+ * notifying twice.
+ *
+ * WHAT IS AND IS NOT HERE. The playbook lists eleven kinds. Ten of them have a
+ * real event in this codebase and are wired. Two do not, and inventing an
+ * emitter for them would have produced a type that can never fire:
+ *
+ *   - "meeting cancelled" — nothing cancels a meeting. There is no cancel
+ *     action and the Meeting model has no status or cancelledAt column, so
+ *     there is no moment at which the notification could be raised. It needs
+ *     the cancellation feature first.
+ *   - "import failure" — CSV import validates and reports created/skipped
+ *     synchronously in the dialog; it has no asynchronous failure to report
+ *     later. MAILBOX sync failure does exist, so `sync_failed` covers that half
+ *     of the playbook's "import/sync failures" and is named for what it is.
+ */
+
+export const NOTIFICATION_TYPES = [
+  "reply_received",
+  "escalation",
+  "callback_due",
+  "task_due",
+  "quote_accepted",
+  "quote_declined",
+  "meeting_booked",
+  "campaign_paused",
+  "sync_failed",
+  "proposal_pending",
+] as const;
+
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
+export interface Channels {
+  inApp: boolean;
+  push: boolean;
+  emailDigest: boolean;
+}
+
+export interface NotificationTypeDef {
+  type: NotificationType;
+  label: string;
+  description: string;
+  /** Owners and Admins only — a BDR never receives or configures it. */
+  ownerOnly: boolean;
+  defaults: Channels;
+}
+
+/**
+ * Channel defaults, chosen per type rather than globally.
+ *
+ * in-app is on everywhere: the centre is the product, and a type nobody sees by
+ * default is a type nobody knows exists.
+ *
+ * push is off everywhere. It cannot work without a browser permission the user
+ * has to grant, so defaulting it on would promise a delivery that silently
+ * never happens.
+ *
+ * emailDigest is on only where a missed item costs something. It batches into
+ * the existing Monday digest — the playbook is explicit that this must not
+ * become per-event mail.
+ */
+function def(
+  type: NotificationType,
+  label: string,
+  description: string,
+  opts: { ownerOnly?: boolean; emailDigest?: boolean } = {},
+): NotificationTypeDef {
+  return {
+    type,
+    label,
+    description,
+    ownerOnly: opts.ownerOnly ?? false,
+    defaults: { inApp: true, push: false, emailDigest: opts.emailDigest ?? false },
+  };
+}
+
+export const NOTIFICATION_TYPE_DEFS: Record<NotificationType, NotificationTypeDef> = {
+  reply_received: def(
+    "reply_received",
+    "Reply received",
+    "A prospect replied on a lead you own.",
+    // The reply is already sitting in the Inbox; repeating each one weekly is
+    // the fastest way to make the digest unread.
+    { emailDigest: false },
+  ),
+  escalation: def(
+    "escalation",
+    "Price escalation",
+    "A reply mentioned price, a proposal or a contract.",
+    { emailDigest: true },
+  ),
+  callback_due: def(
+    "callback_due",
+    "Callback due",
+    "A callback you scheduled has come due.",
+    { emailDigest: true },
+  ),
+  task_due: def(
+    "task_due",
+    "Task due or overdue",
+    "A task assigned to you has reached its due time.",
+    { emailDigest: true },
+  ),
+  quote_accepted: def(
+    "quote_accepted",
+    "Quote accepted",
+    "A client accepted a quote on the public acceptance page.",
+    { emailDigest: true },
+  ),
+  quote_declined: def(
+    "quote_declined",
+    "Quote declined",
+    "A quote was marked declined.",
+    { emailDigest: true },
+  ),
+  meeting_booked: def(
+    "meeting_booked",
+    "Meeting booked",
+    "A meeting was booked, from the app or the public booking page.",
+    { emailDigest: true },
+  ),
+  campaign_paused: def(
+    "campaign_paused",
+    "Campaign paused",
+    "The bounce circuit breaker paused a cold campaign.",
+    { ownerOnly: false, emailDigest: true },
+  ),
+  sync_failed: def(
+    "sync_failed",
+    "Mailbox sync problem",
+    "A connected mailbox needs reconnecting or stopped syncing.",
+    { emailDigest: true },
+  ),
+  proposal_pending: def(
+    "proposal_pending",
+    "Signal Engine proposal",
+    "The weekly analysis proposed a change and is waiting for approval.",
+    { ownerOnly: true, emailDigest: true },
+  ),
+};
+
+const ALL_OFF: Channels = { inApp: false, push: false, emailDigest: false };
+
+export function isNotificationType(value: unknown): value is NotificationType {
+  return typeof value === "string" && (NOTIFICATION_TYPES as readonly string[]).includes(value);
+}
+
+export function defaultChannels(type: NotificationType): Channels {
+  return { ...NOTIFICATION_TYPE_DEFS[type].defaults };
+}
+
+/** Owner-only types are hidden from everyone else, in the UI and in delivery. */
+export function visibleTypesFor(role: string): NotificationType[] {
+  const privileged = role === "OWNER" || role === "ADMIN";
+  return NOTIFICATION_TYPES.filter(
+    (t) => privileged || !NOTIFICATION_TYPE_DEFS[t].ownerOnly,
+  );
+}
+
+/**
+ * The channels this user actually gets for this type.
+ *
+ * The role check is applied AFTER the stored preference, deliberately: a
+ * preference row written while someone was an Owner must not keep delivering
+ * Owner-only notifications once they are not. An unknown type resolves to
+ * silence, so a row left behind by a retired type cannot resurrect it.
+ */
+export function resolveChannels(
+  type: string,
+  stored: Partial<Channels> | null | undefined,
+  role: string,
+): Channels {
+  if (!isNotificationType(type)) return { ...ALL_OFF };
+  if (NOTIFICATION_TYPE_DEFS[type].ownerOnly && !(role === "OWNER" || role === "ADMIN")) {
+    return { ...ALL_OFF };
+  }
+  return { ...defaultChannels(type), ...(stored ?? {}) };
+}
+
+/**
+ * One event, one notification.
+ *
+ * The key goes into a unique index, so a job that runs twice — a retried
+ * BullMQ job, a sweep that catches the same overdue task on its next pass —
+ * cannot stack duplicates in someone's bell. `discriminator` is the escape
+ * hatch for events that SHOULD recur: an overdue task nags once a day by
+ * passing the date, not once ever.
+ */
+export function dedupeKeyFor(
+  type: string,
+  entityId: string,
+  discriminator?: string,
+): string {
+  return [type, entityId, discriminator ?? ""].join(":");
+}
+
+/** 90 days, then the sweep deletes them (playbook P6/1). */
+export const RETENTION_DAYS = 90;
+
+export function retentionCutoff(now: Date = new Date()): Date {
+  return new Date(now.getTime() - RETENTION_DAYS * 86_400_000);
+}

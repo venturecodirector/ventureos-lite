@@ -51,6 +51,9 @@ const BUSINESS_TABLES = [
   "content_posts",
   "integrations",
   "saved_views",
+  "notifications",
+  "notification_preferences",
+  "push_subscriptions",
 ];
 
 const CURRENT_WS = "current_setting('app.current_workspace', true)";

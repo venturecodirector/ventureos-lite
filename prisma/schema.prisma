@@ -1387,6 +1387,82 @@ model ClaudeUsage {
   @@map("claude_usage")
 }
 
+/// One thing that happened, addressed to one person (playbook-v2 P6/1).
+/// Per-user rather than per-workspace: "your lead replied" is not news to
+/// everyone, and a shared feed cannot carry a per-person read state.
+model Notification {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  userId      String    @map("user_id")
+  /// One of NOTIFICATION_TYPES. A string, not an enum, so retiring a type is a
+  /// code change rather than a migration — resolveChannels() ignores unknown
+  /// ones, so an orphaned row degrades to silence instead of breaking a render.
+  type        String
+  title       String
+  body        String?   @db.Text
+  /// Where clicking it goes. Stored rather than derived so an old notification
+  /// still points somewhere sensible after the route that made it has moved.
+  href        String
+  entityType  String?   @map("entity_type")
+  entityId    String?   @map("entity_id")
+  readAt      DateTime? @map("read_at")
+  /// One event, one notification — see dedupeKeyFor(). Unique per recipient, so
+  /// a retried job or a repeating sweep cannot stack duplicates in the bell.
+  dedupeKey   String    @map("dedupe_key")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([workspaceId, userId, dedupeKey])
+  /// The bell's query: this person's unread, newest first.
+  @@index([workspaceId, userId, readAt, createdAt])
+  /// The 90-day retention sweep.
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+/// Per user, per workspace, per type: in-app / push / email-digest.
+/// A ROW ONLY EXISTS ONCE SOMEONE CHANGES SOMETHING — absence means "the
+/// defaults in types.ts", so changing a default reaches everyone who never
+/// expressed an opinion.
+model NotificationPreference {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  userId      String   @map("user_id")
+  type        String
+  inApp       Boolean  @default(true) @map("in_app")
+  push        Boolean  @default(false)
+  emailDigest Boolean  @default(false) @map("email_digest")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([workspaceId, userId, type])
+  @@index([workspaceId, userId])
+  @@map("notification_preferences")
+}
+
+/// A browser push endpoint (Web Push / VAPID), one row per device.
+model PushSubscription {
+  id           String    @id @default(cuid())
+  workspaceId  String    @map("workspace_id")
+  userId       String    @map("user_id")
+  /// The full endpoint URL. @db.Text because push services issue long ones.
+  endpoint     String    @db.Text
+  /// sha256(endpoint). The uniqueness key: a TEXT column cannot carry a unique
+  /// index on MySQL without a prefix length, and the schema must run on both
+  /// flavours (CLAUDE.md).
+  endpointHash String    @unique @map("endpoint_hash")
+  /// Encryption material from the browser's PushSubscription.
+  p256dh       String    @db.Text
+  auth         String
+  userAgent    String?   @map("user_agent")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  lastUsedAt   DateTime? @map("last_used_at")
+  /// Set when the push service says the endpoint is gone (404/410); the sender
+  /// prunes these rather than retrying a subscription that no longer exists.
+  failedAt     DateTime? @map("failed_at")
+
+  @@index([workspaceId, userId])
+  @@map("push_subscriptions")
+}
+
 /// A named filter set + column selection + sort over a list surface
 /// (playbook-v2 P3/2). Rendered as the tabs above the leads table.
 model SavedView {
