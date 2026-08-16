@@ -14,6 +14,7 @@ import {
 } from "../../lib/ai/prompts/daily-insight";
 import { aggregateWeek, filterEligibleProposals, type ProposalDraft, type ProposalKind } from "./logic";
 import { getWeekFacts, weekWindow } from "./data";
+import { notifyProposalPending } from "../notifications/notify";
 
 /**
  * Weekly Signal Engine (spec §4.13). ONE Sonnet call per workspace on the
@@ -89,6 +90,7 @@ export async function processSignalEngine(nowMs: number = Date.now()): Promise<n
       select: { title: true },
     });
     const pendingTitles = new Set(pending.map((p) => p.title));
+    let raised = 0;
     for (const d of eligible) {
       if (pendingTitles.has(d.title)) continue;
       await db.proposal.create({
@@ -101,7 +103,11 @@ export async function processSignalEngine(nowMs: number = Date.now()): Promise<n
           data: d.data,
         },
       });
+      raised += 1;
     }
+    // P6/1 — one notification for the batch, not one per proposal: the Owner
+    // reviews the queue, not each row.
+    await notifyProposalPending({ workspaceId: ws.id, count: raised });
     processed += 1;
   }
   return processed;

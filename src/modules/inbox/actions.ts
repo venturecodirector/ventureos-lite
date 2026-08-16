@@ -22,6 +22,7 @@ import {
   type QualItem,
 } from "./qualification";
 import { detectMoneyTalk, escalationReason } from "./escalation";
+import { notifyEscalation } from "../notifications/notify";
 
 export interface ThreadSummary {
   leadId: string;
@@ -212,6 +213,9 @@ export async function logInboundReply(
     } catch {
       /* notify best-effort */
     }
+    // P6/1 — the same escalation, in the bell. The email above reaches the
+    // Owner's mailbox; this reaches whoever is actually in the app.
+    await notifyEscalation({ workspaceId, leadId: input.leadId, reason });
     escalated = true;
   }
 

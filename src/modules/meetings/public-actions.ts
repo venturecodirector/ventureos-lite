@@ -13,6 +13,7 @@ import { calendarFailureActivity } from "./logic";
 import { enqueueMeetingBrief } from "./enqueue";
 import { botVerdict, MIN_FILL_MS } from "./botcheck";
 import { takeRateLimit } from "./ratelimit";
+import { notifyMeetingBooked } from "../notifications/notify";
 
 const bookSchema = z.object({
   slug: z.string().min(1),
@@ -114,6 +115,16 @@ export async function submitPublicBooking(raw: unknown): Promise<BookingResult> 
       type: mt.label,
       briefStatus: "none",
     },
+  });
+
+  // P6/1 — a booking from the PUBLIC page is the one nobody is watching a
+  // screen for, so the notification matters more here than in the app path.
+  await notifyMeetingBooked({
+    workspaceId: host.workspaceId,
+    meetingId: meeting.id,
+    leadId: lead.id,
+    hostUserId: host.hostUserId,
+    scheduledAt: start,
   });
 
   // --- drop the event on the host calendar with the visitor attached ---

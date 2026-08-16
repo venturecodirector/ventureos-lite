@@ -13,6 +13,7 @@ import { brandEmail } from "@/modules/mail/layout";
 import { resolveSendingIdentity } from "@/modules/mail/identity";
 import { computeLineTotal, formatHuf, type QuoteItem } from "./quote-math";
 import { getAcceptanceProvider } from "./acceptance-provider";
+import { notifyQuoteAccepted } from "../notifications/notify";
 
 export interface PublicQuote {
   quoteNumber: string;
@@ -109,7 +110,13 @@ const acceptSchema = z.object({
   agreed: z.boolean(),
 });
 
-async function notifyOwners(workspaceId: string, payload: unknown, name: string): Promise<void> {
+async function notifyOwners(
+  workspaceId: string,
+  payload: unknown,
+  name: string,
+  documentId: string,
+  leadId: string | null,
+): Promise<void> {
   const ws = await prismaUnsafe.workspace.findUnique({
     where: { id: workspaceId },
     select: { mailgunConfig: true },
@@ -138,6 +145,16 @@ async function notifyOwners(workspaceId: string, payload: unknown, name: string)
       text: `${name} accepted quote ${number}. Contract generation is now unlocked.`,
     });
   }
+
+  // P6/1 — the same news in the bell, for whoever is in the app rather than in
+  // their mailbox.
+  await notifyQuoteAccepted({
+    workspaceId,
+    documentId,
+    leadId,
+    number,
+    acceptedBy: name,
+  });
 }
 
 /** Public accept. Records immutable assent evidence, flips the quote to accepted,
@@ -189,7 +206,7 @@ export async function acceptQuote(
     });
   }
   try {
-    await notifyOwners(doc.workspaceId, doc.payload, input.name);
+    await notifyOwners(doc.workspaceId, doc.payload, input.name, doc.id, doc.leadId);
   } catch {
     /* notification best-effort */
   }

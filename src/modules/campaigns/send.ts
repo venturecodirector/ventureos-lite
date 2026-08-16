@@ -11,6 +11,7 @@ import {
   buildRecipientSends,
   type ColdStep,
 } from "./logic";
+import { notifyCampaignPaused } from "../notifications/notify";
 
 /** Thrown by every send path when cold email is not sign-off-approved. */
 export class ColdGateError extends Error {
@@ -59,6 +60,18 @@ export async function evaluateCircuitBreaker(
   const tripped = circuitBreakerTripped(sent, bounced);
   if (tripped) {
     await db.campaign.update({ where: { id: campaignId }, data: { status: "PAUSED" } });
+    const paused = await db.campaign.findUnique({
+      where: { id: campaignId },
+      select: { name: true, workspaceId: true },
+    });
+    // P6/1 — Owners only: a tripped breaker is a deliverability incident, and
+    // the Owner is who decides whether the campaign resumes.
+    await notifyCampaignPaused({
+      workspaceId: paused!.workspaceId,
+      campaignId,
+      name: paused?.name ?? "Cold campaign",
+      reason: `Bounce rate over the threshold (${bounced}/${sent}).`,
+    });
   }
   return { tripped, sent, bounced };
 }

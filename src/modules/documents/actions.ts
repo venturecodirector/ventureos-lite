@@ -12,6 +12,7 @@ import { renderTemplate, findEmptyVariables } from "@/modules/templates/render";
 import { computeQuoteTotals, type QuoteItem } from "./quote-math";
 import { buildDocumentData } from "./data";
 import { enqueueDocumentPdf } from "./enqueue";
+import { notifyQuoteDeclined } from "../notifications/notify";
 import {
   canCreateContract,
   canCreateCertificate,
@@ -380,7 +381,7 @@ export async function advanceStatus(
   const db = getWorkspaceClient(workspaceId);
   const doc = await db.document.findUnique({
     where: { id: documentId },
-    select: { type: true, status: true },
+    select: { type: true, status: true, leadId: true, payload: true },
   });
   if (!doc) throw new Error("Document not found");
   if (!allowedStatusTransition(doc.type, doc.status, to)) {
@@ -388,6 +389,17 @@ export async function advanceStatus(
   }
   await requireGrant(GRANT_FOR_TYPE[doc.type]);
   await db.document.update({ where: { id: documentId }, data: { status: to } });
+
+  // P6/1. Acceptance has its own public path (acceptance.ts); this is the only
+  // route by which a quote is DECLINED, so the notification belongs here.
+  if (doc.type === "QUOTE" && to === "DECLINED") {
+    await notifyQuoteDeclined({
+      workspaceId,
+      documentId,
+      leadId: doc.leadId,
+      number: String((doc.payload as Record<string, unknown>)?.quoteNumber ?? documentId),
+    });
+  }
   revalidatePath("/documents");
   revalidatePath("/pipeline");
   return { ok: true };

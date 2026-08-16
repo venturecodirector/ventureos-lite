@@ -34,6 +34,10 @@ import { processSignalEngine, processDailyInsight } from "../modules/signal/jobs
 import { processKeywordTracking } from "../modules/serp/jobs";
 import { processLogUpload, processLogRetention } from "../modules/logs/jobs";
 import { processMailSyncSweep } from "../modules/email/jobs";
+import {
+  processNotificationRetention,
+  processTaskDueSweep,
+} from "../modules/notifications/jobs";
 
 /**
  * Background worker (BullMQ + Redis). Runs in its own Docker service.
@@ -188,6 +192,14 @@ async function main(): Promise<void> {
         const n = await processAuditWatchSweep();
         // eslint-disable-next-line no-console
         console.log(`[worker] audit watch queued ${n} re-audit(s)`);
+      } else if (job.name === "task-due") {
+        const n = await processTaskDueSweep();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] task-due sweep notified ${n} task(s)`);
+      } else if (job.name === "notification-retention") {
+        const n = await processNotificationRetention();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] purged ${n} expired notification(s)`);
       } else if (job.name === "daily-insight") {
         const n = await processDailyInsight();
         // eslint-disable-next-line no-console
@@ -205,6 +217,19 @@ async function main(): Promise<void> {
     console.error("[worker] wakeup sweep failed", err);
   });
 
+  // Task-due sweep, hourly. The dedupe key carries the day, so an overdue task
+  // notifies once a day rather than once an hour (P6/1).
+  await wakeupsQueue().add(
+    "task-due",
+    {},
+    { repeat: { pattern: "0 * * * *" }, jobId: "task-due" },
+  );
+  // Notification retention (90 days) at 03:45, beside the other nightly purges.
+  await wakeupsQueue().add(
+    "notification-retention",
+    {},
+    { repeat: { pattern: "45 3 * * *" }, jobId: "notification-retention" },
+  );
   // Daily wake-up sweep at 06:00. Idempotent — repeat jobs dedupe by key.
   await wakeupsQueue().add(
     "daily",

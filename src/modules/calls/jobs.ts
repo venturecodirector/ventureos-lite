@@ -1,5 +1,6 @@
 import { callbacksQueue } from "../../lib/queue";
 import { getWorkspaceClient } from "../../lib/db";
+import { notifyCallbackDue } from "../notifications/notify";
 
 /**
  * Callback reminders (spec §4.17). A scheduled callback fires a delayed job at
@@ -35,7 +36,7 @@ export async function processCallbackDue(data: CallbackJobData): Promise<void> {
   const db = getWorkspaceClient(data.workspaceId);
   const call = await db.call.findUnique({
     where: { id: data.callId },
-    select: { callbackDoneAt: true },
+    select: { callbackDoneAt: true, byUserId: true },
   });
   if (!call || call.callbackDoneAt) return; // already handled
 
@@ -46,5 +47,14 @@ export async function processCallbackDue(data: CallbackJobData): Promise<void> {
       type: "callback_due",
       payload: { callId: data.callId },
     },
+  });
+
+  // P6/1 — the Today Queue item above is the passive half; this is the one that
+  // reaches someone who is not looking at the app.
+  await notifyCallbackDue({
+    workspaceId: data.workspaceId,
+    leadId: data.leadId,
+    callId: data.callId,
+    byUserId: call.byUserId,
   });
 }

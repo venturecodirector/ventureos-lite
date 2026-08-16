@@ -5,6 +5,7 @@ import { buildMatchIndex } from "./scope";
 import { scopeFromIndex } from "./matching";
 import { buildSyncQueries, backfillWindows, BACKFILL_WINDOW_DAYS } from "./gmail-query";
 import { ingestMessage } from "./ingest";
+import { notifyReplyReceived, notifySyncFailed } from "../notifications/notify";
 
 /**
  * The sync pass (playbook-v2 P2b).
@@ -27,14 +28,31 @@ export interface MailSyncJobData {
 type Health = "ok" | "reconnect_needed" | "rate_limited" | "error";
 
 async function setHealth(accountId: string, health: Health, error?: string): Promise<void> {
-  await prismaUnsafe.mailAccount.update({
+  const account = await prismaUnsafe.mailAccount.update({
     where: { id: accountId },
     data: {
       health,
       lastError: error?.slice(0, 500) ?? null,
       ...(health === "ok" ? { lastSyncAt: new Date() } : {}),
     },
+    select: { id: true, workspaceId: true, userId: true, accountEmail: true },
   });
+
+  // P6/1. The one chokepoint every failure passes through, so the notification
+  // is raised once here rather than at five call sites.
+  //
+  // `rate_limited` is deliberately NOT notified: it is transient, the backoff
+  // resolves it without anyone doing anything, and telling a person about a
+  // problem they cannot act on is how a bell gets ignored.
+  if (health === "reconnect_needed" || health === "error") {
+    await notifySyncFailed({
+      workspaceId: account.workspaceId,
+      accountId: account.id,
+      userId: account.userId,
+      address: account.accountEmail,
+      health,
+    });
+  }
 }
 
 /**
@@ -237,10 +255,11 @@ async function persistMessage(
       // the operator's correction, which is the one thing a learned link
       // exists to prevent.
     },
-    select: { id: true },
+    select: { id: true, leadId: true },
   });
+  const threadLeadId = thread.leadId;
 
-  await db.emailMessage.create({
+  const stored = await db.emailMessage.create({
     data: {
       workspaceId,
       threadId: thread.id,
@@ -257,7 +276,19 @@ async function persistMessage(
       attachments: message.attachments as unknown as object,
       sentAt: message.sentAt,
     },
+    select: { id: true },
   });
+
+  // P6/1: an inbound message on a matched lead is news. Outbound is not — it is
+  // the user's own send coming back through the sync.
+  if (message.direction === "INBOUND" && threadLeadId) {
+    await notifyReplyReceived({
+      workspaceId,
+      leadId: threadLeadId,
+      threadId: stored.id,
+      snippet: message.snippet,
+    });
+  }
 }
 
 /**

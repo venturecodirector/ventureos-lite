@@ -9,6 +9,7 @@ import { getCalendarProvider, type CalendarCredentials } from "./calendar";
 import { getWriteAccount, saveRefreshedTokens } from "./credentials";
 import { calendarFailureActivity, type BriefStatus } from "./logic";
 import { enqueueMeetingBrief } from "./enqueue";
+import { notifyMeetingBooked } from "../notifications/notify";
 
 // ---- views (plain data for the client) ------------------------------------
 
@@ -71,6 +72,14 @@ export async function bookMeeting(
       type: input.type,
       briefStatus: "none",
     },
+  });
+
+  await notifyMeetingBooked({
+    workspaceId,
+    meetingId: meeting.id,
+    leadId: lead.id,
+    hostUserId: userId,
+    scheduledAt: start,
   });
 
   // Create the event on the host's calendar with lead context attached.
