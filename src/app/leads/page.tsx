@@ -1,59 +1,61 @@
 import { AppShell } from "@/components/app-shell";
-import { LeadEngine, type LeadRow } from "@/components/lead-engine";
-import { prismaUnsafe, getWorkspaceClient } from "@/lib/db";
+import { LeadEngine } from "@/components/lead-engine";
+import { LeadsTable } from "@/components/leads-table";
 import { getActiveContext } from "@/lib/session";
-import { gateThresholdFromConfig } from "@/modules/leads/scoring";
-import { companyUnderProceedings, riskLabel } from "@/modules/registry/risk";
+import { loadLeadsTable } from "@/modules/leads/table";
+import { parseColumns, parseFilterSet, parseSort } from "@/modules/leads/view-params";
 
 // Reads tenant data per request — never statically cached.
 export const dynamic = "force-dynamic";
 
-export default async function LeadsPage() {
+/**
+ * The table's whole state lives in the query string (playbook-v2 P3/2): `f`
+ * carries the filter set, `sort`, `cols` and `page` the rest. That is what
+ * makes a filtered table linkable and refresh-proof — and it is why a saved
+ * view can be stored as data rather than as session state.
+ *
+ * Every parser here is total: a hand-edited or stale parameter degrades to the
+ * default instead of throwing, because a page render must never 500 over a
+ * query string.
+ */
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function LeadsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
+  const params = await searchParams;
 
-  const leads = await db.lead.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      company: {
-        select: {
-          name: true,
-          industry: true,
-          sizeBand: true,
-          registry: { select: { statusFlags: true } },
-        },
-      },
-    },
-  });
-  const ws = await prismaUnsafe.workspace.findUnique({
-    where: { id: workspaceId },
-    select: { icpConfig: true },
-  });
-  const threshold = gateThresholdFromConfig(ws?.icpConfig);
+  const filters = parseFilterSet(first(params.f));
+  const sort = parseSort(first(params.sort));
+  const columns = parseColumns(first(params.cols));
+  const page = Number(first(params.page) ?? 1);
 
-  const rows: LeadRow[] = leads.map((l) => {
-    const statusFlags = Array.isArray(l.company?.registry?.statusFlags)
-      ? (l.company.registry.statusFlags as string[])
-      : null;
-    return {
-      id: l.id,
-      companyId: l.companyId,
-      contactName: l.contactName,
-      avatarPath: l.avatarPath,
-      title: l.title,
-      company: l.company?.name ?? "—",
-      industry: l.company?.industry ?? null,
-      sizeBand: l.company?.sizeBand ?? null,
-      icpScore: l.icpScore,
-      stage: l.stage,
-      signals: Array.isArray(l.signals) ? (l.signals as string[]) : [],
-      riskLabel: companyUnderProceedings(statusFlags) ? riskLabel(statusFlags) : null,
-    };
-  });
+  const data = await loadLeadsTable(workspaceId, { filters, sort, page });
 
   return (
     <AppShell activePath="/leads">
-      <LeadEngine leads={rows} threshold={threshold} />
+      <LeadEngine
+        threshold={data.threshold}
+        table={
+          <LeadsTable
+            rows={data.rows}
+            columns={columns}
+            sort={sort}
+            filters={filters}
+            facets={data.facets}
+            threshold={data.threshold}
+            page={data.page}
+            pageCount={data.pageCount}
+            total={data.total}
+            totalUnfiltered={data.totalUnfiltered}
+          />
+        }
+      />
     </AppShell>
   );
 }

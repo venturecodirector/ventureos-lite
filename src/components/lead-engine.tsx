@@ -10,38 +10,13 @@ import {
   createLeadManual,
   previewCsvImport,
   commitCsvImport,
-  overrideScore,
   moveLeadStage,
 } from "@/modules/leads/actions";
-import {
-  enrichCompanyLookup,
-  confirmEnrichment,
-} from "@/modules/registry/actions";
 import { listReferrers, type ReferrerOption } from "@/modules/referrals/actions";
-import type { RegistryCandidate } from "@/modules/registry/provider";
-import { companyUnderProceedings } from "@/modules/registry/risk";
-import { RiskChip } from "./risk-chip";
-import { Modal } from "./modal";
 import { CsvImport } from "./csv-import";
 import { preParse, hasAnalyzableText } from "@/modules/leads/preparse";
 import { ManualLeadForm } from "./manual-lead-form";
-import { LeadDetailModal } from "./lead-detail-modal";
-import { LeadAvatar } from "./lead-avatar";
-
-export interface LeadRow {
-  id: string;
-  companyId: string | null;
-  contactName: string | null;
-  avatarPath: string | null;
-  title: string | null;
-  company: string;
-  industry: string | null;
-  sizeBand: string | null;
-  icpScore: number | null;
-  stage: string;
-  signals: string[];
-  riskLabel: string | null;
-}
+import { OverrideDialog } from "./lead-dialogs";
 
 // ---- small bits -----------------------------------------------------------
 
@@ -237,11 +212,18 @@ function Section({
 // ---- main -----------------------------------------------------------------
 
 export function LeadEngine({
-  leads,
   threshold,
+  table,
 }: {
-  leads: LeadRow[];
   threshold: number;
+  /**
+   * The leads table, rendered by the server so it can filter, sort and
+   * paginate (playbook-v2 P3/2). Passed in as a slot rather than owned here:
+   * capture and the Claude rail are about ONE lead, the table is about all of
+   * them, and merging the two meant every filter change re-rendered the
+   * capture box and the rail's reveal animation with it.
+   */
+  table: React.ReactNode;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -278,12 +260,8 @@ export function LeadEngine({
   })();
 
   const urlOnly = paste.trim().length > 0 && !canResearch;
-  // Same modal the pipeline board uses — editing and deletion live in one
-  // place rather than being reimplemented per screen.
-  const [detailFor, setDetailFor] = useState<string | null>(null);
   const [showCsv, setShowCsv] = useState(false);
   const [overrideFor, setOverrideFor] = useState<string | null>(null);
-  const [enrichFor, setEnrichFor] = useState<string | null>(null);
 
   function firstUrl(text: string): string {
     const m = text.match(/https?:\/\/\S+/);
@@ -466,117 +444,9 @@ export function LeadEngine({
             </div>
           </div>
 
-          {/* table */}
-          <div className="rounded-card border border-line bg-panel px-0 pb-0 pt-1.5">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  {["Lead", "ICP score", "Signals", "Stage", ""].map((h) => (
-                    <th
-                      key={h}
-                      className="border-b border-line px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {leads.length === 0 && (
-                  <tr>
-                    <td className="px-3 py-6 text-center text-[13px] text-muted" colSpan={5}>
-                      No leads yet. Capture one above.
-                    </td>
-                  </tr>
-                )}
-                {leads.map((l) => {
-                  const ready = (l.icpScore ?? 0) >= threshold;
-                  return (
-                    <tr key={l.id} className="hover:[&>td]:bg-panel">
-                      <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
-                        <span className="flex items-center gap-2">
-                          <LeadAvatar name={l.contactName} path={l.avatarPath} size={28} />
-                          <button
-                            type="button"
-                            onClick={() => setDetailFor(l.id)}
-                            data-testid="lead-open-detail"
-                            title="Open to edit or delete"
-                            className="text-left font-bold hover:text-accent-ink hover:underline"
-                          >
-                            {l.contactName ?? "Unnamed contact"}
-                          </button>
-                          {l.riskLabel && <RiskChip label={l.riskLabel} />}
-                        </span>
-                        <span className="block text-[12px] text-muted">
-                          {l.company}
-                          {l.industry ? ` · ${l.industry}` : ""}
-                          {l.sizeBand ? ` · ${l.sizeBand}` : ""}
-                        </span>
-                      </td>
-                      <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
-                        <Notches score={l.icpScore} />
-                        <b className="ml-1.5">{l.icpScore ?? "—"}</b>
-                      </td>
-                      <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
-                        {l.signals.slice(0, 3).map((s, i) => (
-                          <Tag key={i}>{s}</Tag>
-                        ))}
-                      </td>
-                      <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
-                        {l.stage === "RESEARCHED" && l.icpScore != null && !ready ? (
-                          <span className="rounded-[6px] border border-dashed border-line px-1.5 py-0.5 text-[10.5px] text-muted">
-                            below gate — can&apos;t contact
-                          </span>
-                        ) : (
-                          <span className="text-[12px] text-muted">
-                            {l.stage.toLowerCase().replace("_", " ")}
-                          </span>
-                        )}
-                      </td>
-                      <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
-                        <div className="flex justify-end gap-2">
-                          {l.icpScore == null ? (
-                            <button
-                              onClick={() => startTransition(() => research(l.id))}
-                              disabled={pending}
-                              className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2 disabled:opacity-60"
-                            >
-                              Run research
-                            </button>
-                          ) : l.stage === "RESEARCHED" ? (
-                            <button
-                              onClick={() => startTransition(() => toContacted(l.id))}
-                              disabled={pending}
-                              className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2 disabled:opacity-60"
-                              title={ready ? "Move to Contacted" : "Blocked by the score gate"}
-                            >
-                              → Contacted
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-muted">—</span>
-                          )}
-                          {l.companyId && (
-                            <button
-                              onClick={() => setEnrichFor(l.companyId)}
-                              className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2"
-                            >
-                              Enrich
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setOverrideFor(l.id)}
-                            className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2"
-                          >
-                            Override
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {/* table — server-rendered: filtering, sorting and paging all
+              happen there (playbook-v2 P3/2). */}
+          {table}
         </div>
 
         <ClaudeRail
@@ -586,10 +456,6 @@ export function LeadEngine({
           onAddToPipeline={(id) => startTransition(() => toContacted(id))}
         />
       </div>
-
-      {detailFor && (
-        <LeadDetailModal leadId={detailFor} onClose={() => setDetailFor(null)} />
-      )}
 
       {showManual && (
         <ManualLeadForm
@@ -619,172 +485,6 @@ export function LeadEngine({
           }}
         />
       )}
-      {enrichFor && (
-        <EnrichDialog
-          companyId={enrichFor}
-          onClose={() => setEnrichFor(null)}
-          onDone={() => {
-            setEnrichFor(null);
-            router.refresh();
-          }}
-        />
-      )}
     </div>
-  );
-}
-
-function EnrichDialog({
-  companyId,
-  onClose,
-  onDone,
-}: {
-  companyId: string;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [candidates, setCandidates] = useState<RegistryCandidate[] | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    enrichCompanyLookup(companyId)
-      .then((r) => active && setCandidates(r.candidates))
-      .catch((e) => active && setMsg((e as Error).message));
-    return () => {
-      active = false;
-    };
-  }, [companyId]);
-
-  async function pick(c: RegistryCandidate) {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const res = await confirmEnrichment(companyId, c);
-      if (res.ok) onDone();
-      else setMsg(res.error);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal>
-      <div className="mb-3 flex items-center">
-        <h3 className="font-display text-lg font-bold lowercase">registry enrichment</h3>
-        <button onClick={onClose} className="ml-auto text-muted hover:text-ink">
-          ✕
-        </button>
-      </div>
-      <p className="mb-3 text-[12px] text-muted">
-        Confirm the matching company. adószám becomes the dedupe key; a company
-        under proceedings is flagged.
-      </p>
-      {msg && <p className="mb-2 text-[12px] text-[#FFB3C2]">{msg}</p>}
-      {candidates === null && !msg ? (
-        <p className="text-[13px] text-muted">Looking up…</p>
-      ) : candidates && candidates.length === 0 ? (
-        <p className="text-[13px] text-muted">No registry matches found.</p>
-      ) : (
-        <div className="grid gap-2">
-          {candidates?.map((c) => (
-            <div
-              key={c.taxId}
-              className="flex items-center gap-3 rounded-[10px] border border-line bg-panel p-3"
-            >
-              <div className="min-w-0 flex-1">
-                <b className="text-[13px]">{c.legalName}</b>
-                <span className="block text-[11.5px] text-muted">
-                  adószám {c.taxId}
-                  {c.headcountBand ? ` · ${c.headcountBand}` : ""}
-                  {c.revenueBand ? ` · ${c.revenueBand}` : ""}
-                </span>
-                {companyUnderProceedings(c.statusFlags) && (
-                  <span className="mt-1 inline-block">
-                    <RiskChip label="Under proceedings" />
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => pick(c)}
-                disabled={busy}
-                className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2 disabled:opacity-60"
-              >
-                Use this
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </Modal>
-  );
-}
-
-// ---- modals ---------------------------------------------------------------
-
-function OverrideDialog({
-  leadId,
-  onClose,
-  onDone,
-}: {
-  leadId: string;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [score, setScore] = useState(3);
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  return (
-    <Modal>
-      <div className="mb-3 flex items-center">
-        <h3 className="font-display text-lg font-bold lowercase">override icp score</h3>
-        <button onClick={onClose} className="ml-auto text-muted hover:text-ink">
-          ✕
-        </button>
-      </div>
-      <p className="mb-2 text-[12px] text-muted">
-        Overrides are recorded in the audit log with your reason.
-      </p>
-      <div className="mb-3 flex gap-2">
-        {[0, 1, 2, 3, 4, 5].map((s) => (
-          <button
-            key={s}
-            onClick={() => setScore(s)}
-            className={`h-9 w-9 rounded-[8px] border text-[13px] font-semibold ${
-              score === s ? "border-accent bg-accent-soft text-[#E4D3FF]" : "border-line bg-panel text-ink"
-            }`}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-      <input
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        placeholder="Reason (required)"
-        className="mb-3 w-full rounded-[8px] border border-line bg-[rgba(0,5,29,0.5)] px-2.5 py-2 text-[13px] text-ink outline-none placeholder:text-muted focus:border-accent"
-      />
-      <div className="flex justify-end gap-2">
-        <button
-          onClick={onClose}
-          className="rounded-[10px] border border-line bg-panel px-4 py-2 text-[13px] hover:bg-panel-2"
-        >
-          Cancel
-        </button>
-        <button
-          disabled={busy || !reason.trim()}
-          onClick={async () => {
-            setBusy(true);
-            await overrideScore(leadId, score, reason.trim());
-            setBusy(false);
-            onDone();
-          }}
-          className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"
-        >
-          {busy ? "Saving…" : "Save override"}
-        </button>
-      </div>
-    </Modal>
   );
 }
