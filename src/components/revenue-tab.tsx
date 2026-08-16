@@ -6,6 +6,8 @@ import type { RevenueView, SubscriptionRow } from "@/modules/revenue/dashboard";
 import type { ClientHealthRow } from "@/modules/revenue/health-data";
 import { createHealthTask, setSupportFlag } from "@/modules/revenue/health-actions";
 import { CHURN_REASONS } from "@/modules/revenue/subscriptions";
+import { setSubscriptionStatus } from "@/modules/revenue/actions";
+import { AddSubscriptionDialog, ChurnDialog } from "./subscription-dialogs";
 
 /**
  * The Revenue tab (playbook-v3 P11/1b).
@@ -250,7 +252,24 @@ function HealthPanel({ rows }: { rows: ClientHealthRow[] }) {
 const STATUS_FILTERS = ["ALL", "ACTIVE", "PAUSED", "CHURNED"] as const;
 
 export function RevenueTab({ view }: { view: RevenueView }) {
+  const router = useRouter();
   const [status, setStatus] = useState<(typeof STATUS_FILTERS)[number]>("ACTIVE");
+  const [adding, setAdding] = useState(false);
+  const [churning, setChurning] = useState<SubscriptionRow | null>(null);
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+
+  async function togglePause(row: SubscriptionRow) {
+    setRowBusy(row.id);
+    try {
+      await setSubscriptionStatus({
+        subscriptionId: row.id,
+        status: row.status === "PAUSED" ? "ACTIVE" : "PAUSED",
+      });
+      router.refresh();
+    } finally {
+      setRowBusy(null);
+    }
+  }
 
   const rows = useMemo(
     () =>
@@ -342,6 +361,14 @@ export function RevenueTab({ view }: { view: RevenueView }) {
             <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
               Subscriptions
             </span>
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              data-testid="add-subscription"
+              className="rounded-[8px] border border-line bg-panel px-2 py-1 text-[11.5px] hover:bg-panel-2"
+            >
+              + Add
+            </button>
             <span className="ml-auto flex gap-1.5">
               {STATUS_FILTERS.map((f) => (
                 <button
@@ -371,12 +398,13 @@ export function RevenueTab({ view }: { view: RevenueView }) {
                   <th className="pb-2 text-left font-semibold">Source</th>
                   <th className="pb-2 text-right font-semibold">Monthly net</th>
                   <th className="pb-2 text-left font-semibold">Status</th>
+                  <th className="pb-2 text-right font-semibold" />
                 </tr>
               </thead>
               <tbody data-testid="subscriptions-table">
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-6 text-center text-muted">
+                    <td colSpan={6} className="py-6 text-center text-muted">
                       Nothing {status === "ALL" ? "yet" : `in ${status.toLowerCase()}`}.
                     </td>
                   </tr>
@@ -402,6 +430,29 @@ export function RevenueTab({ view }: { view: RevenueView }) {
                       {s.churnReason && (
                         <span className="ml-1.5 text-[10.5px] text-muted">
                           {humanReason(s.churnReason)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 text-right">
+                      {s.status !== "CHURNED" && (
+                        <span className="inline-flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => togglePause(s)}
+                            disabled={rowBusy === s.id}
+                            data-testid="sub-pause"
+                            className="rounded-[8px] border border-line px-2 py-1 text-[11px] text-muted hover:text-ink disabled:opacity-50"
+                          >
+                            {s.status === "PAUSED" ? "resume" : "pause"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setChurning(s)}
+                            data-testid="sub-churn"
+                            className="rounded-[8px] border border-line px-2 py-1 text-[11px] text-muted hover:text-[#FFB3C2]"
+                          >
+                            end
+                          </button>
                         </span>
                       )}
                     </td>
@@ -437,6 +488,16 @@ export function RevenueTab({ view }: { view: RevenueView }) {
           )}
         </div>
       </div>
+
+      {adding && <AddSubscriptionDialog onClose={() => setAdding(false)} />}
+      {churning && (
+        <ChurnDialog
+          subscriptionId={churning.id}
+          companyName={churning.companyName}
+          monthlyNet={churning.monthlyNet}
+          onClose={() => setChurning(null)}
+        />
+      )}
     </div>
   );
 }

@@ -307,3 +307,49 @@ describe("the termination settlement", () => {
     expect(settlement.totalCommission).toBe(80_000);
   });
 });
+
+describe("churn ends the accrual (P11/1e)", () => {
+  it("stops commission once the invoices stop, without touching what was already earned", async () => {
+    const c = await client("Danubia Kft", fanni, 100_000);
+    await paid(c.companyId, 100_000, "2026-01-10", c.subscriptionId);
+    await paid(c.companyId, 100_000, "2026-02-10", c.subscriptionId);
+
+    // Churn in March. Commission is driven by PAYMENTS RECEIVED, so the two
+    // months already paid keep their commission and March simply has none.
+    await db().subscription.update({
+      where: { id: c.subscriptionId },
+      data: { status: "CHURNED", churnedAt: new Date("2026-03-01"), churnReason: "price" },
+    });
+
+    expect((await buildCommissionReport(wsA, "2026-01")).totalPayable).toBe(10_000);
+    expect((await buildCommissionReport(wsA, "2026-02")).totalPayable).toBe(10_000);
+    expect((await buildCommissionReport(wsA, "2026-03")).users).toEqual([]);
+  });
+
+  it("still commissions a payment that lands AFTER the churn", async () => {
+    // A final invoice settled a month late is money actually received, and the
+    // contract commissions what is received — churning does not cancel it.
+    const c = await client("Danubia Kft", fanni, 100_000);
+    await paid(c.companyId, 100_000, "2026-01-10", c.subscriptionId);
+    await db().subscription.update({
+      where: { id: c.subscriptionId },
+      data: { status: "CHURNED", churnedAt: new Date("2026-02-01"), churnReason: "price" },
+    });
+    await paid(c.companyId, 100_000, "2026-03-05", c.subscriptionId);
+
+    expect((await buildCommissionReport(wsA, "2026-03")).totalPayable).toBe(10_000);
+  });
+
+  it("removes the client from the termination settlement", async () => {
+    const c = await client("Danubia Kft", fanni, 100_000);
+    await paid(c.companyId, 100_000, "2026-01-15", c.subscriptionId);
+    expect((await buildSettlementReport(wsA, new Date("2026-04-30"))).users).toHaveLength(1);
+
+    await db().subscription.update({
+      where: { id: c.subscriptionId },
+      data: { status: "CHURNED", churnedAt: new Date("2026-02-01"), churnReason: "price" },
+    });
+    // Nothing remains to settle: there is no current monthly fee to multiply.
+    expect((await buildSettlementReport(wsA, new Date("2026-04-30"))).users).toEqual([]);
+  });
+});

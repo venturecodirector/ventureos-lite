@@ -433,3 +433,69 @@ test("exporting the commission PDF is audit-logged", async ({ page }) => {
   );
   expect((after[0].meta as Record<string, unknown>).kind).toBe("commission.pdf");
 });
+
+test("a subscription can be added, and it promotes the company to client", async ({ page }) => {
+  await reset();
+  await prisma.company.update({ where: { id: companyId }, data: { clientStatus: "PROSPECT" } });
+
+  await page.goto("/analytics?tab=revenue");
+  await page.getByTestId("add-subscription").click();
+  await page.getByTestId("sub-company").selectOption(companyId);
+  await page.getByTestId("sub-plan").fill("Hosting + retainer");
+  await page.getByTestId("sub-amount").fill("120000");
+  await page.getByTestId("sub-source").selectOption("hosting");
+  await page.getByTestId("sub-save").click();
+
+  await expect(page.getByTestId("revenue-mrr")).toHaveText("120 000 Ft");
+  const company = await prisma.company.findUnique({ where: { id: companyId } });
+  expect(company?.clientStatus).toBe("CLIENT");
+  expect(company?.clientSince).not.toBeNull();
+});
+
+test("ending a subscription demands a reason before it will run", async ({ page }) => {
+  await reset();
+  await seedSubscription({ monthlyNet: 90_000, startedAt: monthsAgo(4) });
+
+  await page.goto("/analytics?tab=revenue");
+  await page.getByTestId("sub-churn").click();
+  // The prompt is the point of sub-item (e): no reason, no churn.
+  await expect(page.getByTestId("churn-confirm")).toBeDisabled();
+
+  await page.getByTestId("churn-reason-price").click();
+  await expect(page.getByTestId("churn-confirm")).toBeEnabled();
+  await page.getByTestId("churn-confirm").click();
+
+  // Off the book, and the reason lands in the breakdown.
+  await expect(page.getByTestId("revenue-mrr")).toHaveText("0 Ft");
+  await expect(page.getByTestId("churn-breakdown")).toContainText("price");
+
+  const sub = await prisma.subscription.findFirst({ where: { workspaceId, companyId } });
+  expect(sub?.status).toBe("CHURNED");
+  expect(sub?.churnReason).toBe("price");
+  // The company is a FORMER client, not a prospect again.
+  const company = await prisma.company.findUnique({ where: { id: companyId } });
+  expect(company?.clientStatus).toBe("FORMER");
+});
+
+test("pausing takes MRR off the book and resuming puts it back", async ({ page }) => {
+  await reset();
+  await seedSubscription({ monthlyNet: 80_000, startedAt: monthsAgo(4) });
+
+  await page.goto("/analytics?tab=revenue");
+  await expect(page.getByTestId("revenue-mrr")).toHaveText("80 000 Ft");
+
+  await page.getByTestId("sub-pause").click();
+  await expect(page.getByTestId("revenue-mrr")).toHaveText("0 Ft");
+
+  await page.getByTestId("sub-filter-PAUSED").click();
+  await page.getByTestId("sub-pause").click();
+  await expect(page.getByTestId("revenue-mrr")).toHaveText("80 000 Ft");
+
+  // The event log kept both moves, so the deltas still reconcile.
+  const sub = await prisma.subscription.findFirst({ where: { workspaceId, companyId } });
+  const events = await prisma.subscriptionEvent.findMany({
+    where: { subscriptionId: sub!.id },
+  });
+  expect(events.reduce((n, e) => n + e.deltaNet, 0)).toBe(80_000);
+  expect(events.map((e) => e.kind)).toEqual(["new", "pause", "resume"]);
+});
