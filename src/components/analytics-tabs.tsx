@@ -14,6 +14,10 @@ import Link from "next/link";
 const TABS = [
   { key: "performance", label: "Performance", ownerOnly: false },
   { key: "revenue", label: "Revenue", ownerOnly: false },
+  // The weighted pipeline (v2 P4/c). Next to Revenue deliberately: one is money
+  // that has arrived, the other money that might, and reading them together is
+  // the point.
+  { key: "forecast", label: "Forecast", ownerOnly: false },
   // Everyone's pay. A BDR must not see a colleague's figures, and the report is
   // the whole workspace at once, so the tab itself is Owner-only (P11/1d).
   { key: "commission", label: "Commission", ownerOnly: true },

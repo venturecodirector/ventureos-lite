@@ -335,6 +335,9 @@ model Workspace {
   mailgunConfig Json?        @map("mailgun_config")
   icpConfig     Json?        @map("icp_config")
   auditConfig   Json?        @map("audit_config") // verdict thresholds + check weights
+  /// Deals layer settings (v2 P4/c): { commitThreshold } — the probability at
+  /// or above which forecast weight counts as commit rather than upside.
+  dealsConfig   Json?        @map("deals_config")
   claudeBudget  Decimal      @default(2) @map("claude_budget") // USD daily cap
   retentionDays Int          @default(365) @map("retention_days")
   featureFlags  Json?        @map("feature_flags")

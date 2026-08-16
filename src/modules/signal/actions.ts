@@ -66,6 +66,21 @@ export async function approveProposal(
       where: { id: frameId },
       data: { version: effect.version, status: "APPROVED" },
     });
+  } else if (proposal.kind === "STAGE_PROBABILITY") {
+    // v2 P4/c. The stage is looked up through the guarded client, so an
+    // approval cannot reach a stage in another workspace even if the stored
+    // proposal data were tampered with.
+    const effect = proposalEffect("STAGE_PROBABILITY", data, "approve", {});
+    if (effect?.type !== "stage_probability") return { ok: false, error: "Invalid proposal." };
+    const stage = await db.dealStage.findUnique({
+      where: { id: effect.stageId },
+      select: { id: true },
+    });
+    if (!stage) return { ok: false, error: "That pipeline stage no longer exists." };
+    await db.dealStage.update({
+      where: { id: effect.stageId },
+      data: { probability: effect.probability },
+    });
   } else {
     const effect = proposalEffect("SCORE_WEIGHT", data, "approve", {});
     if (effect?.type !== "weight") return { ok: false, error: "Invalid proposal." };
@@ -106,6 +121,7 @@ export async function approveProposal(
 
   revalidatePath("/settings");
   revalidatePath("/");
+  revalidatePath("/analytics");
   return { ok: true };
 }
 

@@ -32,6 +32,7 @@ import { processAnonymizationSweep } from "../modules/gdpr/sweep";
 import { processColdSends } from "../modules/campaigns/jobs";
 import { processInvoicePolls } from "../modules/invoicing/jobs";
 import { processSignalEngine, processDailyInsight } from "../modules/signal/jobs";
+import { processStageProbabilityCalibration } from "../modules/deals/jobs";
 import { processKeywordTracking } from "../modules/serp/jobs";
 import { processLogUpload, processLogRetention } from "../modules/logs/jobs";
 import { processMailSyncSweep } from "../modules/email/jobs";
@@ -174,6 +175,10 @@ async function main(): Promise<void> {
         const n = await processQuarterlyWinLoss();
         // eslint-disable-next-line no-console
         console.log(`[worker] win/loss digest sent for ${n} workspace(s)`);
+      } else if (job.name === "quarterly-stage-probability") {
+        const n = await processStageProbabilityCalibration();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] raised ${n} stage-probability proposal(s)`);
       } else if (job.name === "signal-weekly") {
         const n = await processSignalEngine();
         // eslint-disable-next-line no-console
@@ -273,6 +278,14 @@ async function main(): Promise<void> {
     "quarterly-winloss",
     {},
     { repeat: { pattern: "0 8 1 1,4,7,10 *" }, jobId: "quarterly-winloss" },
+  );
+  // Quarterly stage-probability recalibration — 08:30 on the 1st of the
+  // quarter, half an hour after the win/loss digest so the two do not compete
+  // for the same rows. Deterministic: no Claude call, no budget cost (P4/c).
+  await wakeupsQueue().add(
+    "quarterly-stage-probability",
+    {},
+    { repeat: { pattern: "30 8 1 1,4,7,10 *" }, jobId: "quarterly-stage-probability" },
   );
   // Signal Engine — weekly, Monday 07:00 (one Sonnet call/workspace).
   await wakeupsQueue().add(
