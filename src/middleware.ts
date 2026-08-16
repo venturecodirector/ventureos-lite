@@ -45,6 +45,9 @@ const PUBLIC_PREFIXES = [
   "/api/capture", // browser-extension capture (bearer token, not a session)
   "/share", // public audit reports (legacy path, still served)
   "/api/share", // screenshots for a public report (slug is the capability)
+  // A workspace logo, on every prospect-facing surface. Public by nature — a
+  // logo is the most published thing a company owns (audit-v2 item 6).
+  "/api/brand-logo",
   "/r", // public audit reports on the audit domain
   "/public-audit", // self-serve audit landing
   "/accept", // public quote acceptance

@@ -22,8 +22,15 @@ export interface WorkspaceBrand {
   /** The two halves of the wordmark: bold, then light. */
   markBold: string;
   markLight: string;
-  /** Absolute or /api/files-relative logo. When set, it replaces the wordmark. */
+  /** Public URL the logo is served from. When set, it replaces the wordmark. */
   logoUrl: string | null;
+  /**
+   * Where the uploaded file actually lives under FILES_DIR. Kept apart from
+   * `logoUrl` because the URL is public and cache-busted while the path is
+   * internal — and because a logo has to be readable WITHOUT a session: it
+   * appears on prospect-facing pages.
+   */
+  logoPath: string | null;
   /** Primary accent and the gradient it sits in. */
   color: string;
   gradientFrom: string;
@@ -74,6 +81,7 @@ export const VENTURE_BRAND: WorkspaceBrand = {
   markBold: "venture",
   markLight: "co.group",
   logoUrl: null,
+  logoPath: null,
   color: "#7427C6",
   gradientFrom: "#310B59",
   gradientTo: "#7427C6",
@@ -147,6 +155,7 @@ export function brandFrom(raw: unknown): WorkspaceBrand {
     markBold: str(b.markBold, named ? name : VENTURE_BRAND.markBold),
     markLight: str(b.markLight, named ? "" : VENTURE_BRAND.markLight),
     logoUrl: typeof b.logoUrl === "string" && b.logoUrl.trim() ? b.logoUrl.trim() : null,
+    logoPath: typeof b.logoPath === "string" && b.logoPath.trim() ? b.logoPath.trim() : null,
     color: color(b.color, VENTURE_BRAND.color),
     gradientFrom: color(b.gradientFrom, color(b.color, VENTURE_BRAND.gradientFrom)),
     gradientTo: color(b.gradientTo, color(b.color, VENTURE_BRAND.gradientTo)),
