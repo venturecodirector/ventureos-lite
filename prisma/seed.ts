@@ -3,6 +3,7 @@ import { OWNER_GRANTS } from "../src/lib/grants";
 import { NO_PASSWORD } from "../src/lib/auth/password";
 import { BASE_TEMPLATES } from "../src/modules/templates/seed-data";
 import { extractVariables } from "../src/modules/templates/render";
+import { DEFAULT_PIPELINES } from "../src/modules/deals/pipelines";
 import {
   DEFAULT_MEETING_TYPES,
   DEFAULT_SLOT_CONFIG,
@@ -133,6 +134,38 @@ async function main() {
     });
   }
 
+  // Deal pipelines (playbook-v2 P4/a). Idempotent and additive: an existing
+  // pipeline keeps whatever the workspace has since tuned into it.
+  let pipelinesCreated = 0;
+  for (const p of DEFAULT_PIPELINES) {
+    const exists = await prisma.pipeline.findFirst({
+      where: { workspaceId: workspace.id, key: p.key },
+      select: { id: true },
+    });
+    if (exists) continue;
+    await prisma.pipeline.create({
+      data: {
+        workspaceId: workspace.id,
+        key: p.key,
+        name: p.name,
+        position: p.position,
+        isDefault: p.isDefault,
+        stages: {
+          create: p.stages.map((s, i) => ({
+            workspaceId: workspace.id,
+            key: s.key,
+            name: s.name,
+            position: i,
+            probability: s.probability,
+            rottingDays: s.rottingDays,
+            kind: s.kind,
+          })),
+        },
+      },
+    });
+    pipelinesCreated += 1;
+  }
+
   // Base template set (quote/contract/certificate/email, HU + EN).
   let templatesCreated = 0;
   for (const t of BASE_TEMPLATES) {
@@ -158,7 +191,8 @@ async function main() {
 
   console.log(
     `Seeded workspace "${workspace.name}" with Tamas (Owner), Fanni (BDR), ICP config, ` +
-      `${DEFAULT_TARGETS.length} targets and ${templatesCreated} base templates.`,
+      `${DEFAULT_TARGETS.length} targets, ${pipelinesCreated} deal pipelines and ` +
+      `${templatesCreated} base templates.`,
   );
 }
 

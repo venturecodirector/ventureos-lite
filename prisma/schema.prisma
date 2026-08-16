@@ -124,6 +124,17 @@ enum DealResult {
   POSTPONED
 }
 
+/// Where a deal stands in the money journey (v2 P4).
+///
+/// Separate from the stage it sits in: a pipeline may have several terminal
+/// stages, and "is this deal still live?" must be answerable without knowing
+/// the workspace's own stage names.
+enum DealStatus {
+  OPEN
+  WON
+  LOST
+}
+
 enum InvoiceStatus {
   PREPARED
   SUBMITTED
@@ -384,6 +395,7 @@ model Company {
   siteFetchedAt DateTime?        @map("site_fetched_at")
   invoices      Invoice[]
   subscriptions Subscription[]
+  deals         Deal[]
 
   @@unique([workspaceId, taxId])
   @@index([workspaceId])
@@ -435,6 +447,7 @@ model Lead {
   documents   Document[]
   emailLogs   EmailLog[]
   outcomes    DealOutcome[]
+  deals       Deal[]
   /// Captured from the page the user was viewing (P1/1e). Personal data:
   /// all three join the erasure cascade and the anonymization job.
   avatarPath  String?       @map("avatar_path")
@@ -584,6 +597,8 @@ model Report {
 enum ProposalKind {
   FRAME_PROMOTION
   SCORE_WEIGHT
+  /// Quarterly win/loss review of a stage's default probability (v2 P4/c).
+  STAGE_PROBABILITY
 }
 
 enum ProposalStatus {
@@ -1141,6 +1156,11 @@ model Document {
   id                String         @id @default(cuid())
   workspaceId       String         @map("workspace_id")
   leadId            String?        @map("lead_id")
+  /// The deal this document belongs to (v2 P4/b). The chain hangs off the DEAL
+  /// once one exists — a company that buys twice has two quotes, and hanging
+  /// both off the lead made them look like one chain with a duplicate step.
+  /// Nullable: documents older than the deals layer keep their lead link only.
+  dealId            String?        @map("deal_id")
   templateVersionId String?        @map("template_version_id")
   chainParentId     String?        @map("chain_parent_id")
   type              DocumentType
@@ -1169,6 +1189,7 @@ model Document {
   updatedAt         DateTime       @updatedAt @map("updated_at")
 
   lead        Lead?             @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  deal        Deal?             @relation(fields: [dealId], references: [id], onDelete: SetNull)
   template    Template?         @relation(fields: [templateVersionId], references: [id], onDelete: SetNull)
   chainParent Document?         @relation("DocumentChain", fields: [chainParentId], references: [id], onDelete: SetNull)
   chainChild  Document[]        @relation("DocumentChain")
@@ -1179,6 +1200,7 @@ model Document {
   @@index([workspaceId])
   @@index([leadId])
   @@index([workspaceId, number])
+  @@index([dealId])
   @@map("documents")
 }
 
@@ -1311,17 +1333,138 @@ model DealOutcome {
   id          String     @id @default(cuid())
   workspaceId String     @map("workspace_id")
   leadId      String     @map("lead_id")
+  /// The deal this outcome closed (v2 P4). Nullable because outcomes recorded
+  /// before the deals layer existed have no deal behind them, and inventing one
+  /// retroactively would fabricate money-journey history that never happened.
+  dealId      String?    @map("deal_id")
   result      DealResult
   reason      String?
   value       Int? // HUF forints
   competitor  String?
   at          DateTime   @default(now())
 
-  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  deal Deal? @relation(fields: [dealId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId])
   @@index([leadId])
+  @@index([dealId])
   @@map("deal_outcomes")
+}
+
+// ============================================================================
+// Deals layer (playbook-v2 P4). A Lead is a PERSON we are trying to reach; a
+// Deal is a piece of WORK with money attached. They were the same row until
+// now, which is why "how much is in the pipeline" had no answer and why one
+// company could only ever be worth one thing at a time.
+//
+// The boundary: a lead owns the pre-deal journey (Researched → Replied); a deal
+// owns everything from Qualified onward. Lead.stage is untouched by this layer
+// — the migration ADDS deals beside the leads it derived them from rather than
+// moving state, so the change is reversible without reconstructing anything.
+// ============================================================================
+
+/// A named board. Pipelines are DATA, not an enum, because "Web projects" and
+/// "Grants" close on completely different clocks and a workspace must be able
+/// to add a third without a deploy.
+model Pipeline {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  name        String
+  /// Stable slug, so seeds and migrations can find a pipeline by meaning rather
+  /// than by a name someone has since renamed.
+  key         String
+  position    Int      @default(0)
+  /// Where a converted lead lands when nothing else decides.
+  isDefault   Boolean  @default(false) @map("is_default")
+  /// Archived rather than deleted: a pipeline with deals in it cannot go away
+  /// without taking their history with it.
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  stages DealStage[]
+  deals  Deal[]
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId, position])
+  @@map("pipelines")
+}
+
+/// One column on a pipeline board.
+model DealStage {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  pipelineId  String   @map("pipeline_id")
+  name        String
+  key         String
+  position    Int      @default(0)
+  /// 0-100. The forecast's weight for any deal sitting here that has not
+  /// overridden it.
+  probability Int      @default(0)
+  /// Days in this stage before the card is flagged as rotting. Null = never.
+  rottingDays Int?     @map("rotting_days")
+  /// open | won | lost. A stage's kind is what makes a drag onto it close the
+  /// deal — the alternative is matching on the stage's NAME, which breaks the
+  /// moment someone renames "Won" to "Signed".
+  kind        String   @default("open")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  pipeline Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  deals    Deal[]
+
+  @@unique([pipelineId, key])
+  @@index([workspaceId])
+  @@index([pipelineId, position])
+  @@map("deal_stages")
+}
+
+/// A piece of work with money attached.
+model Deal {
+  id              String     @id @default(cuid())
+  workspaceId     String     @map("workspace_id")
+  /// The person it came through, and the company that would pay. Both nullable
+  /// and both kept: erasing a lead must not erase the revenue record, and a
+  /// renewal can outlive the contact who introduced it.
+  leadId          String?    @map("lead_id")
+  companyId       String?    @map("company_id")
+  title           String
+  /// Integer forints (CLAUDE.md — money is never a float).
+  value           Int        @default(0)
+  currency        String     @default("HUF")
+  expectedCloseAt DateTime?  @map("expected_close_at")
+  /// 0-100 override. NULL means "whatever the stage says", so moving a deal
+  /// re-weights it automatically until someone states an opinion.
+  probability     Int?
+  pipelineId      String     @map("pipeline_id")
+  stageId         String     @map("stage_id")
+  stageEnteredAt  DateTime   @default(now()) @map("stage_entered_at")
+  ownerId         String?    @map("owner_id")
+  status          DealStatus @default(OPEN)
+  closedAt        DateTime?  @map("closed_at")
+  lostReason      String?    @map("lost_reason")
+  /// "p4_migration" for the rows the deals migration derived from lead stages.
+  /// This is what makes the migration reversible: rollback deletes exactly the
+  /// rows it created and nothing a person has since added by hand.
+  source          String?
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  lead          Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  company       Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  pipeline      Pipeline       @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
+  stage         DealStage      @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  documents     Document[]
+  outcomes      DealOutcome[]
+  subscriptions Subscription[]
+
+  @@index([workspaceId, status])
+  @@index([workspaceId, pipelineId, stageId])
+  @@index([leadId])
+  @@index([companyId])
+  @@index([workspaceId, expectedCloseAt])
+  @@map("deals")
 }
 
 // Public per-host scheduling page (spec §4.21). slug is globally unique — the
@@ -1411,13 +1554,11 @@ model Subscription {
   /// Where this engagement came from. Commission attribution walks lead ->
   /// owner, and lead -> referrer, so it has to survive on the subscription.
   leadId      String?            @map("lead_id")
-  //
-  // FUTURE (v2 P4, deals layer): a `dealId String?` column and a Deal relation
-  // drop in HERE without breaking anything — nullable, so no backfill; and the
-  // MRR maths reads companyId rather than any deal, so none of it has to be
-  // rewritten. Deliberately NOT stubbed now: a foreign key with no table behind
-  // it is a migration someone has to undo before they can write the real one.
-  //
+  /// The deal this recurring engagement was won on (v2 P4). Nullable, as the
+  /// earlier note here predicted: the MRR maths reads companyId, so nothing in
+  /// it had to be rewritten — only commission attribution now prefers the
+  /// deal's owner when there is one.
+  dealId      String?            @map("deal_id")
   planName    String             @map("plan_name")
   /// Monthly NET in integer forints.
   monthlyNet  Int                @map("monthly_net")
@@ -1435,11 +1576,13 @@ model Subscription {
   updatedAt   DateTime           @updatedAt @map("updated_at")
 
   company  Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  deal     Deal?               @relation(fields: [dealId], references: [id], onDelete: SetNull)
   events   SubscriptionEvent[]
   invoices Invoice[]
 
   @@index([workspaceId, status])
   @@index([companyId])
+  @@index([dealId])
   @@map("subscriptions")
 }
 

@@ -1,0 +1,277 @@
+/**
+ * Reading and provisioning the deals layer (playbook-v2 P4).
+ *
+ * Everything here goes through the workspace-guarded client — deals, pipelines
+ * and stages are business tables and carry workspace_id like everything else.
+ */
+
+import type { WorkspaceClient } from "@/lib/db";
+import { getWorkspaceClient } from "@/lib/db";
+import {
+  DEFAULT_PIPELINES,
+  DEFAULT_PIPELINE_KEY,
+  type PipelineSeed,
+} from "./pipelines";
+import {
+  daysInStage,
+  effectiveProbability,
+  isRotting,
+  type DealLike,
+} from "./logic";
+
+export interface StageView {
+  id: string;
+  key: string;
+  name: string;
+  position: number;
+  probability: number;
+  rottingDays: number | null;
+  kind: string;
+}
+
+export interface PipelineView {
+  id: string;
+  key: string;
+  name: string;
+  position: number;
+  isDefault: boolean;
+  stages: StageView[];
+}
+
+/**
+ * Create the two default pipelines for a workspace that has none.
+ *
+ * Idempotent and additive: an existing pipeline is left exactly as the
+ * workspace has configured it, including renamed stages and re-weighted
+ * probabilities. Re-running this must never undo somebody's tuning.
+ */
+export async function ensurePipelines(
+  workspaceId: string,
+  seeds: PipelineSeed[] = DEFAULT_PIPELINES,
+): Promise<PipelineView[]> {
+  const db = getWorkspaceClient(workspaceId);
+  for (const seed of seeds) {
+    const existing = await db.pipeline.findFirst({ where: { key: seed.key } });
+    if (existing) continue;
+    await db.pipeline.create({
+      data: {
+        workspaceId,
+        key: seed.key,
+        name: seed.name,
+        position: seed.position,
+        isDefault: seed.isDefault,
+        stages: {
+          create: seed.stages.map((s, i) => ({
+            workspaceId,
+            key: s.key,
+            name: s.name,
+            position: i,
+            probability: s.probability,
+            rottingDays: s.rottingDays,
+            kind: s.kind,
+          })),
+        },
+      },
+    });
+  }
+  return listPipelines(db);
+}
+
+export async function listPipelines(db: WorkspaceClient): Promise<PipelineView[]> {
+  const rows = await db.pipeline.findMany({
+    where: { archived: false },
+    orderBy: { position: "asc" },
+    include: { stages: { orderBy: { position: "asc" } } },
+  });
+  return rows.map((p) => ({
+    id: p.id,
+    key: p.key,
+    name: p.name,
+    position: p.position,
+    isDefault: p.isDefault,
+    stages: p.stages.map((s) => ({
+      id: s.id,
+      key: s.key,
+      name: s.name,
+      position: s.position,
+      probability: s.probability,
+      rottingDays: s.rottingDays,
+      kind: s.kind,
+    })),
+  }));
+}
+
+/** The pipeline a new deal lands in when the caller has no preference. */
+export function defaultPipeline(pipelines: PipelineView[]): PipelineView | null {
+  return (
+    pipelines.find((p) => p.isDefault) ??
+    pipelines.find((p) => p.key === DEFAULT_PIPELINE_KEY) ??
+    pipelines[0] ??
+    null
+  );
+}
+
+export interface DealCardView {
+  id: string;
+  title: string;
+  value: number;
+  currency: string;
+  probability: number;
+  /** True when the number above came from the stage, not from the deal. */
+  inheritedProbability: boolean;
+  expectedCloseAt: string | null;
+  stageId: string;
+  pipelineId: string;
+  status: "OPEN" | "WON" | "LOST";
+  daysInStage: number;
+  rotting: boolean;
+  leadId: string | null;
+  leadName: string | null;
+  companyId: string | null;
+  companyName: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  /** Document types present on this deal, for the chain dots. */
+  chainTypes: string[];
+  invoiceStatus: string | null;
+}
+
+/**
+ * Every deal on one pipeline, with the card decorations the board needs.
+ *
+ * Loaded per pipeline rather than per workspace: the board shows one at a time,
+ * and reading every deal in the workspace to render one column set is exactly
+ * the kind of query P6/3 has to come back and undo.
+ */
+export async function loadPipelineBoard(
+  workspaceId: string,
+  pipelineId: string,
+  opts?: { now?: Date; ownerNames?: Map<string, string> },
+): Promise<DealCardView[]> {
+  const db = getWorkspaceClient(workspaceId);
+  const now = opts?.now ?? new Date();
+
+  const deals = await db.deal.findMany({
+    where: { pipelineId },
+    orderBy: [{ stageEnteredAt: "asc" }],
+    include: {
+      stage: { select: { probability: true, rottingDays: true } },
+      lead: { select: { contactName: true } },
+      company: { select: { name: true } },
+      documents: { select: { id: true, type: true } },
+    },
+  });
+
+  const docIds = deals.flatMap((d) => d.documents.map((doc) => doc.id));
+  const invoices = docIds.length
+    ? await db.invoice.findMany({
+        where: { documentId: { in: docIds } },
+        orderBy: { at: "desc" },
+        select: { documentId: true, status: true },
+      })
+    : [];
+  const invoiceByDoc = new Map<string, string>();
+  for (const inv of invoices) {
+    if (inv.documentId && !invoiceByDoc.has(inv.documentId)) {
+      invoiceByDoc.set(inv.documentId, inv.status);
+    }
+  }
+
+  return deals.map((d) => {
+    const chainTypes = [...new Set(d.documents.map((doc) => doc.type as string))];
+    const invoiceStatus =
+      d.documents.map((doc) => invoiceByDoc.get(doc.id)).find((s) => !!s) ?? null;
+    return {
+      id: d.id,
+      title: d.title,
+      value: d.value,
+      currency: d.currency,
+      probability: effectiveProbability({
+        probability: d.probability,
+        stageProbability: d.stage.probability,
+        status: d.status,
+      }),
+      inheritedProbability: d.probability === null,
+      expectedCloseAt: d.expectedCloseAt ? d.expectedCloseAt.toISOString().slice(0, 10) : null,
+      stageId: d.stageId,
+      pipelineId: d.pipelineId,
+      status: d.status,
+      daysInStage: daysInStage(d.stageEnteredAt, now),
+      rotting: isRotting({
+        status: d.status,
+        stageEnteredAt: d.stageEnteredAt,
+        rottingDays: d.stage.rottingDays,
+        now,
+      }),
+      leadId: d.leadId,
+      leadName: d.lead?.contactName ?? null,
+      companyId: d.companyId,
+      companyName: d.company?.name ?? null,
+      ownerId: d.ownerId,
+      ownerName: d.ownerId ? (opts?.ownerNames?.get(d.ownerId) ?? null) : null,
+      chainTypes,
+      invoiceStatus,
+    };
+  });
+}
+
+/** Every open deal in the workspace, shaped for the forecast maths. */
+export async function loadForecastDeals(
+  workspaceId: string,
+  opts?: { pipelineId?: string },
+): Promise<Array<DealLike & { pipelineId: string }>> {
+  const db = getWorkspaceClient(workspaceId);
+  const deals = await db.deal.findMany({
+    where: opts?.pipelineId ? { pipelineId: opts.pipelineId } : {},
+    select: {
+      id: true,
+      value: true,
+      probability: true,
+      expectedCloseAt: true,
+      status: true,
+      pipelineId: true,
+      stage: { select: { probability: true } },
+    },
+  });
+  return deals.map((d) => ({
+    id: d.id,
+    value: d.value,
+    probability: d.probability,
+    stageProbability: d.stage.probability,
+    expectedCloseAt: d.expectedCloseAt,
+    status: d.status,
+    pipelineId: d.pipelineId,
+  }));
+}
+
+/** The deals attached to a lead, for the lead modal's cross-link (P4/b). */
+export async function dealsForLead(
+  db: WorkspaceClient,
+  leadId: string,
+): Promise<
+  Array<{
+    id: string;
+    title: string;
+    value: number;
+    status: string;
+    stageName: string;
+    pipelineName: string;
+  }>
+> {
+  const deals = await db.deal.findMany({
+    where: { leadId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      stage: { select: { name: true } },
+      pipeline: { select: { name: true } },
+    },
+  });
+  return deals.map((d) => ({
+    id: d.id,
+    title: d.title,
+    value: d.value,
+    status: d.status,
+    stageName: d.stage.name,
+    pipelineName: d.pipeline.name,
+  }));
+}

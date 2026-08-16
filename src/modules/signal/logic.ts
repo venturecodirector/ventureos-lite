@@ -6,7 +6,7 @@
  */
 export const MIN_PROPOSAL_N = 20;
 
-export type ProposalKind = "FRAME_PROMOTION" | "SCORE_WEIGHT";
+export type ProposalKind = "FRAME_PROMOTION" | "SCORE_WEIGHT" | "STAGE_PROBABILITY";
 
 export interface ProposalDraft {
   kind: ProposalKind;
@@ -106,7 +106,17 @@ export interface WeightMutation {
   criterion: string;
   weight: number;
 }
-export type ProposalMutation = FrameMutation | WeightMutation;
+/**
+ * A pipeline stage's default probability, recalibrated against its own win/loss
+ * record (playbook-v2 P4/c). Quarterly, min n=20, and — like everything else
+ * here — only ever applied by an explicit Owner approval.
+ */
+export interface StageProbabilityMutation {
+  type: "stage_probability";
+  stageId: string;
+  probability: number;
+}
+export type ProposalMutation = FrameMutation | WeightMutation | StageProbabilityMutation;
 
 /**
  * The mutation a decision implies. A rejection (or anything but an explicit
@@ -130,6 +140,15 @@ export function proposalEffect(
   }
   if (kind === "SCORE_WEIGHT") {
     return { type: "weight", criterion: String(data.criterion), weight: Number(data.weight) };
+  }
+  if (kind === "STAGE_PROBABILITY") {
+    return {
+      type: "stage_probability",
+      stageId: String(data.stageId),
+      // Clamped here rather than at the call site: an approval must not be able
+      // to write a probability the forecast cannot weigh.
+      probability: Math.max(0, Math.min(100, Math.round(Number(data.probability)))),
+    };
   }
   return null;
 }

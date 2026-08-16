@@ -56,6 +56,9 @@ const BUSINESS_TABLES = [
   "push_subscriptions",
   "subscriptions",
   "subscription_events",
+  "pipelines",
+  "deal_stages",
+  "deals",
 ];
 
 const CURRENT_WS = "current_setting('app.current_workspace', true)";
