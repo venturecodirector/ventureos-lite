@@ -7,7 +7,9 @@ import { COLUMNS, columnDef } from "@/modules/leads/columns";
 import type { FilterSet, SortField, SortSpec } from "@/modules/leads/filters";
 import type { LeadFacets, LeadTableRow } from "@/modules/leads/table";
 import { serializeColumns, serializeFilterSet, serializeSort } from "@/modules/leads/view-params";
+import type { LeadView } from "@/modules/leads/views";
 import { LeadFilterBuilder } from "./lead-filter-builder";
+import { LeadViewTabs } from "./lead-view-tabs";
 import { LeadDetailModal } from "./lead-detail-modal";
 import { EnrichDialog, OverrideDialog } from "./lead-dialogs";
 import { LeadAvatar } from "./lead-avatar";
@@ -34,6 +36,10 @@ export interface LeadsTableProps {
   pageCount: number;
   total: number;
   totalUnfiltered: number;
+  views: LeadView[];
+  activeViewId: string | null;
+  currentUserId: string;
+  canCurateViews: boolean;
 }
 
 function Notches({ score }: { score: number | null }) {
@@ -72,8 +78,22 @@ function humanEnum(v: string): string {
 }
 
 export function LeadsTable(props: LeadsTableProps) {
-  const { rows, columns, sort, filters, facets, threshold, page, pageCount, total, totalUnfiltered } =
-    props;
+  const {
+    rows,
+    columns,
+    sort,
+    filters,
+    facets,
+    threshold,
+    page,
+    pageCount,
+    total,
+    totalUnfiltered,
+    views,
+    activeViewId,
+    currentUserId,
+    canCurateViews,
+  } = props;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -89,7 +109,16 @@ export function LeadsTable(props: LeadsTableProps) {
     [columns],
   );
 
-  /** Rewrite the query string. Any change of shape resets to page 1. */
+  /**
+   * Rewrite the query string. Any change of shape resets to page 1.
+   *
+   * Deliberately NOT wrapped in startTransition. A transition defers the URL
+   * update until the new server render commits, and during that window the
+   * query string still described the previous table — which is how "Save as
+   * view" managed to store the filter you had before the one you were looking
+   * at. The URL is the table's state, so it updates first and everything else
+   * follows from it.
+   */
   const navigate = useCallback(
     (changes: Record<string, string | undefined>, keepPage = false) => {
       const next = new URLSearchParams(searchParams.toString());
@@ -98,7 +127,7 @@ export function LeadsTable(props: LeadsTableProps) {
         else next.set(key, value);
       }
       if (!keepPage) next.delete("page");
-      startTransition(() => router.push(`${pathname}?${next.toString()}`, { scroll: false }));
+      router.push(`${pathname}?${next.toString()}`, { scroll: false });
     },
     [pathname, router, searchParams],
   );
@@ -146,6 +175,16 @@ export function LeadsTable(props: LeadsTableProps) {
           {error}
         </div>
       )}
+
+      <LeadViewTabs
+        views={views}
+        filters={filters}
+        sort={sort}
+        columns={columns}
+        activeViewId={activeViewId}
+        currentUserId={currentUserId}
+        canCurate={canCurateViews}
+      />
 
       <div className="mb-3 flex flex-wrap items-start gap-x-3 gap-y-2">
         <LeadFilterBuilder

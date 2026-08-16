@@ -1,8 +1,10 @@
 import { AppShell } from "@/components/app-shell";
 import { LeadEngine } from "@/components/lead-engine";
 import { LeadsTable } from "@/components/leads-table";
+import { prismaUnsafe } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { loadLeadsTable } from "@/modules/leads/table";
+import { listViews } from "@/modules/leads/view-store";
 import { parseColumns, parseFilterSet, parseSort } from "@/modules/leads/view-params";
 
 // Reads tenant data per request — never statically cached.
@@ -27,7 +29,7 @@ export default async function LeadsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { workspaceId } = await getActiveContext();
+  const { workspaceId, userId } = await getActiveContext();
   const params = await searchParams;
 
   const filters = parseFilterSet(first(params.f));
@@ -35,7 +37,15 @@ export default async function LeadsPage({
   const columns = parseColumns(first(params.cols));
   const page = Number(first(params.page) ?? 1);
 
-  const data = await loadLeadsTable(workspaceId, { filters, sort, page });
+  const [data, views, membership] = await Promise.all([
+    loadLeadsTable(workspaceId, { filters, sort, page }),
+    listViews(workspaceId, userId),
+    prismaUnsafe.membership.findUnique({
+      where: { userId_workspaceId: { userId, workspaceId } },
+      select: { role: true },
+    }),
+  ]);
+  const canCurateViews = membership?.role === "OWNER" || membership?.role === "ADMIN";
 
   return (
     <AppShell activePath="/leads">
@@ -53,6 +63,10 @@ export default async function LeadsPage({
             pageCount={data.pageCount}
             total={data.total}
             totalUnfiltered={data.totalUnfiltered}
+            views={views}
+            activeViewId={first(params.view) ?? null}
+            currentUserId={userId}
+            canCurateViews={canCurateViews}
           />
         }
       />

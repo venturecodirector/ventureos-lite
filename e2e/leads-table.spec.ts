@@ -10,6 +10,19 @@ import { test, expect, type Page } from "@playwright/test";
  * on the same table.
  */
 
+/**
+ * A token that cannot fuzzy-match another run's.
+ *
+ * Date.now() was the obvious choice and the wrong one: two runs seconds apart
+ * produce 13-digit strings differing in three or four characters, which the
+ * P3/1 matcher forgives on purpose — so a filter for one run's lead also
+ * matched the previous run's leftover. Six random letters are far enough apart
+ * that no edit budget reaches across them.
+ */
+function tag(): string {
+  return Math.random().toString(36).slice(2, 8).replace(/\d/g, "x");
+}
+
 async function createLead(page: Page, name: string, company: string) {
   await page.goto("/leads");
   await page.getByRole("button", { name: "Add manually" }).click();
@@ -27,10 +40,12 @@ async function filterByText(page: Page, text: string) {
   await row.getByTestId("filter-field").selectOption("text");
   await row.getByTestId("filter-value").fill(text);
   await page.getByTestId("filter-apply").click();
+  // The chip renders from the URL, so its appearance means the navigation landed.
+  await expect(page.getByTestId("filter-chip")).toBeVisible();
 }
 
 test("a filter narrows the table, and the URL carries it", async ({ page }) => {
-  const suffix = Date.now();
+  const suffix = tag();
   const name = `Filter Lead ${suffix}`;
   await createLead(page, name, `Filter Co ${suffix}`);
 
@@ -55,7 +70,7 @@ test("a filter narrows the table, and the URL carries it", async ({ page }) => {
 });
 
 test("clearing the filter brings the other leads back", async ({ page }) => {
-  const suffix = Date.now();
+  const suffix = tag();
   const name = `Clear Lead ${suffix}`;
   await createLead(page, name, `Clear Co ${suffix}`);
 
