@@ -129,7 +129,25 @@ enum InvoiceStatus {
   SUBMITTED
   ISSUED
   PAID
+  /// Money that came in and went back out (P11/1d). A separate status rather
+  /// than deleting the row: the commission ledger has to see the reversal to
+  /// offset it, and a deleted invoice is a payment that silently never happened.
+  REFUNDED
   FAILED
+}
+
+/// Where a company sits in the client lifecycle (playbook-v3 P11/1a).
+enum ClientStatus {
+  PROSPECT
+  CLIENT
+  /// Was a client; every subscription has since churned.
+  FORMER
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CHURNED
 }
 
 enum AuditVerdict {
@@ -321,24 +339,34 @@ model Workspace {
 // ============================================================================
 
 model Company {
-  id          String   @id @default(cuid())
-  workspaceId String   @map("workspace_id")
-  name        String
-  domain      String?
-  website     String?
-  industry    String?
-  sizeBand    String?  @map("size_band")
-  phone       String?
-  address     String?
-  city        String?
-  taxId       String?  @map("tax_id") // adószám — dedupe key within a workspace
+  id           String       @id @default(cuid())
+  workspaceId  String       @map("workspace_id")
+  name         String
+  domain       String?
+  website      String?
+  industry     String?
+  sizeBand     String?      @map("size_band")
+  phone        String?
+  address      String?
+  city         String?
+  taxId        String?      @map("tax_id") // adószám — dedupe key within a workspace
   /// How this company entered the workspace, when it was not a prospect we
   /// chose: "competitor_audit" for one pulled in by a comparison (P2/3). Null
   /// for everything created the ordinary way.
-  source      String?
-  notes       String?  @db.Text
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  source       String?
+  notes        String?      @db.Text
+  /// Client lifecycle (playbook-v3 P11/1a). The playbook promotes a company on
+  /// "first deal won"; there is no Deal model yet (v2 P4 is not started), so
+  /// promotion happens on the first thing that means the same in practice — a
+  /// subscription starting, or an invoice being paid. When Deal arrives it
+  /// becomes a third trigger rather than a replacement.
+  clientStatus ClientStatus @default(PROSPECT) @map("client_status")
+  clientSince  DateTime?    @map("client_since")
+  /// Manual "something is wrong here" toggle. One of the four health inputs,
+  /// and the only one a person sets by hand (P11/1c).
+  supportFlag  Boolean      @default(false) @map("support_flag")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
 
   leads         Lead[]
   audits        AuditResult[]
@@ -354,6 +382,8 @@ model Company {
   /// When the fetch was last ATTEMPTED — set even on failure, so a dead site
   /// is not re-fetched on every research run.
   siteFetchedAt DateTime?        @map("site_fetched_at")
+  invoices      Invoice[]
+  subscriptions Subscription[]
 
   @@unique([workspaceId, taxId])
   @@index([workspaceId])
@@ -1322,20 +1352,115 @@ model QuoteAcceptance {
   @@map("quote_acceptances")
 }
 
+/// An invoice, and — since P11/1d — the payment ledger the commission reads.
+///
+/// Commission is "10% of net actually RECEIVED in that month", so the ledger
+/// needs three things Invoice did not carry: how much (net, VAT excluded), WHEN
+/// the money arrived, and who it came from. Deriving them from the linked
+/// Document was not an option: a subscription invoice has no document at all.
 model Invoice {
-  id          String        @id @default(cuid())
-  workspaceId String        @map("workspace_id")
-  documentId  String?       @map("document_id")
-  szamlazzId  String?       @map("szamlazz_id")
-  number      String?
-  pdfUrl      String?       @map("pdf_url")
-  status      InvoiceStatus @default(PREPARED)
-  at          DateTime      @default(now())
+  id             String        @id @default(cuid())
+  workspaceId    String        @map("workspace_id")
+  documentId     String?       @map("document_id")
+  /// Direct link, because a recurring invoice has no document to reach it through.
+  companyId      String?       @map("company_id")
+  /// Set when this invoice bills a subscription; null for one-off work. This is
+  /// what separates the two commission rules from each other.
+  subscriptionId String?       @map("subscription_id")
+  szamlazzId     String?       @map("szamlazz_id")
+  number         String?
+  pdfUrl         String?       @map("pdf_url")
+  status         InvoiceStatus @default(PREPARED)
+  /// NET forints, VAT excluded (CLAUDE.md: HUF is an integer, never a float).
+  netAmount      Int?          @map("net_amount")
+  /// When the money actually arrived — set by the Számlázz.hu poll. The month
+  /// of THIS date decides which commission run the payment falls into, which is
+  /// not the same as the month the invoice was issued.
+  paidAt         DateTime?     @map("paid_at")
+  /// When it went back out again, and how much of it.
+  refundedAt     DateTime?     @map("refunded_at")
+  refundedNet    Int?          @map("refunded_net")
+  at             DateTime      @default(now())
 
-  document Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  document     Document?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  company      Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId])
+  /// The commission run: everything received in one month, by company.
+  @@index([workspaceId, paidAt])
+  @@index([companyId])
   @@map("invoices")
+}
+
+/// The recurring book (playbook-v3 P11/1a). One-off revenue stays on invoices;
+/// this carries what repeats.
+model Subscription {
+  id          String             @id @default(cuid())
+  workspaceId String             @map("workspace_id")
+  companyId   String             @map("company_id")
+  /// Where this engagement came from. Commission attribution walks lead ->
+  /// owner, and lead -> referrer, so it has to survive on the subscription.
+  leadId      String?            @map("lead_id")
+  //
+  // FUTURE (v2 P4, deals layer): a `dealId String?` column and a Deal relation
+  // drop in HERE without breaking anything — nullable, so no backfill; and the
+  // MRR maths reads companyId rather than any deal, so none of it has to be
+  // rewritten. Deliberately NOT stubbed now: a foreign key with no table behind
+  // it is a migration someone has to undo before they can write the real one.
+  //
+  planName    String             @map("plan_name")
+  /// Monthly NET in integer forints.
+  monthlyNet  Int                @map("monthly_net")
+  /// Day of month the invoice goes out. 1-28 only, so February always exists.
+  billingDay  Int                @default(1) @map("billing_day")
+  startDate   DateTime           @map("start_date")
+  status      SubscriptionStatus @default(ACTIVE)
+  churnedAt   DateTime?          @map("churned_at")
+  /// From the closed CHURN_REASONS list, so the breakdown is countable.
+  churnReason String?            @map("churn_reason")
+  /// ventstudio | hosting | retainer | other
+  source      String             @default("other")
+  note        String?            @db.Text
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  company  Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  events   SubscriptionEvent[]
+  invoices Invoice[]
+
+  @@index([workspaceId, status])
+  @@index([companyId])
+  @@map("subscriptions")
+}
+
+/// APPEND-ONLY history of the recurring book (playbook-v3 P11/1b).
+///
+/// The movement chart sums these deltas; it does not reconstruct history from
+/// the current state, because reconstruction cannot tell "raised to 150k in
+/// March" from "started at 150k in March" and loses anything later undone.
+/// Nothing updates or deletes a row here — a correction is another row.
+model SubscriptionEvent {
+  id              String   @id @default(cuid())
+  workspaceId     String   @map("workspace_id")
+  subscriptionId  String   @map("subscription_id")
+  /// new | expansion | contraction | churn | reactivation | pause | resume
+  kind            String
+  /// SIGNED change to MRR in integer forints. Summing every delta for a
+  /// subscription gives exactly what it contributes today — that identity is
+  /// what makes the chart trustworthy.
+  deltaNet        Int      @map("delta_net")
+  monthlyNetAfter Int      @map("monthly_net_after")
+  /// Churn rows carry the reason, so the breakdown reads from the log.
+  reason          String?
+  at              DateTime @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  /// The chart's query: everything in a period, oldest first.
+  @@index([workspaceId, at])
+  @@index([subscriptionId, at])
+  @@map("subscription_events")
 }
 
 model Suppression {

@@ -54,6 +54,8 @@ const BUSINESS_TABLES = [
   "notifications",
   "notification_preferences",
   "push_subscriptions",
+  "subscriptions",
+  "subscription_events",
 ];
 
 const CURRENT_WS = "current_setting('app.current_workspace', true)";

@@ -1,5 +1,6 @@
 import { prismaUnsafe, getWorkspaceClient } from "../../lib/db";
 import { getSzamlaProvider } from "./provider";
+import { markInvoicePaid } from "../revenue/store";
 
 function agentKeyOf(featureFlags: unknown): string {
   const flags = featureFlags && typeof featureFlags === "object" && !Array.isArray(featureFlags) ? (featureFlags as Record<string, unknown>) : {};
@@ -29,7 +30,11 @@ export async function processInvoicePolls(): Promise<number> {
       try {
         const { paid } = await provider.queryPaid(agentKey, inv.number!);
         if (paid === true) {
-          await db.invoice.update({ where: { id: inv.id }, data: { status: "PAID" } });
+          // P11/1a: the ledger, not just the status. markInvoicePaid stamps
+          // WHEN the money arrived — the month the commission run keys off —
+          // and is idempotent, so a second poll cannot move a payment into a
+          // different month after payroll has seen it.
+          await markInvoicePaid(ws.id, inv.id, new Date());
           if (inv.document?.leadId) {
             await db.activity.create({
               data: { workspaceId: ws.id, leadId: inv.document.leadId, type: "invoice_paid", payload: { number: inv.number } },
