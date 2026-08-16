@@ -3,8 +3,10 @@ import { Analytics } from "@/components/analytics";
 import { AnalyticsTabs } from "@/components/analytics-tabs";
 import { RevenueTab } from "@/components/revenue-tab";
 import { getAnalytics } from "@/modules/analytics/actions";
+import { CommissionTab } from "@/components/commission-tab";
 import { loadRevenue } from "@/modules/revenue/dashboard";
 import { getActiveContext } from "@/lib/session";
+import { isOwner } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +23,23 @@ export default async function AnalyticsPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { tab } = await searchParams;
-  const active = tab === "revenue" ? "revenue" : "performance";
+  const owner = await isOwner();
+  // A non-Owner asking for the commission tab lands on Performance rather than
+  // on an error: the tab is not theirs, and saying so loudly tells them what
+  // they are missing.
+  const requested = tab === "revenue" || tab === "commission" ? tab : "performance";
+  const active = requested === "commission" && !owner ? "performance" : requested;
+
+  if (active === "commission") {
+    return (
+      <AppShell activePath="/analytics">
+        <div className="mx-auto w-full max-w-[1400px]">
+          <AnalyticsTabs active={active} isOwner={owner} />
+          <CommissionTab />
+        </div>
+      </AppShell>
+    );
+  }
 
   if (active === "revenue") {
     const { workspaceId } = await getActiveContext();
@@ -29,7 +47,7 @@ export default async function AnalyticsPage({
     return (
       <AppShell activePath="/analytics">
         <div className="mx-auto w-full max-w-[1400px]">
-          <AnalyticsTabs active={active} />
+          <AnalyticsTabs active={active} isOwner={owner} />
           <RevenueTab view={view} />
         </div>
       </AppShell>
@@ -40,7 +58,7 @@ export default async function AnalyticsPage({
   return (
     <AppShell activePath="/analytics">
       <div className="mx-auto w-full max-w-[1400px]">
-        <AnalyticsTabs active={active} />
+        <AnalyticsTabs active={active} isOwner={owner} />
       </div>
       <Analytics view={view} />
     </AppShell>

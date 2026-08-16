@@ -12,14 +12,17 @@ import Link from "next/link";
  * reason to load for someone looking at the funnel.
  */
 const TABS = [
-  { key: "performance", label: "Performance" },
-  { key: "revenue", label: "Revenue" },
+  { key: "performance", label: "Performance", ownerOnly: false },
+  { key: "revenue", label: "Revenue", ownerOnly: false },
+  // Everyone's pay. A BDR must not see a colleague's figures, and the report is
+  // the whole workspace at once, so the tab itself is Owner-only (P11/1d).
+  { key: "commission", label: "Commission", ownerOnly: true },
 ] as const;
 
-export function AnalyticsTabs({ active }: { active: string }) {
+export function AnalyticsTabs({ active, isOwner }: { active: string; isOwner: boolean }) {
   return (
     <div className="mb-4 flex flex-wrap items-center gap-1.5 border-b border-line pb-2">
-      {TABS.map((tab) => {
+      {TABS.filter((tab) => isOwner || !tab.ownerOnly).map((tab) => {
         const on = tab.key === active;
         return (
           <Link

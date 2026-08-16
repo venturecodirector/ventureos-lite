@@ -21,6 +21,7 @@ import {
 import { processCallbackDue } from "../modules/calls/jobs";
 import { processDocumentPdf } from "../modules/documents/jobs";
 import { processAnalyticsPdf } from "../modules/analytics/export-job";
+import { processCommissionPdf } from "../modules/revenue/pdf-job";
 import { processPublicAuditReport } from "../modules/public-audit/report-job";
 import { processMeetingBrief } from "../modules/meetings/jobs";
 import { processQuarterlyWinLoss } from "../modules/analytics/digest";
@@ -85,6 +86,7 @@ async function main(): Promise<void> {
     async (job) => {
       if (job.name === "document-pdf") await processDocumentPdf(job.data);
       else if (job.name === "analytics-pdf") await processAnalyticsPdf(job.data);
+      else if (job.name === "commission-pdf") await processCommissionPdf(job.data);
       else if (job.name === "public-audit-report") await processPublicAuditReport(job.data);
       else await processPdfRender(job.data);
     },

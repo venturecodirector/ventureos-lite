@@ -335,3 +335,101 @@ test("the health thresholds are editable in Settings and change the scoring", as
   await expect(page.getByTestId("health-rule-quietAmberMonths")).toHaveValue("2");
   await prisma.lead.deleteMany({ where: { workspaceId, companyId } });
 });
+
+test("the Commission tab computes a month and shows the lines", async ({ page }) => {
+  await reset();
+  const sub = await seedSubscription({ monthlyNet: 200_000, startedAt: monthsAgo(3) });
+  const lead = await prisma.lead.findFirst({ where: { workspaceId, companyId } })
+    ?? (await prisma.lead.create({
+      data: { workspaceId, companyId, contactName: `${TAG} contact` },
+    }));
+  const user = await prisma.user.findUnique({ where: { email: "e2e-runner@ventureco.test" } });
+  await prisma.lead.update({ where: { id: lead.id }, data: { ownerId: user!.id } });
+
+  // Two payments in the same month, so the line must aggregate them.
+  const month = new Date();
+  month.setUTCDate(10);
+  const monthKey = month.toISOString().slice(0, 7);
+  await prisma.invoice.create({
+    data: {
+      workspaceId, companyId, subscriptionId: sub.id,
+      netAmount: 200_000, status: "PAID", paidAt: month,
+    },
+  });
+  const later = new Date(month);
+  later.setUTCDate(20);
+  await prisma.invoice.create({
+    data: {
+      workspaceId, companyId, subscriptionId: sub.id,
+      netAmount: 100_000, status: "PAID", paidAt: later,
+    },
+  });
+
+  await page.goto("/analytics?tab=commission");
+  await page.getByTestId("commission-month").fill(monthKey);
+  await page.getByTestId("commission-run").click();
+
+  await expect(page.getByTestId("commission-report")).toBeVisible();
+  // One line for the client, aggregating both payments: 300 000 net -> 30 000.
+  await expect(page.getByTestId("commission-line")).toHaveCount(1);
+  await expect(page.getByTestId("commission-total")).toHaveText("30 000 Ft");
+
+  await prisma.invoice.deleteMany({ where: { workspaceId, companyId } });
+  await prisma.lead.deleteMany({ where: { workspaceId, companyId } });
+});
+
+test("the termination calculator shows revenue and commission side by side", async ({ page }) => {
+  await reset();
+  const sub = await seedSubscription({ monthlyNet: 100_000, startedAt: monthsAgo(2) });
+  const lead = await prisma.lead.create({
+    data: { workspaceId, companyId, contactName: `${TAG} contact` },
+  });
+  const user = await prisma.user.findUnique({ where: { email: "e2e-runner@ventureco.test" } });
+  await prisma.lead.update({ where: { id: lead.id }, data: { ownerId: user!.id } });
+
+  // Window opens with a payment two months ago.
+  const opened = new Date();
+  opened.setUTCMonth(opened.getUTCMonth() - 2);
+  opened.setUTCDate(10);
+  await prisma.invoice.create({
+    data: {
+      workspaceId, companyId, subscriptionId: sub.id,
+      netAmount: 100_000, status: "PAID", paidAt: opened,
+    },
+  });
+
+  await page.goto("/analytics?tab=commission");
+  await page.getByTestId("settlement-date").fill(new Date().toISOString().slice(0, 10));
+  await page.getByTestId("settlement-run").click();
+
+  await expect(page.getByTestId("settlement-report")).toBeVisible();
+  // Two months elapsed -> 9 remaining x 100 000 = 900 000 revenue, 90 000 commission.
+  await expect(page.getByTestId("settlement-net")).toHaveText("900 000 Ft");
+  await expect(page.getByTestId("settlement-commission")).toHaveText("90 000 Ft");
+
+  await prisma.invoice.deleteMany({ where: { workspaceId, companyId } });
+  await prisma.lead.deleteMany({ where: { workspaceId, companyId } });
+});
+
+test("exporting the commission PDF is audit-logged", async ({ page }) => {
+  await reset();
+  const before = await prisma.auditLog.count({
+    where: { workspaceId, action: "export.run" },
+  });
+
+  await page.goto("/analytics?tab=commission");
+  await page.getByTestId("commission-run").click();
+  await expect(page.getByTestId("commission-report")).toBeVisible();
+  await page.getByTestId("commission-export").click();
+  await expect(page.getByText(/recorded in the audit log/i)).toBeVisible();
+
+  const after = await prisma.auditLog.findMany({
+    where: { workspaceId, action: "export.run" },
+    orderBy: { at: "desc" },
+    take: 1,
+  });
+  expect(await prisma.auditLog.count({ where: { workspaceId, action: "export.run" } })).toBe(
+    before + 1,
+  );
+  expect((after[0].meta as Record<string, unknown>).kind).toBe("commission.pdf");
+});
