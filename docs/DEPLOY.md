@@ -542,6 +542,61 @@ docker compose -f docker-compose.prod.yml ps
 Az adatbázis-módosítások automatikusan lefutnak indulás közben (a `migrate`
 szolgáltatás), az adataid megmaradnak.
 
+> ### ⚠️ A séma-migráció és az adat-migráció nem ugyanaz
+>
+> A `migrate` szolgáltatás **táblákat** hoz létre és módosít. Van néhány
+> frissítés, amelyik ezen felül a **meglévő sorokat** is át akarja alakítani —
+> ilyet a rendszer soha nem futtat magától, mert az adatot ír, és azt nem
+> szabad egy konténerindulás mellékhatásaként megtenni.
+>
+> Ha a kiadás jegyzete adat-migrációt említ, az a `git pull` **után**, a
+> `up -d --build` **után** következik, mindig ebben a három lépésben:
+>
+> ```bash
+> # 1. Próba: nem ír semmit, csak megmutatja, mit tenne
+> docker compose -f docker-compose.prod.yml run --rm worker \
+>   npm run deals:migrate -- --dry-run
+>
+> # 2. Éles futtatás — csak ha a próba kimenete rendben van
+> docker compose -f docker-compose.prod.yml run --rm worker \
+>   npm run deals:migrate -- --apply
+>
+> # 3. Ellenőrzés — nem nulla kilépési kóddal jelez, ha bármi nem stimmel
+> docker compose -f docker-compose.prod.yml run --rm worker \
+>   npm run deals:migrate -- --verify
+> ```
+>
+> Ha a 3. lépés hibát jelez, van visszaút — a migráció csak az általa
+> létrehozott sorokat törli, amit utána ember vitt fel, azt nem:
+>
+> ```bash
+> docker compose -f docker-compose.prod.yml run --rm worker \
+>   npm run deals:migrate -- --rollback
+> ```
+>
+> A részletek — mi mire képződik le, és miért visszafordítható —
+> a [`docs/migrations/p4-deals.md`](migrations/p4-deals.md) fájlban.
+
+### Kiadási ellenőrzőlista
+
+Frissítéskor ezt a sorrendet érdemes végigmenni; a sorrend nem önkényes, a
+mentés attól ér valamit, hogy még az új kód előtt készül el.
+
+| # | Lépés | Mit vársz |
+|---|---|---|
+| 1 | `./scripts/backup.sh` | `done — N database backup(s) retained` |
+| 2 | `git pull` | a várt commitok |
+| 3 | `.env` hiánylista (lásd lent) | üres kimenet, vagy tudod, mit pótolsz |
+| 4 | `docker compose -f docker-compose.prod.yml up -d --build` | visszakapod a promptot |
+| 5 | `docker compose -f docker-compose.prod.yml logs migrate` | `All migrations have been successfully applied.` és `Applied RLS` |
+| 6 | adat-migráció, ha van (fent) | `--verify` nulla kilépési kóddal |
+| 7 | `docker compose -f docker-compose.prod.yml ps` | öt sor, mind `Up (healthy)` |
+| 8 | `curl -s https://ventureco.agency/api/health` | `{"status":"ok","database":"ok",...}` |
+
+Ha az 5. lépés `P3005`-öt ír (`database schema is not empty`), az azt jelenti,
+hogy az adatbázis nem migrációkkal épült. **Ne** futtass `db push`-t élesben —
+állj meg, és nézd meg a `_prisma_migrations` táblát.
+
 Ha a `.env.production.example` új sorokkal bővült, azokat kézzel kell átvezetned:
 
 ```bash
