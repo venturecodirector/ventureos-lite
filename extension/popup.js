@@ -195,6 +195,57 @@ $("snapshot").addEventListener("click", async () => {
   }
 });
 
+
+/**
+ * Fetch the profile photo in the page, then upload the bytes.
+ *
+ * Two injections rather than one: `executeScript({files})` cannot take
+ * arguments, so a tiny function plants the URL on the isolated world's global
+ * first and photo.js reads it. Both run in the same world, so the value carries.
+ *
+ * Every outcome returns a SENTENCE, because the previous version's silence is
+ * what made this take two rounds to diagnose: "Photo not saved" with no reason
+ * looks identical whether the URL expired, the CDN refused the origin, or the
+ * server rejected the file.
+ */
+async function uploadPhoto(tabId, leadId, photoUrl, skipped) {
+  if (!photoUrl) {
+    const why = skipped?.photoUrl;
+    return why ? ` No photo: ${why.replace(/_/g, " ")}.` : "";
+  }
+  if (!leadId) return " Photo not saved: the capture returned no lead id.";
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (u) => {
+        globalThis.__venturePhotoUrl = u;
+      },
+      args: [photoUrl],
+    });
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["photo.js"],
+    });
+
+    if (!result?.ok) {
+      return ` Photo not saved: ${String(result?.reason ?? "unknown").replace(/_/g, " ")}.`;
+    }
+
+    const up = await chrome.runtime.sendMessage({
+      type: "avatar",
+      leadId,
+      bytes: result.bytes,
+      mime: result.mime,
+    });
+    if (up?.ok) return ` Photo saved (${result.width}×${result.height}).`;
+    const reason = up?.data?.reason ?? up?.error ?? `status ${up?.status ?? "?"}`;
+    return ` Photo rejected by the server: ${String(reason).replace(/_/g, " ")}.`;
+  } catch (e) {
+    return ` Photo not saved: ${String(e?.message ?? e).slice(0, 50)}.`;
+  }
+}
+
 $("capture").addEventListener("click", async () => {
   $("capture").disabled = true;
   msg("Reading the page…");
@@ -222,13 +273,27 @@ $("capture").addEventListener("click", async () => {
       return;
     }
 
-    // _from is a local diagnostic, never sent to the server.
-    const { _from: readFrom, ...body } = payload;
+    // Local diagnostics, never sent to the server. photoUrl is stripped too:
+    // it is a signed CDN link the server cannot fetch, so sending it would only
+    // buy a guaranteed failure and a confusing message. The BYTES go up
+    // separately, below.
+    const {
+      _from: readFrom,
+      _attempts: _a,
+      provenance: _p,
+      skipped: _s,
+      boundary: _b,
+      photoUrl,
+      ...body
+    } = payload;
     const fields = Object.keys(readFrom ?? {});
 
     const res = await chrome.runtime.sendMessage({ type: "capture", payload: body });
     if (res?.ok) {
       const what = res.data?.created ? "Captured as a new lead" : "Existing lead updated";
+      // The photo, as bytes, fetched in the page where the signed URL still
+      // works. Its own step so a rejected picture cannot cost the lead.
+      const photoNote = await uploadPhoto(tab.id, res.data?.leadId, photoUrl, payload.skipped);
       // A capture that read nothing but the URL used to look identical to a
       // good one — that is how a lead called "unknown" with no data happened
       // without anybody noticing.
@@ -236,7 +301,7 @@ $("capture").addEventListener("click", async () => {
       // stops arriving, the layer that used to supply it is the thing that
       // broke, and this is the only place that difference is visible.
       const detail = fields.map((f) => `${f} (${readFrom[f]})`).join(", ");
-      const photo = res.data?.avatarProblem ? ` Photo not saved: ${res.data.avatarProblem}.` : "";
+      const photo = photoNote;
       // A thin read is a FAILURE being reported as a success. The name alone is
       // what a broken extraction layer leaves behind — it comes from the page
       // title, which survives anything — so treating "name only" as a good

@@ -39,6 +39,54 @@ async function postCapture(payload) {
 }
 
 /**
+ * Upload the profile photo's bytes.
+ *
+ * A separate request from the capture, and separately failable: an image is a
+ * different size class from a JSON document, and losing a whole lead because a
+ * picture was rejected would be the wrong trade. The bytes arrive here as base64
+ * because that is all `executeScript` can return, and go out as multipart.
+ */
+async function postAvatar({ leadId, bytes, mime }) {
+  const { baseUrl, token } = await chrome.storage.local.get(["baseUrl", "token"]);
+  if (!baseUrl || !token) return { ok: false, error: "not_configured" };
+  const origin = new URL(baseUrl).origin;
+  const granted = await chrome.permissions.contains({ origins: [`${origin}/*`] });
+  if (!granted) return { ok: false, error: "no_permission" };
+
+  let blob;
+  try {
+    const binary = atob(String(bytes ?? ""));
+    const buf = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) buf[i] = binary.charCodeAt(i);
+    blob = new Blob([buf], { type: mime || "image/jpeg" });
+  } catch {
+    return { ok: false, error: "bad_image_payload" };
+  }
+
+  const form = new FormData();
+  form.append("leadId", String(leadId ?? ""));
+  form.append("photo", blob, "avatar.jpg");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    // No content-type header: fetch sets the multipart boundary itself.
+    const res = await fetch(`${origin}/api/capture/avatar`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: form,
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data };
+  } catch (e) {
+    return { ok: false, error: e?.name === "AbortError" ? "timeout" : "network" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Every message the extension answers, from one place.
  *
  * Two callers reach this: the popup, and the bridge content script running on
@@ -49,6 +97,8 @@ function handle(msg) {
   switch (msg?.type) {
     case "capture":
       return postCapture(msg.payload);
+    case "avatar":
+      return postAvatar(msg);
     case "ping":
       return Promise.resolve({ ok: true, version: chrome.runtime.getManifest().version });
     case "configure":

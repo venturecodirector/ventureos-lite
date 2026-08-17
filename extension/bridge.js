@@ -16,6 +16,9 @@
  */
 (() => {
   const ALLOWED = new Set(["ping", "configure", "captureProfile"]);
+  // Deliberately NOT "avatar" or "capture": the app has no reason to push bytes
+  // through the extension, and every name added here widens what a page can
+  // reach if that page is ever compromised.
 
   window.addEventListener("message", (event) => {
     // Same-window messages only: this must not be drivable by an iframe.
