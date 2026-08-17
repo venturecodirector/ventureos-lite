@@ -19,6 +19,16 @@ import { ACCOUNT_MAX_FAILURES } from "../../src/lib/auth/throttle";
  * Postgres rather than a mock.
  */
 const EMAIL = "auth-test@ventureco.test";
+/**
+ * The address used to prove that an unknown account fails identically.
+ *
+ * It has to be cleaned like the real one: the throttle ledger is keyed by
+ * EMAIL, and an address nobody cleans accumulates a failure per run until the
+ * fifth one inside fifteen minutes comes back "throttled" instead of "invalid".
+ * That is the test lying about a real rule rather than the rule breaking, and
+ * it only shows up when the suite is run several times in a row.
+ */
+const UNKNOWN_EMAIL = "nobody@ventureco.test";
 const PASSWORD = "correct-horse-battery";
 const WS_NAME = "Auth Test Workspace";
 
@@ -26,7 +36,9 @@ let userId = "";
 let workspaceId = "";
 
 async function clean(): Promise<void> {
-  await prismaUnsafe.loginAttempt.deleteMany({ where: { email: EMAIL } });
+  await prismaUnsafe.loginAttempt.deleteMany({
+    where: { email: { in: [EMAIL, UNKNOWN_EMAIL] } },
+  });
   const u = await prismaUnsafe.user.findUnique({ where: { email: EMAIL }, select: { id: true } });
   if (u) {
     await prismaUnsafe.session.deleteMany({ where: { userId: u.id } });
@@ -79,7 +91,7 @@ describe("password login", () => {
 
   it("rejects a wrong password, and an unknown email, identically", async () => {
     const bad = await attemptLogin({ email: EMAIL, password: "wrong-password-here" });
-    const missing = await attemptLogin({ email: "nobody@ventureco.test", password: PASSWORD });
+    const missing = await attemptLogin({ email: UNKNOWN_EMAIL, password: PASSWORD });
     expect(bad.ok).toBe(false);
     expect(missing.ok).toBe(false);
     if (bad.ok || missing.ok) return;
