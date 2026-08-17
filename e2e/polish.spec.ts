@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { prismaUnsafe } from "../src/lib/db";
 
 /**
  * The P7 polish surfaces (playbook-v2 P7 VERIFICATION):
@@ -35,6 +36,33 @@ async function filterTo(page: import("@playwright/test").Page, text: string) {
   await page.getByTestId("filter-apply").click();
   await expect(page.getByTestId("filter-chip")).toBeVisible();
 }
+
+/**
+ * Clear this test's own leftovers before it runs again.
+ *
+ * It creates "Kovacs Anna <random>" and used to leave it behind, so every run
+ * added another namesake. The palette shows five leads per kind, ordered by
+ * `lastActivityAt desc` — and a freshly created lead has NULL there, so once
+ * enough identical-looking rows had piled up the newest one was pushed out of the
+ * list and the test failed on a database that had simply been used too often.
+ *
+ * It failed that way twice, and both times looked like a bug in the palette
+ * rather than in the test. Cleaning up beforehand rather than afterwards also
+ * clears whatever previous runs left, so an existing developer database heals
+ * itself on the next run.
+ */
+test.beforeEach(async () => {
+  const stale = await prismaUnsafe.lead.findMany({
+    where: { contactName: { startsWith: "Kovacs Anna " } },
+    select: { id: true, companyId: true },
+  });
+  if (stale.length === 0) return;
+  const companyIds = [...new Set(stale.map((l) => l.companyId).filter(Boolean) as string[])];
+  await prismaUnsafe.lead.deleteMany({ where: { id: { in: stale.map((l) => l.id) } } });
+  await prismaUnsafe.company.deleteMany({
+    where: { id: { in: companyIds }, name: { startsWith: "Palette Co " }, leads: { none: {} } },
+  });
+});
 
 test("the command palette opens, finds a lead by a typo, and offers the verbs", async ({
   page,
