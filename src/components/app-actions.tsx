@@ -11,7 +11,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  * anywhere else in the app. This context is the seam: the shell opens, a single
  * mounted host renders.
  */
-export type AppDialog = "csv-import" | "new-lead" | null;
+export type AppDialog = "csv-import" | "new-lead" | "new-task" | null;
 
 interface AppActions {
   dialog: AppDialog;

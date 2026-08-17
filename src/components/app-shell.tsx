@@ -11,6 +11,7 @@ import { Greeting } from "./greeting";
 import { AppActionsProvider } from "./app-actions";
 import { UndoProvider } from "./undo-toast";
 import { AppDialogs } from "./app-dialogs";
+import { CommandPalette } from "./command-palette";
 import { TopBarActions } from "./top-bar-actions";
 import { AccountMenu } from "./account-menu";
 import { SidebarNav } from "./sidebar-nav";
@@ -305,6 +306,7 @@ export async function AppShell({
         icons={icons}
       />
       <AppDialogs />
+      <CommandPalette />
     </div>
       </UndoProvider>
     </AppActionsProvider>

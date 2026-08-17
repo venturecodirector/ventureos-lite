@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAppActions } from "./app-actions";
 import { CsvImport } from "./csv-import";
 import { ManualLeadForm } from "./manual-lead-form";
+import { NewTaskDialog } from "./new-task-dialog";
 
 /**
  * Single mount point for the dialogs the top bar can open from any screen.
@@ -28,6 +29,17 @@ export function AppDialogs() {
     return (
       <ManualLeadForm
         navigateOnCreate
+        onClose={closeDialog}
+        onDone={() => {
+          closeDialog();
+          router.refresh();
+        }}
+      />
+    );
+  }
+  if (dialog === "new-task") {
+    return (
+      <NewTaskDialog
         onClose={closeDialog}
         onDone={() => {
           closeDialog();
