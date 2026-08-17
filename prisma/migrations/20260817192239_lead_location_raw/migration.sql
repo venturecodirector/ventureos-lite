@@ -1,0 +1,11 @@
+-- The location line, kept exactly as LinkedIn showed it.
+--
+-- The capture resolved a location through a Hungarian-focused gazetteer and threw
+-- the string away when it missed. "San Francisco Bay Area" is a metro region, not
+-- a city, so it came back `unknown_place` and the lead's City field was left blank
+-- even though the location was plainly visible on the profile.
+--
+-- Resolution can now fall back to shape, but the raw string is stored regardless:
+-- a human reading the lead can always see what the profile actually said, and a
+-- later gazetteer improvement can re-resolve historical rows.
+ALTER TABLE "leads" ADD COLUMN "location_raw" TEXT;

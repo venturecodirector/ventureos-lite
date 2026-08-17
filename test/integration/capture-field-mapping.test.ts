@@ -188,3 +188,44 @@ describe("the form's shape matches the columns", () => {
     expect(src).toMatch(/headline:\s*(existing\.headline \?\? )?input\.headline/);
   });
 });
+
+describe("a captured location always reaches the lead", () => {
+  /** THE REPORTED CASE: a US metro region, absent from the gazetteer. */
+  it("resolves 'San Francisco Bay Area' to a City and keeps the raw string", async () => {
+    const url = "https://www.linkedin.com/in/mapping-metro";
+    await post({
+      url,
+      name: "Mark Goldberger",
+      companyName: "Metaview",
+      location: "San Francisco Bay Area",
+    });
+    const lead = await leadFor(url);
+    // Was blank before: unknown_place, so the city was dropped.
+    expect(lead!.company?.city).toBe("San Francisco");
+    // And the string the operator saw on the profile is stored verbatim.
+    expect(lead!.locationRaw).toBe("San Francisco Bay Area");
+  });
+
+  it("keeps the raw string even when no city can be resolved at all", async () => {
+    const url = "https://www.linkedin.com/in/mapping-unresolvable";
+    await post({ url, name: "Mark Goldberger", companyName: "Metaview", location: "Hungary" });
+    const lead = await leadFor(url);
+    // "Hungary" is a country with no city — correctly no City…
+    expect(lead!.company?.city).toBeNull();
+    // …but the location line is not thrown away.
+    expect(lead!.locationRaw).toBe("Hungary");
+  });
+
+  it("never lets a person's name become the City, however real the country tail", async () => {
+    const url = "https://www.linkedin.com/in/mapping-person-location";
+    await post({
+      url,
+      name: "Mark Goldberger",
+      companyName: "Metaview",
+      location: "Dana Whitfield, Hungary",
+    });
+    const lead = await leadFor(url);
+    expect(lead!.company?.city).toBeNull();
+    expect(lead!.locationRaw).toBe("Dana Whitfield, Hungary");
+  });
+});

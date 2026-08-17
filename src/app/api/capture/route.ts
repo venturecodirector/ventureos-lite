@@ -83,6 +83,25 @@ export async function POST(req: Request): Promise<Response> {
   // inside the bounded card); the gazetteer lives here, on one authoritative
   // copy, and decides whether the place actually resolves.
   const place = parseLocation(input.location);
+  /**
+   * NEVER BLANK WHEN A LOCATION WAS CAPTURED — but never wrong either.
+   *
+   * The old line discarded everything the gazetteer did not recognise, and on a US
+   * profile that meant null: "San Francisco Bay Area" is a metro region, absent
+   * from a Hungarian-focused list, so a location the operator could plainly see
+   * produced an empty City field with nothing to explain it.
+   *
+   * `parseLocation` now strips region qualifiers before looking anything up and
+   * falls back to SHAPE when the lookup misses, so it accepts the whole world at
+   * medium confidence. There is deliberately no second fallback here: the reasons
+   * it still returns are refusals about CONTENT rather than about coverage —
+   * `reads_as_a_person_name`, `matches_another_person_on_page`,
+   * `country_only_no_city`, `does_not_read_as_a_place` — and re-admitting those
+   * through a "just take the first segment" rule is how "Hungary" and
+   * "Dana Whitfield" became cities in the first draft of this change.
+   *
+   * The raw line is stored on the lead either way, so nothing is ever lost.
+   */
   const city = place.ok ? place.city : null;
 
   // The contact-info overlay, resolved. The extension sends every candidate with
@@ -163,6 +182,8 @@ export async function POST(req: Request): Promise<Response> {
            */
           title: existing.title ?? input.jobTitle ?? undefined,
           headline: existing.headline ?? input.headline ?? undefined,
+          // Always kept, resolved or not — see the note on `city` above.
+          locationRaw: input.location ?? undefined,
           email: existing.email ?? contact.email ?? undefined,
           phone: existing.phone ?? contact.phone ?? undefined,
           bio: input.bio ?? undefined,
@@ -179,6 +200,7 @@ export async function POST(req: Request): Promise<Response> {
           // Own column each; the headline is never a stand-in for the job title.
           title: input.jobTitle ?? null,
           headline: input.headline ?? null,
+          locationRaw: input.location ?? null,
           email: contact.email ?? null,
           phone: contact.phone ?? null,
           linkedinUrl: input.url,

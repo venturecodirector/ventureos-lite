@@ -450,6 +450,11 @@ model Lead {
   /// no Experience section got its headline filed as its job title and the form
   /// rendered it in the job-title input beside an empty Name field.
   headline       String?    @db.Text
+  /// The location line exactly as LinkedIn showed it — "San Francisco Bay Area",
+  /// "Miskolc és környéke". Kept RAW and always, even when the gazetteer cannot
+  /// resolve a city out of it: the string was on the profile, an operator can read
+  /// it, and discarding it was how a captured location became a blank field.
+  locationRaw    String?    @map("location_raw")
   email          String?
   phone          String?
   linkedinUrl    String?    @map("linkedin_url")
