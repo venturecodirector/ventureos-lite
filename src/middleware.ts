@@ -53,12 +53,20 @@ const PUBLIC_PREFIXES = [
   "/accept", // public quote acceptance
   "/book", // public booking pages
   "/manifest.webmanifest",
+  // The icon set. Every one of these has to answer without a session: a browser
+  // fetches the favicon while showing the LOGIN page, and an install prompt
+  // reads the manifest's icons before anyone has signed in. A redirect to
+  // /login in place of a PNG is how a PWA ends up installing with a blank tile.
   "/favicon.svg",
   "/favicon.ico",
-  "/favicon-solid.svg",
+  "/mask-icon.svg",
   "/apple-touch-icon.png",
   "/icon-192.png",
   "/icon-512.png",
+  "/icon-192-maskable.png",
+  "/icon-512-maskable.png",
+  // Fetched by whatever is unfurling a link — a chat client, never a session.
+  "/og-image.png",
   "/sw.js",
 ];
 

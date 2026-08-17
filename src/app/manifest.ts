@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { appUrl } from "@/lib/env";
+import { VENTURE_BRAND } from "@/modules/workspaces/brand";
 
 /**
  * PWA manifest, served at /manifest.webmanifest.
@@ -25,24 +26,45 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: `${base}/`,
     scope: `${base}/`,
     display: "standalone",
-    background_color: "#00051D",
-    theme_color: "#00051D",
+    // From the seed brand rather than a literal, so a white-labelled deployment
+    // that regenerated its icon set gets a splash screen matching them. The
+    // manifest is origin-wide and served before anyone signs in, so it can only
+    // ever carry the DEFAULT brand — there is no active workspace at this point.
+    background_color: VENTURE_BRAND.canvas,
+    theme_color: VENTURE_BRAND.canvas,
     icons: [
-      // Full-bleed brand canvas with the mark inside the maskable safe zone
-      // (~55% of the width), so an aggressive circular crop cannot clip it —
-      // which is what lets one file serve both "any" and "maskable". Listed as
-      // two entries rather than the space-separated `purpose` the spec also
-      // allows, because Next's Manifest type only models single-value purposes.
+      // "any" and "maskable" are SEPARATE FILES, drawn differently.
+      //
+      // They used to be one: a full-bleed plate with the mark pulled in far
+      // enough to survive a circular crop. That is safe on Android and wrong
+      // everywhere else — a desktop PWA and a bookmark shelf apply no mask, so
+      // the icon they show is a square with a small logo adrift in it. The
+      // "any" file is therefore the rounded plate with the mark at its normal
+      // size, and only the maskable one pays for the safe zone.
+      //
+      // Two entries per size rather than a space-separated `purpose`, which the
+      // spec also allows, because Next's Manifest type models one purpose each.
       { src: `${base}/icon-192.png`, sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: `${base}/icon-192.png`, sizes: "192x192", type: "image/png", purpose: "maskable" },
       { src: `${base}/icon-512.png`, sizes: "512x512", type: "image/png", purpose: "any" },
-      { src: `${base}/icon-512.png`, sizes: "512x512", type: "image/png", purpose: "maskable" },
+      {
+        src: `${base}/icon-192-maskable.png`,
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
+        src: `${base}/icon-512-maskable.png`,
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
       { src: `${base}/favicon.svg`, sizes: "any", type: "image/svg+xml", purpose: "any" },
       // Flat single-colour cut of the same mark, for surfaces that recolour the
       // icon themselves (notification badges, monochrome shelves) and would
-      // otherwise flatten the gradient into mud.
+      // otherwise flatten the gradient into mud. The same file Safari uses for a
+      // pinned tab — both want exactly one opaque colour on transparent.
       {
-        src: `${base}/favicon-solid.svg`,
+        src: `${base}/mask-icon.svg`,
         sizes: "any",
         type: "image/svg+xml",
         purpose: "monochrome",
