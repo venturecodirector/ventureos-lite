@@ -87,6 +87,27 @@ $("allow-linkedin").addEventListener("click", async () => {
 
 refreshLinkedInPermission();
 
+
+/**
+ * The auto-prompt toggle.
+ *
+ * Per user and default ON, because the duplicate-protection warning is the whole
+ * point and someone who never sees it cannot benefit from it. Silenceable in one
+ * click, because a panel on every profile page is an imposition if you do not
+ * want it — and a tool that cannot be turned off gets uninstalled instead.
+ */
+async function initAutoPrompt() {
+  const { autoPrompt = true } = await chrome.storage.local.get(["autoPrompt"]);
+  $("auto-prompt").checked = autoPrompt !== false;
+}
+
+$("auto-prompt").addEventListener("change", async () => {
+  await chrome.storage.local.set({ autoPrompt: $("auto-prompt").checked });
+  msg($("auto-prompt").checked ? "Panel enabled on profile pages." : "Panel silenced.", "ok");
+});
+
+initAutoPrompt();
+
 $("save").addEventListener("click", async () => {
   const raw = $("baseUrl").value.trim();
   const token = $("token").value.trim();
@@ -132,6 +153,82 @@ $("test").addEventListener("click", async () => {
     $("test").disabled = false;
   }
 });
+
+/**
+ * The capture's account of itself, version 3.
+ *
+ * Per field: whether it has a value, WHICH SELECTOR TIER answered, which
+ * provenance source it came from, every strategy attempted with how each ended,
+ * and the reason if it was declined.
+ *
+ * Tier and source are different questions and both matter. `source` says where a
+ * value came from conceptually — the card, the page title, the overlay. `tier`
+ * says which CLASS of selector found it: the framework's own componentkey, page
+ * structure, or a text label. A field quietly sliding from componentkey down to
+ * text-label is the early warning that LinkedIn has changed something, and it is
+ * invisible unless recorded.
+ *
+ * Built once and used twice: the "Copy diagnostics" button shows it, and a capture
+ * sends it so the LEAD can explain itself weeks later. Both previous rounds of this
+ * bug began by asking the operator to reproduce something, because the only record
+ * had been a popup message that closed.
+ */
+function buildDiagnostics(payload, extras) {
+  const p = payload ?? {};
+  const provenance = p.provenance ?? {};
+  const attempts = p._attempts ?? {};
+  const skipped = p.skipped ?? {};
+  const FIELDS = [
+    "name", "headline", "companyName", "location", "jobTitle",
+    "bio", "photoUrl", "email", "phone", "websiteUrl",
+  ];
+
+  const TIERS = [
+    "componentkey", "structure", "text-label",
+    "title", "topcard", "overlay", "derived",
+  ];
+  const tierOf = (field) => {
+    for (const entry of attempts[field] ?? []) {
+      const [name, outcome] = String(entry).split(":");
+      if (outcome === "accepted" && TIERS.includes(name)) return name;
+    }
+    return null;
+  };
+
+  const fields = {};
+  for (const f of FIELDS) {
+    fields[f] = {
+      present: p[f] !== undefined && p[f] !== null && p[f] !== "",
+      tier: tierOf(f),
+      source: provenance[f]?.source ?? null,
+      confidence: provenance[f]?.confidence ?? null,
+      attempted: attempts[f] ?? [],
+      skippedBecause: skipped[f] ?? null,
+    };
+  }
+
+  return {
+    diagnoseVersion: 3,
+    extension: chrome.runtime.getManifest().version,
+    fields,
+    boundary: p.boundary ?? null,
+    postsRead: (p.posts ?? []).length,
+    /**
+     * Which steps ran, how long each took, and where it stopped. Without this a
+     * partial capture is indistinguishable from a broken one.
+     */
+    machine: extras?.machine ?? null,
+    /**
+     * Whether the page was actually put back — popovers closed, URL restored,
+     * focus restored. Reported rather than assumed: "we called hidePopover" and
+     * "the popover is closed" are different claims, and the manual-popover hang
+     * was the second one being false.
+     */
+    cleanup: extras?.cleanup ?? null,
+    contact: extras?.contact ?? null,
+    photo: extras?.photo ?? null,
+  };
+}
 
 /**
  * Copy a description of the page's shape, for when a capture reads too little.

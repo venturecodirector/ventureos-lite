@@ -185,6 +185,10 @@ function handle(msg) {
       return openPermissionPage();
     case "registerProfileScript":
       return registerProfileScript();
+    case "lookupProfile":
+      return lookupProfile(String(msg.url ?? ""));
+    case "openLead":
+      return openLead(String(msg.leadId ?? ""));
     case "configure":
       return configure(msg);
     case "captureProfile":
@@ -288,4 +292,46 @@ async function captureProfileInTab(profileUrl) {
   } finally {
     await chrome.tabs.remove(tab.id).catch(() => {});
   }
+}
+
+/**
+ * "Do we already know this person?" for the on-profile panel.
+ *
+ * Read-only and fired on page view, so it gets its own short timeout and never
+ * retries: a slow answer must not hold up a page the operator is reading, and a
+ * failed one must produce no panel rather than a broken one.
+ */
+async function lookupProfile(profileUrl) {
+  const { baseUrl, token } = await chrome.storage.local.get(["baseUrl", "token"]);
+  if (!baseUrl || !token) return { ok: false, error: "not_configured" };
+  const origin = new URL(baseUrl).origin;
+  if (!(await chrome.permissions.contains({ origins: [`${origin}/*`] }))) {
+    return { ok: false, error: "no_permission" };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const res = await fetch(
+      `${origin}/api/capture/lookup?url=${encodeURIComponent(profileUrl)}`,
+      { headers: { authorization: `Bearer ${token}` }, signal: controller.signal },
+    );
+    if (!res.ok) return { ok: false, error: `status_${res.status}` };
+    return { ok: true, data: await res.json() };
+  } catch (e) {
+    return { ok: false, error: e?.name === "AbortError" ? "timeout" : "network" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Open a lead in the app. A new tab, because the operator is mid-LinkedIn. */
+async function openLead(leadId) {
+  const { baseUrl } = await chrome.storage.local.get(["baseUrl"]);
+  if (!baseUrl || !leadId) return { ok: false, error: "not_configured" };
+  await chrome.tabs.create({
+    url: `${new URL(baseUrl).origin}/leads?lead=${encodeURIComponent(leadId)}`,
+    active: true,
+  });
+  return { ok: true };
 }

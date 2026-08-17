@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Réteg_1" data-name="Réteg 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 835.3 946.4">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: url(#linear-gradient);
+      }
+    </style>
+    <linearGradient id="linear-gradient" x1="72.9" y1="514.7" x2="762.3" y2="514.7" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7427c6"/>
+      <stop offset="1" stop-color="#310b59"/>
+    </linearGradient>
+  </defs>
+  <path class="cls-1" d="M383.5,249.1v134.7s12.7,0,12.7,0h12s132.9-182.5,132.9-182.5h221.2v118.6l-373.9,508.2h-162.6v-237.3c0-75.6-61.3-137-137-137h-15.9v-252.5h262.8c26.4,0,47.8,21.4,47.8,47.8Z"/>
+</svg>

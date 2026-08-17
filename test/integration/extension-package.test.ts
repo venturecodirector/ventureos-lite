@@ -40,6 +40,7 @@ describe("extension package", () => {
       "cleanup.js",
       "permission.html",
       "permission.js",
+      "panel.js",
       "icons/icon-16.png",
       "icons/icon-128.png",
     ]) {

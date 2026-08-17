@@ -38,6 +38,11 @@
   .muted { color: #858CAE; font-size: 11.5px; margin-top: 10px; }
   details { margin-top: 12px; }
   summary { color: #858CAE; font-size: 11.5px; cursor: pointer; }
+  .toggle-row {
+    display: flex; align-items: center; gap: 8px; margin-top: 12px;
+    font-size: 12px; color: #858CAE; cursor: pointer;
+  }
+  .toggle-row input { width: auto; }
 </style>
 <div class="brand"><b>venture</b> <span>co.group</span></div>
 
@@ -47,6 +52,10 @@
 <button id="diagnose" class="secondary">Copy diagnostics</button>
 <button id="snapshot" class="secondary">Save DOM snapshot</button>
 <button id="allow-linkedin" class="secondary" hidden>Allow LinkedIn access</button>
+<label class="toggle-row">
+  <input type="checkbox" id="auto-prompt" />
+  <span>Show the panel on profile pages</span>
+</label>
 <p class="muted">
   Use these when a capture reads less than it should. <b>Diagnostics</b> copies
   the page's shape — never its text. <b>Snapshot</b> downloads a scrubbed copy
