@@ -175,12 +175,69 @@
     ].slice(0, 10),
   };
 
+  /**
+   * Signed in, or looking at the guest wall?
+   *
+   * The old classifier called every `/in/` URL a "public-profile", so a fully
+   * authenticated session reported itself as the logged-out view. That was
+   * misleading in the worst way for a diagnostic: it invited the reader to blame
+   * the guest wall for missing fields that were missing for other reasons.
+   *
+   * BY CAPABILITY, NOT BY URL. A member-only destination in the nav is something a
+   * guest page cannot show; a "Join now" call to action is something a member page
+   * has no reason to. Measured on the fixtures: the real authenticated recordings
+   * carry /feed/, /mynetwork/, /messaging and /notifications links and no guest
+   * CTA. The old `#global-nav` id is gone from LinkedIn's current DOM entirely,
+   * which is why it is not used here.
+   *
+   * DIAGNOSTIC ONLY. Nothing in extraction may branch on this — a reader that
+   * behaves differently depending on a guess about the session is a reader with
+   * two untested code paths. A unit test asserts no extraction file mentions it.
+   */
+  const MEMBER_ONLY = [
+    ["feed", 'a[href*="/feed/"]'],
+    ["mynetwork", 'a[href*="/mynetwork/"]'],
+    ["messaging", 'a[href*="/messaging"]'],
+    ["notifications", 'a[href*="/notifications"]'],
+    ["jobs", 'a[href*="/jobs/"]'],
+    ["me-menu", '[data-testid="nav-item-me"], .global-nav__me, [data-control-name="nav.settings"]'],
+  ];
+  const memberSignals = MEMBER_ONLY.filter(([, sel]) => qa(sel).length > 0).map(([name]) => name);
+  /**
+   * A list rather than a regex, deliberately: `/\b(join now|…)/` puts an open
+   * paren straight after `\b`, which the extension's static
+   * "calls-nothing-it-has-not-defined" check reads as a call to a function named
+   * `b`. Comparing normalised text against known labels is clearer anyway.
+   */
+  const GUEST_CTA = ["join now", "sign in", "bejelentkezes", "csatlakozz"];
+  const guestCta = qa("a, button").filter((el) => {
+    const t = (el.textContent ?? "")
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    return GUEST_CTA.some((label) => t === label || t.startsWith(`${label} `));
+  }).length;
+  // Two independent signals, because one link can appear in a footer either way.
+  const authed = memberSignals.length >= 2;
+  const auth = {
+    memberSignals,
+    guestCtaCount: guestCta,
+    verdict: authed ? "authenticated" : guestCta > 0 ? "guest" : "unknown",
+  };
+
   return {
     diagnoseVersion: 3,
+    auth,
     pageKind: /\/sales\//.test(location.pathname)
       ? "sales-navigator"
       : /\/in\//.test(location.pathname)
-        ? "public-profile"
+        ? authed
+          ? "member-profile"
+          : guestCta > 0
+            ? "public-profile"
+            : "profile-auth-unknown"
         : "other",
     url: urlShape(location.href),
     lang: document.documentElement.getAttribute("lang"),

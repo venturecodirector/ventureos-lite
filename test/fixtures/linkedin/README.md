@@ -138,3 +138,26 @@ selectors that actually identify it.
 taken, and `<code>` bodies are emptied by the scrubber, so it cannot be
 recovered from these files. A contact-route fixture has to be recorded
 separately, with the overlay open.
+
+## (f) `f-contact-info-sdui-popover.html` — the contact overlay, current shape
+
+The contact-info overlay as LinkedIn renders it today, **open**.
+
+**Provenance, stated plainly.** The wrapper is copied from the real recordings —
+`role="dialog" data-testid="popover-floating" popover="manual" inert=""
+type="proto.sdui.components.core.Popover"`, plus the `data-testid="dialog-content"`
+inner wrapper. The contact ROWS are synthetic, and had to be: both real recordings
+contain **zero** contact-info dialogs, **zero** `mailto:` links and **zero** `tel:`
+links, because the overlay's content is fetched only when the link is pressed and
+they were recorded with it closed. It could not be extracted from them.
+
+It carries the two properties that broke the capture:
+
+1. `popover="manual"` — Escape and outside clicks are documented no-ops. Only
+   `hidePopover()` closes it. Waiting for Escape to work was the hang.
+2. The trigger is an **anchor** to `/overlay/contact-info/`, so pressing it
+   navigates. Not restoring the URL is what left the next capture reading an
+   overlay route as though it were a profile.
+
+Labels are mixed English/Hungarian and out of order, with the birthday before the
+phone, because the parser must map by LABEL and never by position.

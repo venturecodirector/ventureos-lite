@@ -274,11 +274,39 @@ async function captureProfileInTab(profileUrl) {
       }, 20000);
     });
 
-    const [{ result: payload }] = await chrome.scripting.executeScript({
+    /**
+     * The same two phases the popup runs: prepare the page, then read it.
+     *
+     * Without the machine this path reads an unprepared page — no Experience
+     * section (it is lazy-mounted), a clamped About, no contact details — and,
+     * worse, it can be handed a tab that a previous run left on an overlay route.
+     * The machine's own return value is discarded here because this path saves
+     * without a diagnostics panel to show it in; its SIDE EFFECTS are the point.
+     */
+    const [{ result: prep }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["selectors.js", "content.js"],
+      files: ["selectors.js", "names.js", "cleanup.js", "contact-parse.js", "machine.js", "run.js"],
     });
-    if (!payload?.url) return { ok: false, error: "unreadable" };
+
+    const [{ result: read }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["selectors.js", "names.js", "content.js"],
+    });
+    if (!read?.url) return { ok: false, error: "unreadable" };
+
+    // Contact details the machine gathered belong in the same write, so the lead
+    // is created once with everything rather than patched afterwards.
+    const entries = prep?.contact ?? null;
+    const payload = entries
+      ? {
+          ...read,
+          contact: {
+            emails: (entries.email ?? []).slice(0, 5),
+            phones: (entries.phone ?? []).slice(0, 5),
+            websites: (entries.website ?? []).slice(0, 5),
+          },
+        }
+      : read;
 
     const { _from, ...body } = payload;
     const res = await postCapture(body);

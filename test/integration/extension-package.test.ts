@@ -36,8 +36,18 @@ describe("extension package", () => {
       "snapshot.js",
       "photo.js",
       "contact.js",
+      // The pure label parser, split out of contact.js so the state machine can
+      // reuse it without also inheriting the clicking.
+      "contact-parse.js",
       "selectors.js",
       "cleanup.js",
+      // Name agreement (accent folding, Hungarian order, LinkedIn's ID suffixes),
+      // the capture state machine, and the one line that starts it.
+      "names.js",
+      "machine.js",
+      "run.js",
+      // Diagnostics v3, out of popup.js so it can be tested outside a popup.
+      "diagnostics.js",
       "permission.html",
       "permission.js",
       "panel.js",

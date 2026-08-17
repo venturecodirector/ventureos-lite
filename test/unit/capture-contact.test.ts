@@ -24,6 +24,12 @@ import { resolveContact } from "../../src/modules/capture/resolve-contact";
  * where the mistakes live.
  */
 const CONTACT_JS = readFileSync(join(process.cwd(), "extension/contact.js"), "utf8");
+/**
+ * The label parser now lives in its own module, so the state machine can reuse it
+ * without also inheriting the clicking. contact.js requires it to be injected
+ * first, exactly as the popup injects the pair.
+ */
+const CONTACT_PARSE_JS = readFileSync(join(process.cwd(), "extension/contact-parse.js"), "utf8");
 const FIXTURE = join(process.cwd(), "test/fixtures/linkedin/c-contact-info-overlay.html");
 
 interface Entries {
@@ -35,14 +41,21 @@ interface Entries {
 
 async function readOverlay(html: string): Promise<{ ok: boolean; entries?: Entries; reason?: string }> {
   const dom = new JSDOM(html, { url: "https://www.linkedin.com/in/anna-kovacs-fixture/" });
+  const g: Record<string, unknown> = {};
+  new Function("globalThis", "document", "window", CONTACT_PARSE_JS)(
+    g, dom.window.document, dom.window,
+  );
   const fn = new Function(
     "document",
     "window",
     "KeyboardEvent",
     "setTimeout",
+    "globalThis",
     `return (${CONTACT_JS.trim().replace(/;\s*$/, "")})`,
   );
-  return await fn(dom.window.document, dom.window, dom.window.KeyboardEvent, dom.window.setTimeout);
+  return await fn(
+    dom.window.document, dom.window, dom.window.KeyboardEvent, dom.window.setTimeout, g,
+  );
 }
 
 describe("reading the overlay — fixture (c)", () => {

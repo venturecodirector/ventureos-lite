@@ -86,6 +86,15 @@
   };
   const label = (el) => once(el ? el.textContent : null);
 
+  /**
+   * The shared selector layer, if it was injected. Declared HERE, above every
+   * use: as a `const` further down the file it sat in its own temporal dead zone
+   * for the whole of the card walk, so touching it there threw a ReferenceError
+   * that `attempt()` swallowed into "extraction_threw" — a total extraction
+   * failure reported as a generic one.
+   */
+  const S = globalThis.VentureSelectors ?? null;
+
   // ---- negative space -----------------------------------------------------
   /**
    * Subtrees that are never about the person whose profile this is.
@@ -124,11 +133,103 @@
     return !!k && NEGATIVE_SPACE_HEADINGS.some((h) => k === h || k.startsWith(`${h} `));
   };
 
+  /**
+   * Overlay and dialog subtrees — the OTHER kind of negative space.
+   *
+   * Measured, not guessed: in the second real fixture there are five distinct
+   * /in/ slugs inside these subtrees — the owner plus `person-1-fixture`,
+   * `person-2-fixture`, `dávid-bózsik`, `beáta-ferenczi-3802a22b0` — and that is
+   * exactly the reported `identitiesInCard: 5`. The first fixture has none inside
+   * them and passes the boundary test with one identity. So the boundary walk was
+   * counting people who are in a closed dialog, not on the card.
+   *
+   * `inert` is here for the same reason: it marks a subtree the user cannot
+   * interact with, and LinkedIn sets it on overlays that are mounted but shut. On
+   * the second fixture `[popover]`, `[role="dialog"]`, `[data-testid=
+   * "popover-floating"]` and `[inert]` are all the same two nodes, and those two
+   * nodes hold all five identities.
+   *
+   * `[aria-hidden="true"]` IS DELIBERATELY NOT HERE, against the brief's list.
+   * Measured across all four fixtures it contributes ZERO identities while
+   * wrapping a great deal of real text — 294 nodes in one real fixture, and 1977
+   * characters of the profile's own content in the synthetic one. On this page
+   * aria-hidden marks the screen-reader COPY of visible content, not an overlay,
+   * so excluding it buys nothing and risks deleting the page. (This codebase has
+   * already been bitten from the other direction, by a reader that saw only the
+   * aria-hidden copies.) A dialog that is only marked aria-hidden is still caught
+   * by `[role="dialog"]`.
+   */
+  const OVERLAY_SUBTREE =
+    '[popover],[role="dialog"],[data-testid="dialog"],[data-testid="dialog-content"],' +
+    '[data-testid="popover-floating"],[inert]';
+
+  /** Does this element sit inside a dialog/overlay subtree? */
+  const isInsideOverlay = (el) =>
+    attempt(false, () => !!el?.closest?.(OVERLAY_SUBTREE));
+
+  /** Is this element itself the root of one? */
+  const isOverlayRoot = (el) => attempt(false, () => !!el?.matches?.(OVERLAY_SUBTREE));
+
   // ---- who this page is about --------------------------------------------
   const slugFromUrl = attempt(null, () => {
     const m = /^\/in\/([^/]+)/.exec(window.location.pathname);
     return m ? decodeURIComponent(m[1]).toLowerCase() : null;
   });
+
+  /**
+   * THE PRECONDITION. Extraction may only run on a canonical profile route.
+   *
+   * A capture was observed running at
+   * `https://www.linkedin.com/in/<id>/overlay/<id>/` — an overlay route it had
+   * navigated to and never left. Reading a profile from there produces a top card
+   * that is absent, a boundary walk over dialog content, and a page title that
+   * names the overlay instead of the person: the reported `topcard:absent`,
+   * `identitiesInCard: 5` and `name_disagrees_with_page_title` are all one bug
+   * seen from three sides.
+   *
+   * So this refuses rather than degrades. Returning to the canonical URL is the
+   * machine's job (prepare.js); this file's job is to make "extracted from the
+   * wrong route" impossible even if that fails. Sales Navigator lead pages are
+   * their own canonical shape and are allowed through.
+   */
+  const CANONICAL_PROFILE = /^\/in\/[^/]+\/?$/;
+  const SALES_LEAD = /^\/sales\/(lead|people)\//i;
+  const routeCheck = attempt({ ok: false, reason: "route_check_threw" }, () => {
+    const path = window.location.pathname ?? "";
+    if (CANONICAL_PROFILE.test(path)) return { ok: true, reason: null, kind: "profile" };
+    if (SALES_LEAD.test(path)) return { ok: true, reason: null, kind: "sales" };
+    if (/\/overlay\//.test(path)) {
+      return { ok: false, reason: "on_an_overlay_route", kind: "overlay" };
+    }
+    if (/^\/in\/[^/]+\/./.test(path)) {
+      return { ok: false, reason: "on_a_profile_sub_route", kind: "sub-route" };
+    }
+    return { ok: false, reason: "not_a_profile_route", kind: "other" };
+  });
+
+  if (!routeCheck.ok) {
+    // Nothing is read. Not one field, not the name, not the photo — every one of
+    // them would be sourced from a page that is not this person's profile.
+    return {
+      url: canonicalProfileUrl(),
+      refused: true,
+      route: routeCheck,
+      posts: [],
+      provenance: {},
+      skipped: { _all: routeCheck.reason },
+      flags: ["refused_non_canonical_route"],
+      boundary: {
+        ok: false,
+        reason: routeCheck.reason,
+        identitiesInCard: null,
+        excludedNegativeSpaceNodes: 0,
+        otherPeopleOnPage: 0,
+        contactTriggerPresent: false,
+      },
+      _from: {},
+      _attempts: {},
+    };
+  }
 
   /** Every /in/ anchor on the page, with the slug it points at. */
   const profileAnchors = attempt([], () =>
@@ -190,11 +291,35 @@
 
   const otherPeopleKeys = otherPeople.map(norm).filter((k) => k.length >= 4);
 
-  /** Does this value contain, or sit inside, somebody else's name? */
+  /**
+   * Does this value contain, or sit inside, somebody else's name?
+   *
+   * For IDENTITY fields — name, headline, location, company, job title — where any
+   * appearance of a stranger's name means the value is contaminated.
+   */
   const isSomeoneElse = (value) => {
     const k = norm(value);
     if (!k) return false;
     return otherPeopleKeys.some((other) => k === other || k.includes(other) || other.includes(k));
+  };
+
+  /**
+   * The same question for FREE TEXT — a bio, a post.
+   *
+   * Equality only, and this distinction is load-bearing. A LinkedIn post mentions
+   * other people; that is most of what posts are for. The containment test
+   * therefore rejected every post on the real fixture — 1668 characters of the
+   * person's own writing discarded because a commenter's name appeared somewhere
+   * inside it — and `postsRead: 0` looked like the activity section being
+   * unreadable rather than the guard being too wide.
+   *
+   * The guard's purpose is to stop a stranger's name becoming this lead's OWN
+   * field. A bio that mentions a colleague is still the bio.
+   */
+  const isEntirelySomeoneElse = (value) => {
+    const k = norm(value);
+    if (!k) return false;
+    return otherPeopleKeys.some((other) => k === other);
   };
 
   // ---- the bounded top card ----------------------------------------------
@@ -204,6 +329,9 @@
     // Never prune a subtree containing the owner's own anchor.
     if (keep && el.contains(keep)) return false;
     if (el.tagName === "ASIDE") return true;
+    // A dialog or overlay subtree. Checked before the heading scan because an
+    // overlay has its own headings and none of them are this page's sections.
+    if (isOverlayRoot(el)) return true;
     for (const h of $$("h1, h2, h3", el)) {
       if (isNegativeHeading(label(h))) return true;
     }
@@ -256,12 +384,23 @@
     };
   };
 
-  /** Identities reachable inside a pruned container. */
+  /**
+   * Identities reachable inside a pruned container.
+   *
+   * Overlay anchors are excluded a second time here, independently of the walk.
+   * Belt and braces on purpose: this count is what decides whether extraction is
+   * allowed to proceed at all, and a single missed exclusion turns into fields
+   * read off a stranger in a dialog.
+   */
   const prunedIdentities = (root, keep) => {
     const { elements } = walkPruned(root, keep);
     const set = new Set(elements);
     const ids = new Set();
-    for (const { el, slug } of profileAnchors) if (set.has(el)) ids.add(slug);
+    for (const { el, slug } of profileAnchors) {
+      if (!set.has(el)) continue;
+      if (isInsideOverlay(el)) continue;
+      ids.add(slug);
+    }
     return ids;
   };
 
@@ -279,30 +418,93 @@
     if (ownerAnchors.length === 0) return { el: null, ok: false, reason: "no_anchor_to_this_profile" };
 
     const scope = $("main") || $('[role="main"]') || document.body;
-    const withImg = ownerAnchors.filter((a) => $("img", a.el));
-    const starts = [...withImg, ...ownerAnchors];
+    /**
+     * Never START from an anchor inside a dialog.
+     *
+     * `keep` deliberately protects the subtree holding the start anchor from
+     * pruning — otherwise the walk would delete the card it is trying to read. So
+     * an anchor inside an overlay would protect that overlay from being pruned
+     * and reintroduce every identity in it. The owner has 74-76 anchors on a real
+     * page; excluding the ones in dialogs costs nothing.
+     */
+    const onPage = ownerAnchors.filter((a) => !isInsideOverlay(a.el));
+    const usable = onPage.length > 0 ? onPage : ownerAnchors;
+    const withImg = usable.filter((a) => $("img", a.el));
+
+    /**
+     * THE COMPONENTKEY'D TOP-CARD ANCHOR GOES FIRST.
+     *
+     * Document order is not card order. The owner has 90 anchors to their own
+     * slug and 16 of them hold an image, and the first in document order is in the
+     * sticky header — a four-line container reading "Anonimizált Ödön / CEO at
+     * Seyu / More / Message". It passes the boundary test perfectly well, so the
+     * walk accepted it and stopped, and `location` reported `topcard:absent` while
+     * "Budapest, Hungary" sat in the real top card further down the document.
+     *
+     * `topcard-logo-image-referencekey` is LinkedIn's own identifier for the real
+     * one — the same tier-1 selector the photo already uses — so it is tried
+     * before anything found by position.
+     */
+    const keyed = attempt(null, () => (S ? S.topcardPhotoAnchor(document) : null));
+    const keyedFirst = keyed ? usable.filter((a) => a.el === keyed || keyed.contains(a.el)) : [];
+    const starts = [
+      ...keyedFirst,
+      ...(keyed ? [{ el: keyed, slug: ownerSlug }] : []),
+      ...withImg,
+      ...usable,
+    ];
+
+    /**
+     * Headings that mean we have walked out of the top card and into the page.
+     *
+     * The expansion below needs a ceiling, and this is it: the top card is
+     * everything above the first real section. Growing past About or Activity
+     * would also break `sections`, which excludes anything the card contains.
+     */
+    const SECTION_HEADINGS =
+      /^(about|nevjegy|info|featured|kiemelt|activity|aktivitas|experience|tapasztalat|education|tanulmany|skills|kepessegek|recommendations|interests)/;
+    const reachesIntoSections = (el) =>
+      $$("h1, h2, h3", el).some((h) => SECTION_HEADINGS.test(norm(label(h))));
 
     for (const start of starts) {
       let node = start.el.parentElement;
+      /**
+       * TAKE THE LARGEST CONTAINER THAT STILL PASSES, not the first.
+       *
+       * Stopping at the first container with three lines was measurably too
+       * eager: on the real fixture that container held the name, the connection
+       * degree and the headline, so `location` reported `topcard:absent` while
+       * "Budapest, Hungary" sat one level up. Expanding costs nothing in safety —
+       * every candidate has to pass the SAME boundary test, and the walk stops the
+       * moment a second identity appears or a page section comes into view. Which
+       * is also why widening can never reach the right-hand rail: the rail is full
+       * of other people, so the identity count rises and the walk stops.
+       */
+      let best = null;
       for (let depth = 0; node && depth < 10; depth += 1) {
         if (node === scope || node === document.body || node === document.documentElement) break;
         const { lines, excluded } = prunedLines(node, start.el);
         // A card is a name, a headline and at least one more line.
         if (lines.length >= 3) {
           const ids = prunedIdentities(node, start.el);
-          if (ids.size === 1 && ids.has(ownerSlug)) {
-            return { el: node, ok: true, reason: null, lines, excluded, anchor: start.el, depth };
+          if (ids.size !== 1 || !ids.has(ownerSlug)) {
+            // A second identity. If a smaller container already passed, that one
+            // stands; otherwise this is a genuine boundary failure.
+            if (best) break;
+            return {
+              el: null,
+              ok: false,
+              reason: "card_contains_more_than_one_identity",
+              identities: ids.size,
+              excluded,
+            };
           }
-          return {
-            el: null,
-            ok: false,
-            reason: "card_contains_more_than_one_identity",
-            identities: ids.size,
-            excluded,
-          };
+          if (reachesIntoSections(node)) break;
+          best = { el: node, ok: true, reason: null, lines, excluded, anchor: start.el, depth };
         }
         node = node.parentElement;
       }
+      if (best) return best;
     }
     return { el: null, ok: false, reason: "no_container_passed_the_boundary_test" };
   });
@@ -352,41 +554,95 @@
         .split(/\s+[|]\s+/)[0],
     ),
   );
-  const slugTokens = attempt(new Set(), () => tokens((ownerSlug ?? "").replace(/-/g, " ")));
+  /**
+   * Name agreement lives in names.js, which is injected alongside this file.
+   *
+   * It is a separate module because the comparison is subtle enough to need its
+   * own test table — accent folding, Hungarian name order, LinkedIn's truncation
+   * and its ID suffixes — and because getting it wrong is silent in both
+   * directions. The fallback below keeps this file working if that injection ever
+   * fails, at the cost of the accent handling.
+   */
+  const NM = globalThis.VentureNames ?? null;
+
+  /**
+   * Clean a raw candidate before it is judged.
+   *
+   * MEASURED ON THE FIXTURES: the top-card anchor's textContent is the name with
+   * the headline glued straight onto it — "Anonimizált ÖdönCEO at Seyu", no
+   * separator anywhere in the DOM — and in the other fixture with the connection
+   * degree wedged in the middle: "Anonimizált Ödön• 1st • CEO at Seyu". The old
+   * validator accepted both, so the lead's NAME was the name plus the headline.
+   * There is nothing to split on, but the page title says where the name ends.
+   */
+  const nameCandidate = (raw) => {
+    const value = clean(raw);
+    if (!value) return null;
+    if (NM) return NM.trimToTitleName(value, document.title ?? "");
+    return value;
+  };
 
   /**
    * A name must agree with the title AND the slug.
    *
-   * Compared as token SETS, not strings: Hungarian puts the family name first,
+   * Compared as token SETS, accent-folded: Hungarian puts the family name first,
    * so a card reading "Tóth-Szűcs Örs Ábel" against a title of "Örs Ábel
-   * Tóth-Szűcs" is the same person and a string comparison would reject it.
+   * Tóth-Szűcs" is the same person, and the slug is always the folded ASCII form.
    */
   const validateName = (value) => {
     if (value.length < 2 || value.length > 120) return "name_length_implausible";
     if (isSomeoneElse(value)) return "name_matches_another_person_on_page";
+
+    if (NM) {
+      if (NM.nameTokens(value).length === 0) return "name_has_no_comparable_tokens";
+      // Only when there is no title to trim against — with one, the candidate has
+      // already been shortened to it, and a real name may carry a capital inside.
+      if (!NM.nameFromTitle(document.title ?? "") && NM.looksGlued(value)) {
+        return "name_has_text_glued_onto_it";
+      }
+      const byTitle = NM.nameAgreesWithTitle(value, document.title ?? "");
+      if (!byTitle.ok) return byTitle.why;
+      if (ownerSlug) {
+        const bySlug = NM.nameAgreesWithSlug(value, ownerSlug);
+        if (!bySlug.ok) return bySlug.why;
+      }
+      return null;
+    }
+
+    // FALLBACK — names.js failed to inject. Token overlap without the accent
+    // folding or the suffix handling, which is worse but not nothing.
     const v = tokens(value);
     if (v.size === 0) return "name_has_no_comparable_tokens";
     const t = tokens(titleName ?? "");
-    if (t.size > 0) {
-      const shared = [...v].filter((x) => t.has(x)).length;
-      if (shared === 0) return "name_disagrees_with_page_title";
-    }
-    if (slugTokens.size > 0) {
-      const shared = [...v].filter((x) => slugTokens.has(x)).length;
-      // A slug can be "anna-kovacs-8a72b1"; one shared token is agreement.
-      if (shared === 0) return "name_disagrees_with_profile_url";
-    }
+    if (t.size > 0 && [...v].every((x) => !t.has(x))) return "name_disagrees_with_page_title";
+    const st = tokens((ownerSlug ?? "").replace(/-/g, " "));
+    if (st.size > 0 && [...v].every((x) => !st.has(x))) return "name_disagrees_with_profile_url";
     return null;
   };
 
   const cardNameEl = card.ok ? card.anchor : null;
-  offer("name", "topcard", "high", cardNameEl ? label(cardNameEl) : null, validateName);
+  offer("name", "topcard", "high", nameCandidate(cardNameEl ? label(cardNameEl) : null), validateName);
   // The anchor holding the photo has no text; the sibling anchor to the same
   // slug does.
   if (!fields.name && card.ok) {
     for (const a of ownerAnchors) {
       if (!card.el.contains(a.el)) continue;
-      if (offer("name", "topcard", "high", label(a.el), validateName)) break;
+      if (offer("name", "topcard", "high", nameCandidate(label(a.el)), validateName)) break;
+    }
+  }
+  /**
+   * The bounded card's FIRST LINE.
+   *
+   * On the real page the name is not in an anchor at all — it is a `<p>` — so the
+   * anchor attempts all come back absent and the name used to fall through to the
+   * page title at medium confidence. The card's first line is the name by
+   * construction (the card is ordered name, headline, location), and it still has
+   * to pass the same validator, so this costs nothing in safety and keeps a
+   * correct name at the confidence it deserves.
+   */
+  if (!fields.name && card.ok) {
+    for (const line of (card.lines ?? []).slice(0, 3)) {
+      if (offer("name", "topcard", "high", nameCandidate(line), validateName)) break;
     }
   }
   offer("name", "title", "medium", titleName, validateName);
@@ -481,14 +737,67 @@
   });
   const sectionMatching = (re) => sections.find((s) => re.test(s.heading))?.el ?? null;
 
-  const aboutEl = sectionMatching(/^(about|nevjegy|info)/);
+  /**
+   * The About text.
+   *
+   * READ THE BOX, NOT THE LINES. The About body lives in a
+   * `data-testid="expandable-text-box"` and is line-clamped by CSS with a
+   * `data-testid="expandable-text-button"` to reveal the rest. Going through
+   * `prunedLines` was the bug behind the permanent `bio_too_short`: the
+   * containment filter drops any line that contains another, and the full
+   * paragraph contains its own children, so the whole 995-character About was
+   * discarded and a fragment was measured instead.
+   *
+   * The floor is 20 characters and truncation is a FLAG, not a rejection. A
+   * short-but-real bio is data; an empty bio because we refused to expand is a
+   * bug. The machine's EXPAND_BIO step presses the button before this runs.
+   */
+  const flags = [];
+  const aboutEl = sectionMatching(/^(about|nevjegy|névjegy|info)/);
   if (aboutEl) {
-    const { lines } = prunedLines(aboutEl, null);
-    const longest = lines
-      .filter((l) => !/^(about|nevjegy|info)\b/i.test(norm(l)))
-      .sort((a, b) => b.length - a.length)[0];
-    offer("bio", "topcard", "medium", longest, (v) =>
-      isSomeoneElse(v) ? "bio_matches_another_person_on_page" : v.length < 20 ? "bio_too_short" : null,
+    const box = $('[data-testid="expandable-text-box"]', aboutEl);
+    /**
+     * The box's text WITHOUT the reveal button's own label.
+     *
+     * The button lives inside the box, so a plain textContent read appends "see
+     * more" / "…tovább" to every clamped bio — eight characters of LinkedIn's
+     * chrome filed as the last words of the person's own description.
+     */
+    const boxText = (el) => {
+      if (!el) return null;
+      const parts = [];
+      for (const node of el.childNodes) {
+        if (node.nodeType === 1 && node.closest?.('[data-testid="expandable-text-button"]')) continue;
+        if (node.nodeType === 1 && node.matches?.('[data-testid="expandable-text-button"]')) continue;
+        if (node.nodeType === 1 && node.querySelector?.('[data-testid="expandable-text-button"]')) {
+          // A wrapper holding both text and the button: recurse so the text
+          // survives and only the button is dropped.
+          parts.push(boxText(node) ?? "");
+          continue;
+        }
+        parts.push(node.textContent ?? "");
+      }
+      return once(parts.join(" "));
+    };
+    let text = boxText(box);
+    if (box && $('[data-testid="expandable-text-button"]', box)) {
+      // The reveal button is still there, so the text may be clamped. Recorded
+      // rather than acted on — this file never clicks.
+      flags.push("bio_truncated");
+    }
+    if (!text) {
+      // No box: fall back to the section's longest line, minus its heading.
+      const { lines } = prunedLines(aboutEl, null);
+      text = lines
+        .filter((l) => !/^(about|nevjegy|info)\b/i.test(norm(l)))
+        .sort((a, b) => b.length - a.length)[0];
+    }
+    offer("bio", box ? "about-box" : "topcard", "medium", text, (v) =>
+      isEntirelySomeoneElse(v)
+        ? "bio_matches_another_person_on_page"
+        : v.length < 20
+          ? "bio_too_short"
+          : null,
     );
   } else {
     note("bio", "section:about", "absent");
@@ -502,21 +811,42 @@
     if (!activity) return [];
     return $$("li", activity)
       .map((li) => label(li))
-      .filter((t) => t && t.length > 20 && !isChrome(t) && !isSomeoneElse(t))
+      .filter((t) => t && t.length > 20 && !isChrome(t) && !isEntirelySomeoneElse(t))
       .slice(0, 3);
   });
 
-  const expEl = sectionMatching(/(experience|tapasztalat)/);
+  /**
+   * Current role and employer.
+   *
+   * TWO PATHS, BECAUSE THE SECTION USUALLY IS NOT THERE. The Experience section is
+   * lazy-mounted — the page ships one `data-testid="lazy-column"` and renders the
+   * section only once it scrolls into view. Measured on both real fixtures: the
+   * section headings present are About, Featured, Activity and the three
+   * suggestion rails. No Experience, no Education. So a reader that only knows how
+   * to read the Experience section reports `section:experience:absent` forever,
+   * which is exactly what the diagnostics showed.
+   *
+   * The machine's LOAD_SECTIONS step scrolls to mount it, and when that works this
+   * reads the first entry at HIGH confidence. When it does not, the headline is
+   * parsed instead — "CEO at Seyu" is a role and an employer stated by the person
+   * themselves — and labelled `derived` at MEDIUM confidence, because a headline
+   * is prose and "Building the future of X" is not a job title.
+   */
+  const jobLimit = (v) => (v.length > 200 ? "job_title_too_long" : null);
+  const companyLimit = (v) => (v.length > 200 ? "company_name_too_long" : null);
+
+  const expEl = sectionMatching(/(experience|tapasztalat|munkatapasztalat)/);
   if (expEl) {
     const first = $("li", expEl) ?? expEl;
     const { lines } = prunedLines(first, null);
     const usable = lines.filter((l) => !isChrome(l) && !isSomeoneElse(l));
-    offer("jobTitle", "topcard", "medium", usable[0], (v) =>
-      v.length > 200 ? "job_title_too_long" : null,
-    );
-    offer("companyName", "topcard", "medium", usable[1]?.split(" · ")[0], (v) =>
-      v.length > 200 ? "company_name_too_long" : null,
-    );
+    // Bounded to the Experience subtree: the entry's own lines, in order — role,
+    // then employer, then the date range.
+    offer("jobTitle", "experience", "high", usable[0], jobLimit);
+    offer("companyName", "experience", "high", usable[1]?.split(" · ")[0], companyLimit);
+    // Whether this is the CURRENT role, which is the only one worth filing.
+    const dates = usable.find((l) => /\b(present|jelenleg|current)\b/i.test(l));
+    if (dates) note("jobTitle", "experience", "marked_present");
   } else {
     note("jobTitle", "section:experience", "absent");
     note("companyName", "section:experience", "absent");
@@ -569,6 +899,61 @@
     );
   }
 
+  /**
+   * The fallbacks run AFTER the Person graph, not before it.
+   *
+   * `offer()` is first-wins, so ordering IS precedence. Placed before the graph,
+   * the headline's "Danubia Fogászat" beat the graph's "Danubia Fogászat Kft." —
+   * a worse value at a lower confidence winning because it was offered first. The
+   * order now reads: the Experience section (high), the Person graph (high), the
+   * headline pattern (medium), the top card's company link (medium).
+   */
+  /**
+   * The headline fallback: "Role at Company", "Role @ Company", "Role | Company".
+   *
+   * Deliberately conservative. Only the three explicit separators are read, and
+   * only when both halves look like a role and a company rather than a sentence —
+   * a headline is marketing copy as often as it is a job title, and a wrong
+   * company name propagates into a quote.
+   */
+  const derivedRole = attempt(null, () => {
+    const h = fields.headline?.value;
+    if (!h) return null;
+    // The first separator wins; anything after a second one is a tagline.
+    const m = /^\s*(.{2,80}?)\s+(?:at|@|\||·|—|–)\s+(.{2,80}?)\s*(?:[|·—–].*)?$/i.exec(h);
+    if (!m) return null;
+    const role = clean(m[1]);
+    const company = clean(m[2]);
+    if (!role || !company) return null;
+    // A clause, not a role: verbs and long word counts mean prose.
+    if (role.split(/\s+/).length > 6 || company.split(/\s+/).length > 6) return null;
+    if (/\b(is|are|was|were|helping|building|making|we|our)\b/i.test(role)) return null;
+    return { role, company };
+  });
+
+  if (derivedRole) {
+    offer("jobTitle", "derived", "medium", derivedRole.role, jobLimit);
+    offer("companyName", "derived", "medium", derivedRole.company, (v) =>
+      companyLimit(v) ?? (isSomeoneElse(v) ? "company_matches_another_person_on_page" : null),
+    );
+  } else if (!expEl) {
+    note("jobTitle", "headline-pattern", "absent");
+    note("companyName", "headline-pattern", "absent");
+  }
+
+  /**
+   * The top card's own company aside, when the page renders one.
+   *
+   * Last resort and lowest confidence: it is a logo link to a company page, so it
+   * is the employer LinkedIn has associated with the profile even when the
+   * headline says nothing.
+   */
+  if (!fields.companyName && card.ok) {
+    const companyLink = $$('a[href*="/company/"]', card.el).find((a) => clean(label(a)));
+    offer("companyName", "derived", "medium", companyLink ? label(companyLink) : null, companyLimit);
+  }
+
+
   // ---- the photo ----------------------------------------------------------
   // The <img> inside the bounded card's own profile anchor, largest srcset
   // candidate. The BYTES are fetched separately (photo.js) in page context,
@@ -590,7 +975,6 @@
   // Selection goes through the shared selector layer, so the tier that answered is
   // recorded. The BYTES are fetched separately by photo.js in page context, because
   // licdn URLs are signed and refuse an unauthenticated server-side fetch.
-  const S = globalThis.VentureSelectors ?? null;
   const photo = attempt({ url: null, reason: "photo_lookup_threw", tier: null }, () => {
     if (S) {
       const anchor = S.topcardPhotoAnchor(document);
@@ -685,6 +1069,10 @@
 
   return {
     url: profileUrl(),
+    refused: false,
+    route: routeCheck,
+    /** Non-fatal observations — e.g. the About text may still be clamped. */
+    flags,
     // Flat values, so an older server keeps working unchanged.
     name: flat("name"),
     headline: flat("headline"),
@@ -712,6 +1100,25 @@
     _from: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v.source])),
     _attempts: attempts,
   };
+
+  /**
+   * The canonical profile URL from the address bar alone.
+   *
+   * Separate from `profileUrl()` below, which consults `ownerSlug` — a `const`
+   * declared further down, so calling it from the route guard above would hit its
+   * temporal dead zone and throw. This one only needs the URL, which is the point:
+   * it has to work on the very routes where nothing else does.
+   */
+  function canonicalProfileUrl() {
+    try {
+      const u = new URL(window.location.href);
+      const m = /^\/in\/([^/]+)/.exec(u.pathname);
+      if (m) return `https://www.linkedin.com/in/${decodeURIComponent(m[1]).toLowerCase()}`;
+      return `${u.origin}${u.pathname}`.replace(/\/$/, "");
+    } catch {
+      return String(window.location.href ?? "").split("?")[0];
+    }
+  }
 
   function profileUrl() {
     try {

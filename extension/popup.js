@@ -155,80 +155,15 @@ $("test").addEventListener("click", async () => {
 });
 
 /**
- * The capture's account of itself, version 3.
+ * Diagnostics v3 lives in diagnostics.js, loaded by popup.html before this file.
  *
- * Per field: whether it has a value, WHICH SELECTOR TIER answered, which
- * provenance source it came from, every strategy attempted with how each ended,
- * and the reason if it was declined.
- *
- * Tier and source are different questions and both matter. `source` says where a
- * value came from conceptually — the card, the page title, the overlay. `tier`
- * says which CLASS of selector found it: the framework's own componentkey, page
- * structure, or a text label. A field quietly sliding from componentkey down to
- * text-label is the early warning that LinkedIn has changed something, and it is
- * invisible unless recorded.
- *
- * Built once and used twice: the "Copy diagnostics" button shows it, and a capture
- * sends it so the LEAD can explain itself weeks later. Both previous rounds of this
- * bug began by asking the operator to reproduce something, because the only record
- * had been a popup message that closed.
+ * It moved out because popup.js registers DOM listeners at the top level and so
+ * cannot be loaded outside a popup — which left the one function that produces
+ * every capture's evidence trail with no test at all. That is how a report with
+ * `machine: null, cleanup: null, contact: null, photo: null` shipped and stayed.
  */
-function buildDiagnostics(payload, extras) {
-  const p = payload ?? {};
-  const provenance = p.provenance ?? {};
-  const attempts = p._attempts ?? {};
-  const skipped = p.skipped ?? {};
-  const FIELDS = [
-    "name", "headline", "companyName", "location", "jobTitle",
-    "bio", "photoUrl", "email", "phone", "websiteUrl",
-  ];
-
-  const TIERS = [
-    "componentkey", "structure", "text-label",
-    "title", "topcard", "overlay", "derived",
-  ];
-  const tierOf = (field) => {
-    for (const entry of attempts[field] ?? []) {
-      const [name, outcome] = String(entry).split(":");
-      if (outcome === "accepted" && TIERS.includes(name)) return name;
-    }
-    return null;
-  };
-
-  const fields = {};
-  for (const f of FIELDS) {
-    fields[f] = {
-      present: p[f] !== undefined && p[f] !== null && p[f] !== "",
-      tier: tierOf(f),
-      source: provenance[f]?.source ?? null,
-      confidence: provenance[f]?.confidence ?? null,
-      attempted: attempts[f] ?? [],
-      skippedBecause: skipped[f] ?? null,
-    };
-  }
-
-  return {
-    diagnoseVersion: 3,
-    extension: chrome.runtime.getManifest().version,
-    fields,
-    boundary: p.boundary ?? null,
-    postsRead: (p.posts ?? []).length,
-    /**
-     * Which steps ran, how long each took, and where it stopped. Without this a
-     * partial capture is indistinguishable from a broken one.
-     */
-    machine: extras?.machine ?? null,
-    /**
-     * Whether the page was actually put back — popovers closed, URL restored,
-     * focus restored. Reported rather than assumed: "we called hidePopover" and
-     * "the popover is closed" are different claims, and the manual-popover hang
-     * was the second one being false.
-     */
-    cleanup: extras?.cleanup ?? null,
-    contact: extras?.contact ?? null,
-    photo: extras?.photo ?? null,
-  };
-}
+const buildDiagnostics = (payload, extras) =>
+  globalThis.VentureDiagnostics.buildDiagnostics(payload, extras);
 
 /**
  * Copy a description of the page's shape, for when a capture reads too little.
@@ -253,15 +188,36 @@ $("diagnose").addEventListener("click", async () => {
       target: { tabId: tab.id },
       files: ["diagnose.js"],
     });
+    /**
+     * The MACHINE runs here too, and this is the fix for the dump that started
+     * this round: every previous report had `machine: null, cleanup: null,
+     * contact: null, photo: null`, because the Diagnose button only ever ran the
+     * reader. A diagnostic whose four most informative fields are structurally
+     * absent sends the reader looking in the wrong place — it looks like the steps
+     * failed when they were never invoked.
+     */
+    const prep = await prepareAndRead(tab.id);
     const [{ result: payload }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["selectors.js", "content.js"],
+      files: ["selectors.js", "names.js", "content.js"],
     });
 
     // The reader's verdict plus the probes behind it — never the values. Which
     // fields came back empty is the whole question; what they would have said is
     // somebody's personal data and no help in answering it.
-    const report = { ...buildDiagnostics(payload), probes };
+    const report = {
+      ...buildDiagnostics(payload, {
+        machine: prep.machine,
+        cleanup: prep.cleanup,
+        sections: prep.sections,
+        bioExpansion: prep.bio,
+        contact: { found: !!prep.contact, note: prep.note ?? null },
+        // No capture is being saved, so nothing fetches the bytes; the reader's
+        // verdict on the URL is still reported.
+        photo: { ok: false, reason: "not_fetched_during_diagnose", trail: [] },
+      }),
+      probes,
+    };
     const missing = Object.entries(report.fields)
       .filter(([, f]) => !f.present)
       .map(([name]) => name);
@@ -374,36 +330,62 @@ async function sendPhotoBytes(leadId, photo) {
 }
 
 /**
- * Read the contact-info overlay, on this one explicit capture.
+ * PAGE PREPARATION: the state machine.
  *
- * The only place the extension presses a button. Contact details are not on the
- * profile page — the diagnostics measured zero mailto: links, zero tel: links,
- * no outbound hosts — so they are behind this overlay or they are nowhere.
- * contact.js opens it, reads it by label, closes it and puts the scroll and
- * focus back.
+ * Everything that touches the page happens here, in one bounded run with one
+ * try/finally: returning to a canonical profile route, opening and reading the
+ * contact overlay, closing it and putting the URL back, expanding the About text,
+ * and scrolling until the lazy Experience section mounts.
  *
- * Candidates travel to the server unresolved, with the labels LinkedIn put on
- * them: which of three websites is the company's, and what "06 1 234 5678" is in
- * E.164, are rules that must not exist in a second drifting copy.
+ * This exists because the previous version did those things as loose steps, and
+ * when one of them left the page on `/in/<id>/overlay/contact-info/`, nothing
+ * noticed — the next capture read an overlay as if it were a profile and every
+ * field came back wrong in a different way. The machine reports what it did, what
+ * it could not do and whether the page was actually put back, so a thin capture
+ * can be explained from the lead itself weeks later.
+ *
+ * Contact candidates travel to the server UNRESOLVED, with the labels LinkedIn
+ * put on them: which of three websites is the company's, and what "06 1 234 5678"
+ * is in E.164, are rules that must not exist in a second drifting copy.
  */
-async function readContact(tabId) {
+async function prepareAndRead(tabId) {
+  const empty = {
+    contact: undefined,
+    note: null,
+    machine: null,
+    cleanup: null,
+    sections: null,
+    bio: null,
+  };
   try {
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId },
-      files: ["contact.js"],
+      files: ["selectors.js", "names.js", "cleanup.js", "contact-parse.js", "machine.js", "run.js"],
     });
-    if (!result?.ok) return { contact: undefined, note: result?.reason ?? "overlay_unavailable" };
-    const e = result.entries ?? {};
+    if (!result?.machine) return { ...empty, note: "machine_returned_nothing" };
+
+    const e = result.contact ?? {};
     const contact = {
       emails: (e.email ?? []).slice(0, 5),
       phones: (e.phone ?? []).slice(0, 5),
       websites: (e.website ?? []).slice(0, 5),
     };
-    const found =
-      contact.emails.length + contact.phones.length + contact.websites.length > 0;
-    return { contact, note: found ? null : "overlay_had_no_contact_details" };
+    const found = contact.emails.length + contact.phones.length + contact.websites.length > 0;
+    const readStep = (result.machine.steps ?? []).find((st) => st.name === "READ_CONTACT");
+    return {
+      contact: found ? contact : undefined,
+      note: found ? null : (readStep?.reason ?? "overlay_unavailable"),
+      machine: result.machine,
+      cleanup: {
+        steps: result.machine.cleanupSteps ?? [],
+        verified: result.machine.cleanupVerified ?? null,
+      },
+      sections: result.sections ?? null,
+      bio: result.bio ?? null,
+    };
   } catch (e) {
-    return { contact: undefined, note: String(e?.message ?? e).slice(0, 60) };
+    // A failed injection must not stop the capture: the reader can still run.
+    return { ...empty, note: `machine_injection_failed_${String(e?.name ?? "error").toLowerCase()}` };
   }
 }
 
@@ -421,18 +403,50 @@ $("capture").addEventListener("click", async () => {
       return;
     }
 
-    // Injected on demand, never persistently: it runs because a human clicked.
-    // executeScript resolves to the file's last expression — content.js is an
-    // IIFE returning what it read.
-    const [{ result: payload }] = await chrome.scripting.executeScript({
+    /**
+     * PREPARE, THEN READ. In that order, and both on demand — nothing is
+     * persistent and nothing runs unless a human clicked.
+     *
+     * The machine goes first because the page is not ready to be read: the
+     * Experience section has not mounted, the About text is clamped, and the
+     * contact details are behind an overlay. It also puts the page back, which is
+     * the half that was missing — a capture that left the tab on
+     * `/in/<id>/overlay/contact-info/` made the NEXT capture read an overlay as
+     * though it were a profile.
+     */
+    msg("Preparing the page…");
+    const prep = await prepareAndRead(tab.id);
+
+    // Then the reader, on the prepared page. executeScript resolves to the last
+    // file's last expression — content.js is an IIFE returning what it read.
+    msg("Reading the page…");
+    const [{ result: read }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["selectors.js", "content.js"],
+      files: ["selectors.js", "names.js", "content.js"],
     });
 
-    if (!payload?.url) {
-      msg("Could not read this page. LinkedIn may have changed its layout.", "err");
-      return;
-    }
+    /**
+     * NEVER ABORT THE SAVE.
+     *
+     * This used to return early when the reader came back without a URL, which
+     * threw away everything the machine had just gathered — including contact
+     * details that were successfully read — and left the operator with nothing
+     * after watching the extension work. A lead with a URL and a reason code is
+     * worth more than no lead, and it is the only artefact that can explain the
+     * failure later.
+     */
+    const payload = read?.url
+      ? read
+      : {
+          url: (tab.url ?? "").split("?")[0],
+          provenance: {},
+          skipped: { _all: read?.route?.reason ?? "reader_returned_nothing" },
+          flags: ["reader_returned_nothing"],
+          posts: [],
+          boundary: null,
+          _from: {},
+          _attempts: {},
+        };
 
     // Local diagnostics, never sent to the server. photoUrl is stripped too:
     // it is a signed CDN link the server cannot fetch, so sending it would only
@@ -449,10 +463,10 @@ $("capture").addEventListener("click", async () => {
     } = payload;
     const fields = Object.keys(readFrom ?? {});
 
-    // The overlay first: its values belong in the capture body, so the lead is
-    // written once with everything rather than patched afterwards.
-    msg("Reading contact info…");
-    const { contact, note: contactNote } = await readContact(tab.id);
+    // The overlay was read during preparation, so its values are already here and
+    // the lead is written once with everything rather than patched afterwards.
+    const contact = prep.contact;
+    const contactNote = prep.note;
     if (contact) body.contact = contact;
 
     // Sent with the capture so the LEAD can explain itself later, rather than
@@ -461,6 +475,15 @@ $("capture").addEventListener("click", async () => {
     const photoResult = await fetchPhotoBytes(tab.id, photoUrl, payload.skipped);
 
     body.diagnostics = buildDiagnostics(payload, {
+      /**
+       * The four sections that used to be null on every dump, which is what made
+       * the last round of this undiagnosable: `machine: null` cannot distinguish
+       * "the steps did not run" from "the steps ran and found nothing".
+       */
+      machine: prep.machine,
+      cleanup: prep.cleanup,
+      sections: prep.sections,
+      bioExpansion: prep.bio,
       contact: { found: !!contact, note: contactNote ?? null },
       // The bytes themselves never go into the diagnostics — only whether they
       // arrived, how, and why not.

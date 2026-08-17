@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Anonimizált Ödön | LinkedIn</title>
+</head>
+<!--
+  The contact-info overlay in LinkedIn's CURRENT (server-driven UI) shape.
+
+  ── PROVENANCE, STATED PLAINLY ─────────────────────────────────────────────
+
+  The WRAPPER is copied from the real recordings: the same attribute set that
+  appears on `real-profile-sdui-2.html`'s live popovers —
+
+      role="dialog" data-testid="popover-floating" tabindex="-1"
+      popover="manual" inert="" type="proto.sdui.components.core.Popover"
+
+  — plus the `data-testid="dialog-content"` inner wrapper, and hashed class names
+  in LinkedIn's style to prove nothing selects by them.
+
+  The CONTACT ROWS ARE SYNTHETIC, and they have to be: both real recordings
+  contain ZERO contact-info dialogs, ZERO mailto: links and ZERO tel: links. The
+  overlay's content is fetched only when the link is pressed, and the recordings
+  were taken with it closed. So this could not be extracted from them, and
+  pretending otherwise would be a fixture that lies about where it came from.
+
+  ── WHY IT EXISTS ALONGSIDE fixture (c) ────────────────────────────────────
+
+  Fixture (c) uses the OLD `artdeco-modal` shape. This one is the shape the
+  parser will actually meet, and it carries the two properties that matter:
+
+    1. `popover="manual"` — Escape and outside clicks are documented no-ops
+       against it. Only hidePopover() closes it. That was the hang.
+    2. The trigger is an ANCHOR to /overlay/contact-info/, so pressing it
+       NAVIGATES. The URL must be put back, or the next capture reads an overlay
+       route as if it were a profile — which is exactly what happened.
+
+  The labels are deliberately mixed English/Hungarian and out of the "expected"
+  order, because the parser must map by LABEL and never by position.
+-->
+<body>
+  <main>
+    <div class="_7fd273d9 _02fba451">
+      <a class="_3a4835f6 _2188a1ad" tabindex="0"
+         href="https://www.linkedin.com/in/anonimizalt-odon-scrubbed/overlay/contact-info/"
+         componentkey="topcard-logo-image-referencekey">
+        <img src="https://media.licdn.com/dms/image/v2/D4D03AQHsD80qAUTymw/profile-displayphoto/B4D03AQ/0/1700000000000?e=1700000000&amp;v=beta&amp;t=x"
+             srcset="https://media.licdn.com/dms/image/v2/D4D03AQHsD80qAUTymw/profile-displayphoto/shrink_800_800/0/1700000000000?e=1&amp;v=beta&amp;t=a 800w"
+             alt="">
+      </a>
+      <a class="d17d4ef9" href="/in/anonimizalt-odon-scrubbed/">Anonimizált Ödön</a>
+      <div class="_55d77ff0">CEO at Seyu</div>
+      <div class="_967b38ff">Budapest, Budapest, Hungary</div>
+      <a class="cc7e5383" href="https://www.linkedin.com/in/anonimizalt-odon-scrubbed/overlay/contact-info/">Contact info</a>
+    </div>
+  </main>
+
+  <!--
+    The overlay, OPEN. `popover="manual"` and `inert` are exactly as recorded;
+    both are what make this dialog invisible to Escape and outside clicks, and
+    both are why the boundary walk must exclude this subtree — a dialog's
+    contents are not the profile's fields.
+  -->
+  <div class="e0b0a254 _6838b189 _55d77ff0" role="dialog" data-testid="popover-floating"
+       tabindex="-1" id="«r7»" popover="manual" inert=""
+       type="proto.sdui.components.core.Popover"
+       style="position: fixed; left: 0px; top: 0px; max-height: 680px;">
+    <div class="_88bab28e" data-testid="dialog-content">
+      <h2 class="_5238c03f">Contact info</h2>
+      <button class="_8bd0db04" aria-label="Dismiss">×</button>
+
+      <section class="_71ea08a5">
+        <h3 class="_3fcfc89d">Anonimizált Ödön’s Profile</h3>
+        <ul><li><a href="https://www.linkedin.com/in/anonimizalt-odon-scrubbed/">linkedin.com/in/anonimizalt-odon-scrubbed</a></li></ul>
+      </section>
+
+      <!-- Birthday BEFORE phone, deliberately: position-based parsing would map
+           this into the phone field. -->
+      <section class="_71ea08a5">
+        <h3 class="_3fcfc89d">Születésnap</h3>
+        <ul><li>március 14.</li></ul>
+      </section>
+
+      <section class="_71ea08a5">
+        <h3 class="_3fcfc89d">Weboldal</h3>
+        <ul>
+          <li><a href="https://seyu.io">seyu.io (Company)</a></li>
+          <li><a href="https://odon.example">odon.example (Personal)</a></li>
+        </ul>
+      </section>
+
+      <section class="_71ea08a5">
+        <h3 class="_3fcfc89d">Telefon</h3>
+        <ul><li>06 1 234 5678 (Munkahelyi)</li></ul>
+      </section>
+
+      <section class="_71ea08a5">
+        <h3 class="_3fcfc89d">E-mail</h3>
+        <ul><li><a href="mailto:Odon.Anonimizalt@Seyu.IO">Odon.Anonimizalt@Seyu.IO</a></li></ul>
+      </section>
+
+      <section class="_71ea08a5">
+        <h3 class="_3fcfc89d">Connected</h3>
+        <ul><li>2024. március 3.</li></ul>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
