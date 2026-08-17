@@ -15,9 +15,10 @@ import { z } from "zod";
 import { getWorkspaceClient } from "@/lib/db";
 import { DEAL_OWNED_LEAD_STAGES, DEFAULT_PIPELINES } from "./pipelines";
 import { defaultPipeline, ensurePipelines, listPipelines } from "./store";
+import { recordUndo, type UndoToken } from "@/modules/undo/store";
 
 export type DealResult = { ok: true; dealId: string } | { ok: false; error: string };
-export type MoveResult = { ok: true } | { ok: false; error: string };
+export type MoveResult = { ok: true; undo?: UndoToken | null } | { ok: false; error: string };
 
 export const createDealSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -181,7 +182,17 @@ export async function moveStageIn(
 
   const deal = await db.deal.findUnique({
     where: { id: dealId },
-    select: { id: true, pipelineId: true, stageId: true, leadId: true },
+    select: {
+      id: true,
+      pipelineId: true,
+      stageId: true,
+      leadId: true,
+      // For the undo's inverse, captured before the move overwrites them.
+      stageEnteredAt: true,
+      status: true,
+      closedAt: true,
+      lostReason: true,
+    },
   });
   if (!deal) return { ok: false, error: "Deal not found." };
 
@@ -222,7 +233,34 @@ export async function moveStageIn(
       },
     });
   }
-  return { ok: true };
+
+  // Undoable (P7/2). The inverse restores the status and the closed-at stamp
+  // as well as the stage: dragging out of Won and back must not leave a deal
+  // that says OPEN in a column called Won.
+  const undoToken = actorUserId
+    ? await recordUndo(workspaceId, actorUserId, {
+        kind: "deal_stage",
+        label: `Moved to ${stage.name}`,
+        inverse: {
+          entity: "deal",
+          targets: [
+            {
+              id: dealId,
+              set: {
+                stageId: deal.stageId,
+                stageEnteredAt: deal.stageEnteredAt.toISOString(),
+                status: deal.status,
+                closedAt: deal.closedAt ? deal.closedAt.toISOString() : null,
+                lostReason: deal.lostReason,
+              },
+            },
+          ],
+        },
+        expected: { [dealId]: { stageId: stage.id, status } },
+      })
+    : null;
+
+  return { ok: true, undo: undoToken };
 }
 
 export async function patchDealIn(workspaceId: string, raw: unknown): Promise<MoveResult> {

@@ -19,8 +19,12 @@ import {
   customFieldKey,
   formatValue,
   isCustomFieldRef,
+  type CustomFieldType,
   type FieldDef,
 } from "@/modules/fields/types";
+import { editLeadField } from "@/modules/leads/inline-actions";
+import { InlineCell, type InlineKind } from "./inline-cell";
+import { PIPELINE_STAGES, SIDE_STAGES, STAGE_LABELS } from "@/modules/pipeline/transitions";
 
 /**
  * The leads table (playbook-v2 P3/2): selectable columns, sorting, pagination
@@ -74,6 +78,27 @@ function CustomCell({ def, value }: { def?: FieldDef; value?: unknown }) {
   }
   return <span className="text-[12.5px]">{text}</span>;
 }
+
+/** Which editor a custom field's type gets in a table cell (P7/1). */
+const INLINE_KIND: Record<CustomFieldType, InlineKind> = {
+  TEXT: "text",
+  URL: "text",
+  NUMBER: "number",
+  DATE: "date",
+  SELECT: "select",
+  MULTISELECT: "multiselect",
+  CHECKBOX: "checkbox",
+};
+
+/**
+ * Stages a cell may move a lead to. Disqualified is absent on purpose: it
+ * requires a reason, and a dropdown has nowhere to ask for one — the server
+ * refuses it too, so this is the UI agreeing with the rule rather than
+ * enforcing it.
+ */
+const STAGE_OPTIONS = [...PIPELINE_STAGES, ...SIDE_STAGES]
+  .filter((s) => s !== "DISQUALIFIED")
+  .map((s) => ({ value: s, label: STAGE_LABELS[s] }));
 
 function Notches({ score }: { score: number | null }) {
   const n = score ?? 0;
@@ -170,6 +195,19 @@ export function LeadsTable(props: LeadsTableProps) {
    * at. The URL is the table's state, so it updates first and everything else
    * follows from it.
    */
+  /**
+   * One inline edit (P7/1). The server is the boundary: the score gate, the
+   * qualification gate, field validation and the tenant guard all live there,
+   * and the cell renders whatever comes back.
+   */
+  async function saveCell(
+    leadId: string,
+    field: string,
+    value: string | string[] | boolean | null,
+  ) {
+    return editLeadField({ leadId, field, value });
+  }
+
   const navigate = useCallback(
     (changes: Record<string, string | undefined>, keepPage = false) => {
       const next = new URLSearchParams(searchParams.toString());
@@ -393,7 +431,7 @@ export function LeadsTable(props: LeadsTableProps) {
                 </td>
               </tr>
             )}
-            {rows.map((l) => {
+            {rows.map((l, rowIndex) => {
               const ready = (l.icpScore ?? 0) >= threshold;
               return (
                 <tr
@@ -412,7 +450,7 @@ export function LeadsTable(props: LeadsTableProps) {
                       className="accent-[#7427C6]"
                     />
                   </td>
-                  {visible.map((c) => (
+                  {visible.map((c, colIndex) => (
                     <td
                       key={c.key}
                       className={`border-b border-line px-3 py-3 align-middle text-[13px] ${
@@ -442,9 +480,17 @@ export function LeadsTable(props: LeadsTableProps) {
                           )}
                         </span>
                       )}
-                      {c.key === "title" && (l.title ?? "—")}
-                      {c.key === "email" && (l.email ?? "—")}
-                      {c.key === "phone" && (l.phone ?? "—")}
+                      {(c.key === "title" || c.key === "email" || c.key === "phone") && (
+                        <InlineCell
+                          kind="text"
+                          label={c.label}
+                          row={rowIndex}
+                          col={colIndex}
+                          value={l[c.key as "title" | "email" | "phone"] ?? null}
+                          display={l[c.key as "title" | "email" | "phone"] ?? ""}
+                          onSave={(next) => saveCell(l.id, c.key, next)}
+                        />
+                      )}
                       {c.key === "industry" && (l.industry ?? "—")}
                       {c.key === "city" && (l.city ?? "—")}
                       {c.key === "icpScore" && (
@@ -468,21 +514,39 @@ export function LeadsTable(props: LeadsTableProps) {
                             )}
                           </>
                         ))}
-                      {c.key === "stage" &&
-                        (l.stage === "RESEARCHED" && l.icpScore != null && !ready ? (
-                          <span className="rounded-[6px] border border-dashed border-line px-1.5 py-0.5 text-[10.5px] text-muted">
-                            below gate — can&apos;t contact
-                          </span>
-                        ) : (
-                          <span className="text-[12px] text-muted">{humanEnum(l.stage)}</span>
-                        ))}
+                      {c.key === "stage" && (
+                        <>
+                          <InlineCell
+                            kind="select"
+                            label="Stage"
+                            row={rowIndex}
+                            col={colIndex}
+                            value={l.stage}
+                            display={humanEnum(l.stage)}
+                            options={STAGE_OPTIONS}
+                            onSave={(next) => saveCell(l.id, "stage", next)}
+                          />
+                          {l.stage === "RESEARCHED" && l.icpScore != null && !ready && (
+                            <span className="mt-0.5 block rounded-[6px] border border-dashed border-line px-1.5 py-0.5 text-[10.5px] text-muted">
+                              below gate — can&apos;t contact
+                            </span>
+                          )}
+                        </>
+                      )}
                       {c.key === "source" && (
                         <span className="text-[12px] text-muted">{humanEnum(l.source)}</span>
                       )}
                       {c.key === "owner" && (
-                        <span className={l.ownerName ? "" : "text-muted"}>
-                          {l.ownerName ?? "unassigned"}
-                        </span>
+                        <InlineCell
+                          kind="select"
+                          label="Owner"
+                          row={rowIndex}
+                          col={colIndex}
+                          value={l.ownerId}
+                          display={l.ownerName ?? "unassigned"}
+                          options={facets.owners.map((o) => ({ value: o.id, label: o.name }))}
+                          onSave={(next) => saveCell(l.id, "ownerId", next)}
+                        />
                       )}
                       {c.key === "lastActivity" && (
                         <span className="text-[12px] text-muted">
@@ -492,12 +556,35 @@ export function LeadsTable(props: LeadsTableProps) {
                       {c.key === "created" && (
                         <span className="text-[12px] text-muted">{relativeDays(l.createdAt)}</span>
                       )}
-                      {isCustomFieldRef(c.key) && (
-                        <CustomCell
-                          def={customFields.find((d) => d.key === customFieldKey(c.key))}
-                          value={l.customFields?.[customFieldKey(c.key)]}
-                        />
-                      )}
+                      {isCustomFieldRef(c.key) &&
+                        (() => {
+                          const def = customFields.find((d) => d.key === customFieldKey(c.key));
+                          if (!def || def.archived) {
+                            return (
+                              <CustomCell
+                                def={def}
+                                value={l.customFields?.[customFieldKey(c.key)]}
+                              />
+                            );
+                          }
+                          const raw = (l.customFields?.[customFieldKey(c.key)] ?? null) as
+                            | string
+                            | string[]
+                            | boolean
+                            | null;
+                          return (
+                            <InlineCell
+                              kind={INLINE_KIND[def.type]}
+                              label={def.label}
+                              row={rowIndex}
+                              col={colIndex}
+                              value={raw}
+                              display={formatValue(def, raw as never)}
+                              options={def.options}
+                              onSave={(next) => saveCell(l.id, c.key, next)}
+                            />
+                          );
+                        })()}
                     </td>
                   ))}
                   <td className="border-b border-line px-3 py-3 align-middle text-[13px]">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Stage } from "@prisma/client";
@@ -11,6 +11,7 @@ import {
   requiresReason,
 } from "@/modules/pipeline/transitions";
 import { moveLeadStage } from "@/modules/leads/actions";
+import { useUndo } from "./undo-toast";
 import { LeadDetailModal } from "./lead-detail-modal";
 import { closeDeal } from "@/modules/analytics/actions";
 import {
@@ -92,8 +93,21 @@ function Notches({ score }: { score: number | null }) {
   );
 }
 
-export function PipelineBoard({ cards }: { cards: PipelineCard[] }) {
+export function PipelineBoard({
+  cards,
+  totals = {},
+  shown = Number.POSITIVE_INFINITY,
+  pageSize = 25,
+}: {
+  cards: PipelineCard[];
+  /** Total leads per stage, so a capped column can say what it is hiding. */
+  totals?: Record<string, number>;
+  /** How many per column this render asked for. */
+  shown?: number;
+  pageSize?: number;
+}) {
   const router = useRouter();
+  const { offerUndo } = useUndo();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -106,24 +120,46 @@ export function PipelineBoard({ cards }: { cards: PipelineCard[] }) {
   const [reasonFor, setReasonFor] = useState<{ card: PipelineCard } | null>(null);
   const [closeFor, setCloseFor] = useState<PipelineCard | null>(null);
 
+  /**
+   * Optimistic stage moves (P6/3).
+   *
+   * The card jumps columns immediately and the server call follows. A refusal —
+   * the score gate, the qualification gate, a concurrent edit — puts it back
+   * where it was and says why. The override is keyed by card id and cleared on
+   * every fresh server render, so a stale optimistic position cannot outlive
+   * the truth.
+   */
+  const [moved, setMoved] = useState<Record<string, Stage>>({});
+  useEffect(() => setMoved({}), [cards]);
+
   const byStage = useMemo(() => {
     const map = new Map<Stage, PipelineCard[]>();
     for (const s of ALL_STAGES) map.set(s, []);
-    for (const c of cards) map.get(c.stage)?.push(c);
+    for (const c of cards) map.get(moved[c.id] ?? c.stage)?.push(c);
     return map;
-  }, [cards]);
+  }, [cards, moved]);
 
   async function doMove(card: PipelineCard, toStage: Stage, opts?: { reason?: string }) {
     setError(null);
     setMoveFor(null);
-    if (card.stage === toStage) return;
+    if ((moved[card.id] ?? card.stage) === toStage) return;
     if (requiresReason(toStage) && !opts?.reason) {
       setReasonFor({ card });
       return;
     }
+    setMoved((m) => ({ ...m, [card.id]: toStage }));
     const res = await moveLeadStage(card.id, toStage, opts);
-    if (!res.ok) setError(res.error);
-    else router.refresh();
+    if (!res.ok) {
+      setMoved((m) => {
+        const next = { ...m };
+        delete next[card.id];
+        return next;
+      });
+      setError(res.error);
+      return;
+    }
+    offerUndo(res.undo);
+    router.refresh();
   }
 
   return (
@@ -174,7 +210,9 @@ export function PipelineBoard({ cards }: { cards: PipelineCard[] }) {
             >
               <div className="flex items-center gap-2 px-1.5 pt-1 text-[12px] font-semibold">
                 {STAGE_LABELS[stage]}
-                <span className="ml-auto font-medium text-muted">{list.length}</span>
+                <span className="ml-auto font-medium text-muted">
+                  {totals[stage] ?? list.length}
+                </span>
               </div>
               <div className="px-1.5 pb-2.5 pt-0.5 text-[10px] uppercase tracking-[0.1em] text-muted">
                 {DEAL_OWNED.includes(stage) ? "deal territory" : isSide ? "parked" : "lead journey"}
@@ -279,6 +317,15 @@ export function PipelineBoard({ cards }: { cards: PipelineCard[] }) {
                   </button>
                 </div>
               ))}
+              {(totals[stage] ?? list.length) > list.length && (
+                <Link
+                  href={`/pipeline?per=${Math.min(400, shown + pageSize)}`}
+                  data-testid="stage-load-more"
+                  className="mt-1 block rounded-[8px] border border-line bg-panel px-2 py-1.5 text-center text-[11px] text-muted hover:bg-panel-2 hover:text-ink"
+                >
+                  load {Math.min(pageSize, (totals[stage] ?? 0) - list.length)} more
+                </Link>
+              )}
             </div>
           );
         })}

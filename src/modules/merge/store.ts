@@ -20,6 +20,7 @@
  */
 
 import { getWorkspaceClient } from "@/lib/db";
+import { cached, invalidate } from "@/lib/ttl-cache";
 import { normalizeTaxId } from "@/modules/registry/dedupe";
 import {
   defaultChoice,
@@ -82,7 +83,21 @@ export interface MergePreview {
 
 // ---- candidates -------------------------------------------------------------
 
+/**
+ * The candidate scan, cached for 60 seconds (P6/3).
+ *
+ * It reads every company and every lead in the workspace and compares them.
+ * Blocking made it near-linear rather than quadratic, but it is still a
+ * whole-table pass, and it is asked for by two surfaces — the Settings panel
+ * and the lead modal's banner. Duplicates do not appear by the second.
+ */
 export async function listDuplicateCandidates(
+  workspaceId: string,
+): Promise<{ companies: DuplicateCandidate[]; leads: DuplicateCandidate[] }> {
+  return cached(`duplicates:${workspaceId}`, () => scanDuplicates(workspaceId));
+}
+
+async function scanDuplicates(
   workspaceId: string,
 ): Promise<{ companies: DuplicateCandidate[]; leads: DuplicateCandidate[] }> {
   const db = getWorkspaceClient(workspaceId);
@@ -502,6 +517,10 @@ export async function mergeRecords(
     },
   });
 
+  // The candidate list is cached; a merge is exactly the event that must show
+  // immediately rather than in up to a minute.
+  invalidate(`duplicates:${workspaceId}`);
+
   return {
     ok: true,
     mergeId: record.id,
@@ -641,6 +660,7 @@ export async function revertMerge(
     where: { id: mergeId },
     data: { revertedAt: now, revertedBy: actorUserId },
   });
+  invalidate(`duplicates:${workspaceId}`);
 
   return { ok: true, restored };
 }

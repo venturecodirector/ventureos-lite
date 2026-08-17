@@ -78,6 +78,7 @@ const BUSINESS_TABLES = [
   "log_uploads",
   "api_usage",
   "capture_tokens",
+  "undo_entries",
 ];
 
 /**

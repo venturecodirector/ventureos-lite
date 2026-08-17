@@ -11,6 +11,7 @@ import { loadLeadsTable, matchingLeadIds } from "../../src/modules/leads/table";
 import { exportLeadsCsv } from "../../src/modules/leads/bulk-store";
 import { eraseLeadData } from "../../src/modules/gdpr/erase";
 import { anonymizeLead } from "../../src/modules/gdpr/sweep";
+import { clearCache } from "../../src/lib/ttl-cache";
 
 /**
  * Owner-defined fields against the real database (playbook-v2 P5/1).
@@ -58,6 +59,9 @@ beforeAll(async () => {
 afterAll(clean);
 
 beforeEach(async () => {
+  // The duplicate scan and the table facets are cached in-process for 60s
+  // (P6/3). A test rewrites the database underneath that, so it starts cold.
+  clearCache();
   const ids = [wsA, wsB];
   for (const t of ["activity", "customFieldDef", "lead", "company"] as const) {
     // @ts-expect-error dynamic model access

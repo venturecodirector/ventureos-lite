@@ -1789,6 +1789,40 @@ model PushSubscription {
   @@map("push_subscriptions")
 }
 
+/// One undoable action, and the inverse that undoes it (playbook-v2 P7/2).
+///
+/// COMMAND PATTERN, SERVER SIDE. The playbook is explicit that undo must not be
+/// a client-side illusion, and the reason is concurrency: if the browser holds
+/// "put it back to Contacted" and somebody else has since moved the lead to
+/// Replied, replaying the client's memory silently overwrites their work. The
+/// inverse is stored WITH the state the action left behind, so the undo can
+/// check that nothing has changed underneath it and decline if it has.
+///
+/// Short-lived by design: the toast offers six seconds and the row is useless
+/// after a few minutes. The retention sweep clears them.
+model UndoEntry {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  userId      String    @map("user_id")
+  /// lead_stage | deal_stage | task_done | bulk_stage | bulk_signals |
+  /// bulk_owner | lead_not_now | content_status
+  kind        String
+  /// Human-readable, for the toast: "Moved 12 leads to Contacted".
+  label       String
+  /// The inverse operation's payload — what to write, and to what.
+  inverse     Json
+  /// What the action LEFT. The undo refuses if the live rows no longer match,
+  /// because that means somebody else has touched them since.
+  expected    Json
+  undoneAt    DateTime? @map("undone_at")
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([workspaceId, userId, createdAt])
+  @@index([expiresAt])
+  @@map("undo_entries")
+}
+
 /// A reusable CSV column mapping (playbook-v2 P5/3).
 ///
 /// Imports come from the same handful of sources over and over — the same

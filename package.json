@@ -18,6 +18,8 @@
     "db:seed": "prisma db seed",
     "rls:apply": "tsx scripts/apply-rls.ts",
     "deals:migrate": "tsx scripts/migrate-deals.ts",
+    "seed:scale": "tsx scripts/seed-scale.ts",
+    "perf": "tsx scripts/measure-perf.ts",
     "set-password": "tsx scripts/set-password.ts",
     "vapid": "tsx scripts/generate-vapid.ts"
   },

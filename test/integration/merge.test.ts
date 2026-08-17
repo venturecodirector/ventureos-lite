@@ -9,6 +9,7 @@ import {
   revertMerge,
 } from "../../src/modules/merge/store";
 import { ensurePipelines } from "../../src/modules/deals/store";
+import { clearCache } from "../../src/lib/ttl-cache";
 
 /**
  * Merging against the real database (playbook-v2 P5/2).
@@ -58,6 +59,9 @@ beforeAll(async () => {
 afterAll(clean);
 
 beforeEach(async () => {
+  // The duplicate scan and the table facets are cached in-process for 60s
+  // (P6/3). A test rewrites the database underneath that, so it starts cold.
+  clearCache();
   const ids = [wsA, wsB];
   for (const t of [
     "mergeRecord",

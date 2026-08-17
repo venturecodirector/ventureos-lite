@@ -31,6 +31,14 @@ export interface SkippedLead {
 export interface BulkResult {
   applied: number;
   skipped: SkippedLead[];
+  /**
+   * The toast's undo handle (P7/2). Present per BATCH, so a 500-lead action
+   * produces ten of them and the bar keeps the last — undoing the whole thing
+   * would mean one transaction across ten round trips, which is precisely the
+   * shape the batching exists to avoid.
+   */
+  undoId?: string | null;
+  undoLabel?: string | null;
 }
 
 export function chunk<T>(items: T[], size: number): T[][] {

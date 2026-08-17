@@ -11,6 +11,7 @@ import {
   type TaskView,
 } from "@/modules/tasks/actions";
 import { TYPE_LABEL, groupTasks, type TaskType } from "@/modules/tasks/logic";
+import { useUndo } from "./undo-toast";
 
 /**
  * Tasks (playbook-v2 P3/3).
@@ -31,9 +32,11 @@ function dueLabel(dueAt: Date | null): string {
 
 function TaskRow({
   task,
+  onToggle,
   onChanged,
 }: {
   task: TaskView;
+  onToggle: (task: TaskView) => Promise<void>;
   onChanged: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
@@ -47,8 +50,7 @@ function TaskRow({
         disabled={busy}
         onChange={async () => {
           setBusy(true);
-          await (done ? reopenTask(task.id) : completeTask(task.id));
-          await onChanged();
+          await onToggle(task);
           setBusy(false);
         }}
         className="mt-[3px]"
@@ -159,11 +161,43 @@ function NewTask({
  * component briefly broke the mobile navigation tests.
  */
 export function TasksPanel({ initial }: { initial: TaskView[] }) {
+  const { offerUndo } = useUndo();
   const [tasks, setTasks] = useState<TaskView[]>(initial);
+  const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
     const grouped = await myTasks();
     setTasks([...grouped.overdue, ...grouped.today, ...grouped.upcoming, ...grouped.someday]);
+  }
+
+  /**
+   * Optimistic completion (P6/3).
+   *
+   * The tick moves immediately and the row re-groups; the server call follows.
+   * If it fails, the previous list is put back exactly as it was and the reason
+   * is shown — an optimistic update that cannot roll back is not optimism, it
+   * is a lie the user finds out about on the next refresh.
+   */
+  async function toggle(task: TaskView) {
+    const previous = tasks;
+    const done = task.doneAt !== null;
+    setError(null);
+    setTasks((list) =>
+      list.map((t) =>
+        t.id === task.id ? { ...t, doneAt: done ? null : new Date() } : t,
+      ),
+    );
+    try {
+      if (done) {
+        await reopenTask(task.id);
+      } else {
+        offerUndo((await completeTask(task.id)).undo);
+      }
+      await refresh();
+    } catch {
+      setTasks(previous);
+      setError("That did not save. Nothing changed.");
+    }
   }
 
   const grouped = groupTasks(tasks);
@@ -181,6 +215,12 @@ export function TasksPanel({ initial }: { initial: TaskView[] }) {
           {grouped.counts.today} today · {grouped.counts.open} open
         </span>
       </div>
+
+      {error && (
+        <p className="mb-2 text-[12px] text-[#FFB3C2]" data-testid="task-error">
+          {error}
+        </p>
+      )}
 
       {grouped.counts.open === 0 ? (
         <p className="text-[12.5px] text-muted">Nothing due. Add one below, or enjoy it.</p>
@@ -200,7 +240,7 @@ export function TasksPanel({ initial }: { initial: TaskView[] }) {
                   {label}
                 </div>
                 {list.map((t) => (
-                  <TaskRow key={t.id} task={t} onChanged={refresh} />
+                  <TaskRow key={t.id} task={t} onToggle={toggle} onChanged={refresh} />
                 ))}
               </div>
             ),
@@ -221,10 +261,32 @@ export function EntityTasks({
   entityType: "lead" | "company" | "document";
   entityId: string;
 }) {
+  const { offerUndo } = useUndo();
   const [tasks, setTasks] = useState<TaskView[] | null>(null);
 
   async function refresh() {
     setTasks(await tasksForEntity(entityType, entityId));
+  }
+
+  /** Same optimism as the dashboard panel, same rollback on failure (P6/3). */
+  async function toggleHere(task: TaskView) {
+    const previous = tasks;
+    const done = task.doneAt !== null;
+    setTasks((list) =>
+      (list ?? []).map((t) =>
+        t.id === task.id ? { ...t, doneAt: done ? null : new Date() } : t,
+      ),
+    );
+    try {
+      if (done) {
+        await reopenTask(task.id);
+      } else {
+        offerUndo((await completeTask(task.id)).undo);
+      }
+      await refresh();
+    } catch {
+      setTasks(previous);
+    }
   }
 
   useEffect(() => {
@@ -249,7 +311,7 @@ export function EntityTasks({
         {open.length > 0 && <span className="text-[11px] text-muted">{open.length} open</span>}
       </div>
       {tasks.map((t) => (
-        <TaskRow key={t.id} task={t} onChanged={refresh} />
+        <TaskRow key={t.id} task={t} onToggle={toggleHere} onChanged={refresh} />
       ))}
       <NewTask entity={{ entityType, entityId }} onCreated={refresh} />
     </div>

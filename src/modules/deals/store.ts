@@ -143,24 +143,42 @@ export interface DealCardView {
  * and reading every deal in the workspace to render one column set is exactly
  * the kind of query P6/3 has to come back and undo.
  */
+export const DEAL_STAGE_PAGE_SIZE = 25;
+
 export async function loadPipelineBoard(
   workspaceId: string,
   pipelineId: string,
-  opts?: { now?: Date; ownerNames?: Map<string, string> },
+  opts?: { now?: Date; ownerNames?: Map<string, string>; perStage?: number },
 ): Promise<DealCardView[]> {
   const db = getWorkspaceClient(workspaceId);
   const now = opts?.now ?? new Date();
+  const perStage = Math.max(1, Math.min(400, opts?.perStage ?? DEAL_STAGE_PAGE_SIZE));
 
-  const deals = await db.deal.findMany({
+  // Capped PER STAGE rather than per board (P6/3): a board-wide limit empties
+  // the late columns, because the oldest cards are all in the first one. One
+  // query per column costs a handful of round trips and keeps every column
+  // showing its own oldest cards.
+  const stages = await db.dealStage.findMany({
     where: { pipelineId },
-    orderBy: [{ stageEnteredAt: "asc" }],
-    include: {
-      stage: { select: { probability: true, rottingDays: true } },
-      lead: { select: { contactName: true } },
-      company: { select: { name: true } },
-      documents: { select: { id: true, type: true } },
-    },
+    orderBy: { position: "asc" },
+    select: { id: true },
   });
+  const perStageDeals = await Promise.all(
+    stages.map((stage) =>
+      db.deal.findMany({
+        where: { pipelineId, stageId: stage.id },
+        orderBy: [{ stageEnteredAt: "asc" }],
+        take: perStage,
+        include: {
+          stage: { select: { probability: true, rottingDays: true } },
+          lead: { select: { contactName: true } },
+          company: { select: { name: true } },
+          documents: { select: { id: true, type: true } },
+        },
+      }),
+    ),
+  );
+  const deals = perStageDeals.flat();
 
   const docIds = deals.flatMap((d) => d.documents.map((doc) => doc.id));
   const invoices = docIds.length
@@ -213,6 +231,20 @@ export async function loadPipelineBoard(
       invoiceStatus,
     };
   });
+}
+
+/** How many deals sit in each stage of a pipeline, capped board or not. */
+export async function stageTotals(
+  workspaceId: string,
+  pipelineId: string,
+): Promise<Record<string, number>> {
+  const db = getWorkspaceClient(workspaceId);
+  const rows = await db.deal.groupBy({
+    by: ["stageId"],
+    where: { pipelineId },
+    _count: { _all: true },
+  });
+  return Object.fromEntries(rows.map((r) => [r.stageId, r._count._all]));
 }
 
 /** Every open deal in the workspace, shaped for the forecast maths. */

@@ -1,0 +1,63 @@
+{
+  "leadCount": 5570,
+  "dealCount": 2067,
+  "runs": 7,
+  "results": [
+    {
+      "name": "leads table — first page, unfiltered",
+      "medianMs": 9.5,
+      "minMs": 6.1,
+      "maxMs": 14.2,
+      "detail": "50 rows of 5570"
+    },
+    {
+      "name": "leads table — filtered by stage + score",
+      "medianMs": 88.9,
+      "minMs": 85.9,
+      "maxMs": 107.2,
+      "detail": "730 matched"
+    },
+    {
+      "name": "pipeline board — as the page loads it",
+      "medianMs": 8.8,
+      "minMs": 7.2,
+      "maxMs": 12.9,
+      "detail": "225 cards, 93 with a deal"
+    },
+    {
+      "name": "deals board — one pipeline",
+      "medianMs": 5.5,
+      "minMs": 4.3,
+      "maxMs": 6.1,
+      "detail": "175 cards"
+    },
+    {
+      "name": "forecast — six months, every pipeline",
+      "medianMs": 14.7,
+      "minMs": 13.7,
+      "maxMs": 17.1,
+      "detail": "1549 open deals"
+    },
+    {
+      "name": "global search — fuzzy fallback",
+      "medianMs": 103.8,
+      "minMs": 101.2,
+      "maxMs": 108.2,
+      "detail": "10 hits"
+    },
+    {
+      "name": "duplicate scan — Settings and the lead banner",
+      "medianMs": 107.1,
+      "minMs": 96,
+      "maxMs": 115.1,
+      "detail": "24 company + 1 lead candidates"
+    },
+    {
+      "name": "select-all-matching — resolve the filtered id set",
+      "medianMs": 79.8,
+      "minMs": 73.7,
+      "maxMs": 87,
+      "detail": "5159 ids"
+    }
+  ]
+}

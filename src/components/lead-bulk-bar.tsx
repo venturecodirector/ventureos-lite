@@ -11,6 +11,7 @@ import {
   resolveBulkSelection,
 } from "@/modules/leads/bulk-actions";
 import { BULK_BATCH_SIZE, chunk, mergeBulkResults, type BulkResult } from "@/modules/leads/bulk";
+import { useUndo } from "./undo-toast";
 import { STAGE_LABELS } from "@/modules/pipeline/transitions";
 import type { FilterSet } from "@/modules/leads/filters";
 import type { LeadFacets } from "@/modules/leads/table";
@@ -61,6 +62,7 @@ export function LeadBulkBar({
   const router = useRouter();
   const [action, setAction] = useState<Action>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const { offerUndo } = useUndo();
   const [summary, setSummary] = useState<(BulkResult & { note?: string }) | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,7 +100,21 @@ export function LeadBulkBar({
         results.push(await fn(batch));
         setProgress((p) => ({ done: (p?.done ?? 0) + batch.length, total: targets.length }));
       }
-      setSummary({ ...mergeBulkResults(results), note });
+      const merged = mergeBulkResults(results);
+      setSummary({ ...merged, note });
+      // The LAST batch's handle: each batch is its own undoable action, and
+      // offering the last one undoes the last fifty rather than pretending the
+      // whole run was atomic (see BulkResult.undoId).
+      const lastUndo = [...results].reverse().find((r) => r.undoId);
+      if (lastUndo?.undoId) {
+        offerUndo({
+          id: lastUndo.undoId,
+          label:
+            batches.length > 1
+              ? `${lastUndo.undoLabel} (last batch of ${batches.length})`
+              : (lastUndo.undoLabel ?? "Done"),
+        });
+      }
       close();
       onClear();
       router.refresh();

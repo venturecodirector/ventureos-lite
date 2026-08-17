@@ -3,20 +3,49 @@ import { PipelineBoard, type PipelineCard } from "@/components/pipeline-board";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { daysInStage } from "@/modules/pipeline/schedule";
+import { PIPELINE_STAGES, SIDE_STAGES } from "@/modules/pipeline/transitions";
 import { dealChipsForLeads } from "@/modules/deals/store";
 
 export const dynamic = "force-dynamic";
 
-export default async function PipelinePage() {
+/** Cards per column before "load more". Two screens' worth on a laptop. */
+const STAGE_PAGE_SIZE = 25;
+
+const ALL_STAGE_KEYS = [...PIPELINE_STAGES, ...SIDE_STAGES];
+
+export default async function PipelinePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ per?: string }>;
+}) {
+  const { per: showAll } = await searchParams;
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
 
-  const leads = await db.lead.findMany({
-    // Merged-away leads are tombstones, not cards (P5/2).
+  // A column shows the OLDEST cards in its stage — the ones that have sat
+  // longest are the ones worth looking at — and stops at the cap, with the
+  // remainder behind "load more" (P6/3). Before this, the board fetched every
+  // lead in the workspace and painted 5,000 cards nobody scrolled to.
+  const perStage = Math.max(1, Math.min(400, Number(showAll) || STAGE_PAGE_SIZE));
+
+  const counts = await db.lead.groupBy({
+    by: ["stage"],
     where: { mergedIntoId: null },
-    orderBy: { stageEnteredAt: "asc" },
-    include: { company: { select: { name: true } } },
+    _count: { _all: true },
   });
+  const totalByStage = new Map(counts.map((c) => [c.stage as string, c._count._all]));
+
+  const leadsByStage = await Promise.all(
+    ALL_STAGE_KEYS.map((stage) =>
+      db.lead.findMany({
+        where: { mergedIntoId: null, stage: stage as never },
+        orderBy: { stageEnteredAt: "asc" },
+        take: perStage,
+        include: { company: { select: { name: true } } },
+      }),
+    ),
+  );
+  const leads = leadsByStage.flat();
 
   // Document-chain state per lead (spec §4.9 — chain state on the pipeline card).
   const docs = await db.document.findMany({
@@ -77,7 +106,12 @@ export default async function PipelinePage() {
 
   return (
     <AppShell activePath="/pipeline">
-      <PipelineBoard cards={cards} />
+      <PipelineBoard
+        cards={cards}
+        totals={Object.fromEntries(totalByStage)}
+        shown={perStage}
+        pageSize={STAGE_PAGE_SIZE}
+      />
     </AppShell>
   );
 }

@@ -21,6 +21,7 @@ import type { Stage } from "@prisma/client";
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { listFieldDefsWith } from "@/modules/fields/store";
 import { readValues } from "@/modules/fields/types";
+import { recordUndo, type UndoToken } from "@/modules/undo/store";
 import { eraseLeadData } from "@/modules/gdpr/erase";
 import { canQualify, type Qualification } from "../inbox/qualification";
 import { requiresReason } from "../pipeline/transitions";
@@ -43,6 +44,8 @@ export async function resolveSelection(
 export interface StageChangeResult extends BulkResult {
   /** The leads that actually moved, for the caller to run automations on. */
   moved: Array<{ id: string; companyId: string | null }>;
+  /** The toast's undo handle (P7/2). Null when nothing moved. */
+  undo?: UndoToken | null;
 }
 
 export async function applyStageChange(
@@ -58,7 +61,17 @@ export async function applyStageChange(
 
   const rows = await db.lead.findMany({
     where: { id: { in: ids } },
-    select: { id: true, icpScore: true, stage: true, qualification: true, companyId: true },
+    select: {
+      id: true,
+      icpScore: true,
+      stage: true,
+      qualification: true,
+      companyId: true,
+      // Captured for the undo's inverse, before the update overwrites them.
+      stageEnteredAt: true,
+      stageReason: true,
+      wakeUpAt: true,
+    },
   });
 
   // A reason is required to disqualify (spec §4.5) — the same rule as the
@@ -118,10 +131,36 @@ export async function applyStageChange(
     })),
   });
 
+  // Undoable as ONE action (P7/2): the toast offers to put back exactly the
+  // leads that moved, which is not the same set as the ones that were selected
+  // — the score gate and the qualification gate skipped some, and undoing a
+  // move that never happened would be a new edit dressed as a reversal.
+  const undoToken = await recordUndo(workspaceId, userId, {
+    kind: "bulk_stage",
+    label: `Moved ${allowed.length} lead${allowed.length === 1 ? "" : "s"}`,
+    inverse: {
+      entity: "lead",
+      targets: allowed.map((id) => {
+        const before = byId.get(id)!;
+        return {
+          id,
+          set: {
+            stage: before.stage,
+            stageEnteredAt: before.stageEnteredAt.toISOString(),
+            stageReason: before.stageReason,
+            wakeUpAt: before.wakeUpAt ? before.wakeUpAt.toISOString() : null,
+          },
+        };
+      }),
+    },
+    expected: Object.fromEntries(allowed.map((id) => [id, { stage: toStage }])),
+  });
+
   return {
     applied: allowed.length,
     skipped,
     moved: allowed.map((id) => ({ id, companyId: byId.get(id)?.companyId ?? null })),
+    undo: undoToken,
   };
 }
 

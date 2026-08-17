@@ -13,10 +13,10 @@ export const dynamic = "force-dynamic";
 export default async function DealsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ pipeline?: string }>;
+  searchParams: Promise<{ pipeline?: string; per?: string }>;
 }) {
-  const { pipeline } = await searchParams;
-  const board = await getDealsBoard(pipeline);
+  const { pipeline, per } = await searchParams;
+  const board = await getDealsBoard(pipeline, Number(per) || undefined);
 
   return (
     <AppShell activePath="/deals">
@@ -32,6 +32,9 @@ export default async function DealsPage({
           pipelines={board.pipelines}
           activePipelineId={board.activePipelineId}
           cards={board.cards}
+          totals={board.totals}
+          shown={board.shown}
+          pageSize={board.pageSize}
         />
       )}
     </AppShell>

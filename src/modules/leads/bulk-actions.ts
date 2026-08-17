@@ -108,7 +108,12 @@ export async function bulkChangeStage(raw: unknown): Promise<BulkResult> {
 
   revalidatePath("/leads");
   revalidatePath("/pipeline");
-  return { applied: result.applied, skipped: result.skipped };
+  return {
+    applied: result.applied,
+    skipped: result.skipped,
+    undoId: result.undo?.id ?? null,
+    undoLabel: result.undo?.label ?? null,
+  };
 }
 
 const signalsSchema = z.object({

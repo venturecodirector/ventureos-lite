@@ -9,6 +9,7 @@ import { MobileNav, type MobileNavItem } from "./mobile-nav";
 import { GlobalSearch } from "./global-search";
 import { Greeting } from "./greeting";
 import { AppActionsProvider } from "./app-actions";
+import { UndoProvider } from "./undo-toast";
 import { AppDialogs } from "./app-dialogs";
 import { TopBarActions } from "./top-bar-actions";
 import { AccountMenu } from "./account-menu";
@@ -197,6 +198,7 @@ export async function AppShell({
 
   return (
     <AppActionsProvider>
+      <UndoProvider>
       {/* 100dvh, not 100vh: on a mobile browser vh ignores the collapsing
           toolbar, leaving the shell taller than the visible area. On desktop
           the two are identical. A fixed height (not min-height) from `nav:` up
@@ -304,6 +306,7 @@ export async function AppShell({
       />
       <AppDialogs />
     </div>
+      </UndoProvider>
     </AppActionsProvider>
   );
 }

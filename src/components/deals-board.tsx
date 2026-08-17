@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { moveDealStage, updateDeal } from "@/modules/deals/actions";
+import { useUndo } from "./undo-toast";
 import type { DealCardView, PipelineView } from "@/modules/deals/store";
 
 /**
@@ -22,6 +23,10 @@ export interface DealsBoardProps {
   pipelines: PipelineView[];
   activePipelineId: string | null;
   cards: DealCardView[];
+  /** Deals per stage id, so a capped column can say what it is hiding (P6/3). */
+  totals?: Record<string, number>;
+  shown?: number;
+  pageSize?: number;
 }
 
 const CHAIN_STEPS = ["QUOTE", "CONTRACT", "CERTIFICATE"] as const;
@@ -137,8 +142,16 @@ function InlineField({
   );
 }
 
-export function DealsBoard({ pipelines, activePipelineId, cards }: DealsBoardProps) {
+export function DealsBoard({
+  pipelines,
+  activePipelineId,
+  cards,
+  totals: stageTotals = {},
+  shown = Number.POSITIVE_INFINITY,
+  pageSize = 25,
+}: DealsBoardProps) {
   const router = useRouter();
+  const { offerUndo } = useUndo();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -153,12 +166,16 @@ export function DealsBoard({ pipelines, activePipelineId, cards }: DealsBoardPro
   // which would re-bucket every card on every keystroke in an inline field.
   const stages = useMemo(() => active?.stages ?? [], [active]);
 
+  /** Optimistic stage moves, same shape as the lead board (P6/3). */
+  const [moved, setMoved] = useState<Record<string, string>>({});
+  useEffect(() => setMoved({}), [cards]);
+
   const byStage = useMemo(() => {
     const map = new Map<string, DealCardView[]>();
     for (const s of stages) map.set(s.id, []);
-    for (const c of cards) map.get(c.stageId)?.push(c);
+    for (const c of cards) map.get(moved[c.id] ?? c.stageId)?.push(c);
     return map;
-  }, [cards, stages]);
+  }, [cards, stages, moved]);
 
   const totals = useMemo(() => {
     const map = new Map<string, number>();
@@ -171,15 +188,25 @@ export function DealsBoard({ pipelines, activePipelineId, cards }: DealsBoardPro
   async function doMove(card: DealCardView, stageId: string, lostReason?: string) {
     setError(null);
     setMoveFor(null);
-    if (card.stageId === stageId) return;
+    if ((moved[card.id] ?? card.stageId) === stageId) return;
     const stage = stages.find((s) => s.id === stageId);
     if (stage?.kind === "lost" && !lostReason) {
       setLostFor({ card, stageId });
       return;
     }
+    setMoved((m) => ({ ...m, [card.id]: stageId }));
     const res = await moveDealStage(card.id, stageId, { lostReason });
-    if (!res.ok) setError(res.error);
-    else router.refresh();
+    if (!res.ok) {
+      setMoved((m) => {
+        const next = { ...m };
+        delete next[card.id];
+        return next;
+      });
+      setError(res.error);
+      return;
+    }
+    offerUndo(res.undo);
+    router.refresh();
   }
 
   async function save(dealId: string, patch: Record<string, unknown>): Promise<string | null> {
@@ -250,7 +277,9 @@ export function DealsBoard({ pipelines, activePipelineId, cards }: DealsBoardPro
             >
               <div className="flex items-baseline gap-2 px-1.5 pb-1 pt-1 text-[12px] font-semibold">
                 {stage.name}
-                <span className="ml-auto font-medium text-muted">{list.length}</span>
+                <span className="ml-auto font-medium text-muted">
+                  {stageTotals[stage.id] ?? list.length}
+                </span>
               </div>
               <div className="flex items-baseline gap-2 px-1.5 pb-2.5 text-[10.5px] text-muted tabular-nums">
                 <span>{huf(totals.get(stage.id) ?? 0)}</span>
@@ -344,6 +373,15 @@ export function DealsBoard({ pipelines, activePipelineId, cards }: DealsBoardPro
                   </div>
                 </div>
               ))}
+              {(stageTotals[stage.id] ?? list.length) > list.length && (
+                <Link
+                  href={`/deals?pipeline=${activePipelineId}&per=${Math.min(400, shown + pageSize)}`}
+                  data-testid="deal-load-more"
+                  className="block rounded-[8px] border border-line bg-panel px-2 py-1.5 text-center text-[11px] text-muted hover:bg-panel-2 hover:text-ink"
+                >
+                  load {Math.min(pageSize, (stageTotals[stage.id] ?? 0) - list.length)} more
+                </Link>
+              )}
             </div>
           );
         })}

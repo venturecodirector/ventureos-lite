@@ -10,6 +10,7 @@
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { companyUnderProceedings, riskLabel } from "@/modules/registry/risk";
 import { gateThresholdFromConfig } from "./scoring";
+import { cached } from "@/lib/ttl-cache";
 import { listFieldDefsWith } from "@/modules/fields/store";
 import { readValues, type FieldDef } from "@/modules/fields/types";
 import {
@@ -63,6 +64,17 @@ export interface LeadTableData {
 
 type LoadedLead = Awaited<ReturnType<typeof fetchLeads>>[number];
 
+/**
+ * The whole workspace's leads, in the shape the filter engine needs — and
+ * NOTHING ELSE (P6/3).
+ *
+ * `filters.ts` explains why the predicates cannot live in the `where` clause,
+ * so this read is unavoidably the whole workspace. What IS avoidable is what
+ * each row costs: the registry join, the avatar path and the size band are
+ * display-only, and joining `registry_data` 5,000 times to render 50 rows was
+ * a third of the query's cost. Those three are hydrated for the page rows
+ * afterwards, in `hydratePage`.
+ */
 async function fetchLeads(workspaceId: string) {
   const db = getWorkspaceClient(workspaceId);
   return db.lead.findMany({
@@ -73,7 +85,6 @@ async function fetchLeads(workspaceId: string) {
       id: true,
       companyId: true,
       contactName: true,
-      avatarPath: true,
       title: true,
       email: true,
       phone: true,
@@ -85,35 +96,58 @@ async function fetchLeads(workspaceId: string) {
       lastActivityAt: true,
       createdAt: true,
       customFields: true,
-      company: {
-        select: {
-          name: true,
-          industry: true,
-          city: true,
-          sizeBand: true,
-          registry: { select: { statusFlags: true } },
-        },
-      },
+      company: { select: { name: true, industry: true, city: true } },
     },
   });
 }
 
+/**
+ * Fill in the display-only fields for the rows actually on screen.
+ *
+ * One extra query for ≤50 ids, against one avoided join across every lead in
+ * the workspace. At 5,000 leads that trade is worth roughly a third of the
+ * table's load time.
+ */
+async function hydratePage(workspaceId: string, rows: LeadTableRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  const db = getWorkspaceClient(workspaceId);
+  const leads = await db.lead.findMany({
+    where: { id: { in: rows.map((r) => r.id) } },
+    select: {
+      id: true,
+      avatarPath: true,
+      company: {
+        select: { sizeBand: true, registry: { select: { statusFlags: true } } },
+      },
+    },
+  });
+  const byId = new Map(leads.map((l) => [l.id, l]));
+  for (const row of rows) {
+    const extra = byId.get(row.id);
+    if (!extra) continue;
+    row.avatarPath = extra.avatarPath;
+    row.sizeBand = extra.company?.sizeBand ?? null;
+    const flags = Array.isArray(extra.company?.registry?.statusFlags)
+      ? (extra.company.registry.statusFlags as string[])
+      : null;
+    row.riskLabel = companyUnderProceedings(flags) ? riskLabel(flags) : null;
+  }
+}
+
 function toRow(l: LoadedLead, ownerNames: Map<string, string>): LeadTableRow {
-  const statusFlags = Array.isArray(l.company?.registry?.statusFlags)
-    ? (l.company.registry.statusFlags as string[])
-    : null;
   return {
     id: l.id,
     companyId: l.companyId,
     contactName: l.contactName,
-    avatarPath: l.avatarPath,
+    // Display-only; filled in for the page rows by hydratePage.
+    avatarPath: null,
     title: l.title,
     email: l.email,
     phone: l.phone,
     company: l.company?.name ?? null,
     industry: l.company?.industry ?? null,
     city: l.company?.city ?? null,
-    sizeBand: l.company?.sizeBand ?? null,
+    sizeBand: null,
     icpScore: l.icpScore,
     stage: l.stage,
     signals: Array.isArray(l.signals) ? (l.signals as string[]) : [],
@@ -123,7 +157,7 @@ function toRow(l: LoadedLead, ownerNames: Map<string, string>): LeadTableRow {
     lastActivityAt: l.lastActivityAt,
     createdAt: l.createdAt,
     customFields: readValues(l.customFields),
-    riskLabel: companyUnderProceedings(statusFlags) ? riskLabel(statusFlags) : null,
+    riskLabel: null,
   };
 }
 
@@ -141,6 +175,62 @@ export async function workspaceMembers(workspaceId: string): Promise<WorkspaceMe
   });
   return users;
 }
+
+/**
+ * The filter dropdowns' contents (P6/3).
+ *
+ * Cached for 60 seconds per workspace. The facets are distinct values across
+ * every lead — an inherently whole-table question — and they change when
+ * somebody types a new city, which is not something a dropdown has to notice
+ * within the second. Caching them is what lets the common page load stop
+ * reading every lead in the workspace.
+ */
+async function loadFacets(
+  workspaceId: string,
+  owners: WorkspaceMember[],
+): Promise<LeadFacets> {
+  return cached(`lead-facets:${workspaceId}`, async () => {
+    const db = getWorkspaceClient(workspaceId);
+    const rows = await db.lead.findMany({
+      where: { mergedIntoId: null },
+      select: {
+        signals: true,
+        source: true,
+        stage: true,
+        company: { select: { industry: true, city: true } },
+      },
+    });
+    const uniqueSorted = (values: Array<string | null | undefined>) =>
+      [...new Set(values.filter((v): v is string => !!v && v.trim().length > 0))].sort((a, b) =>
+        a.localeCompare(b, "hu"),
+      );
+    return {
+      industries: uniqueSorted(rows.map((r) => r.company?.industry)),
+      cities: uniqueSorted(rows.map((r) => r.company?.city)),
+      signals: uniqueSorted(
+        rows.flatMap((r) => (Array.isArray(r.signals) ? (r.signals as string[]) : [])),
+      ),
+      sources: uniqueSorted(rows.map((r) => r.source)),
+      stages: uniqueSorted(rows.map((r) => r.stage)),
+      owners,
+    };
+  });
+}
+
+/**
+ * Sort fields the database can order by directly, with the same nulls-last
+ * semantics `applySort` uses. `company` and `stage` are absent on purpose:
+ * ordering by a relation field cannot express nulls-last in Prisma, and stage
+ * needs pipeline order rather than alphabetical.
+ */
+const SQL_SORTABLE: Partial<Record<SortSpec["field"], { column: string; nullable: boolean }>> = {
+  contactName: { column: "contactName", nullable: true },
+  icpScore: { column: "icpScore", nullable: true },
+  lastActivityAt: { column: "lastActivityAt", nullable: true },
+  // NOT nullable, and Prisma rejects the `{ sort, nulls }` form on a required
+  // column — "Expected SortOrder, provided Object" — so it takes the plain one.
+  createdAt: { column: "createdAt", nullable: false },
+};
 
 /** Distinct values actually present, so the filter never offers a dead end. */
 function buildFacets(rows: LeadTableRow[], owners: WorkspaceMember[]): LeadFacets {
@@ -169,6 +259,24 @@ export async function loadLeadsTable(
     now?: Date;
   },
 ): Promise<LeadTableData> {
+  const sqlField = SQL_SORTABLE[opts.sort.field];
+
+  /**
+   * THE FAST PATH (P6/3).
+   *
+   * With no filter conditions and a database-sortable column — which is every
+   * ordinary page load of this screen — there is no reason to read the whole
+   * workspace into memory. One count and one paged query answer it, and the
+   * facets come from the 60-second cache.
+   *
+   * The slow path below is still correct and still required: `filters.ts`
+   * explains why the predicates cannot live in a `where` clause, so a filtered
+   * table genuinely has to pass over every row.
+   */
+  if (opts.filters.conditions.length === 0 && sqlField) {
+    return loadUnfilteredPage(workspaceId, opts, sqlField);
+  }
+
   const [leads, owners, ws, customFields] = await Promise.all([
     fetchLeads(workspaceId),
     workspaceMembers(workspaceId),
@@ -185,6 +293,7 @@ export async function loadLeadsTable(
   const matched = applyFilters(all, opts.filters, opts.now ?? new Date(), customFields);
   const sorted = applySort(matched, opts.sort);
   const page = paginate(sorted, opts.page, opts.pageSize ?? DEFAULT_PAGE_SIZE);
+  await hydratePage(workspaceId, page.rows);
 
   return {
     rows: page.rows,
@@ -198,6 +307,79 @@ export async function loadLeadsTable(
     // its other options the moment you pick one cannot be used to change your
     // mind, which is most of what filtering is.
     facets: buildFacets(all, owners),
+    customFields,
+  };
+}
+
+async function loadUnfilteredPage(
+  workspaceId: string,
+  opts: { sort: SortSpec; page: number; pageSize?: number },
+  sqlField: { column: string; nullable: boolean },
+): Promise<LeadTableData> {
+  const db = getWorkspaceClient(workspaceId);
+  const pageSize = Math.max(1, opts.pageSize ?? DEFAULT_PAGE_SIZE);
+  const direction = opts.sort.direction;
+
+  const [total, owners, ws, customFields] = await Promise.all([
+    db.lead.count({ where: { mergedIntoId: null } }),
+    workspaceMembers(workspaceId),
+    prismaUnsafe.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { icpConfig: true },
+    }),
+    listFieldDefsWith(db, "lead"),
+  ]);
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(Math.max(1, Math.floor(opts.page) || 1), pageCount);
+
+  const rows = await db.lead.findMany({
+    where: { mergedIntoId: null },
+    // Nulls last in BOTH directions, matching applySort: "no value" is not the
+    // smallest value, it is the least interesting one. The id is the tiebreak,
+    // without which two equal keys can swap between pages and lose a row.
+    orderBy: [
+      {
+        [sqlField.column]: sqlField.nullable
+          ? { sort: direction, nulls: "last" }
+          : direction,
+      },
+      { id: "asc" },
+    ] as never,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+    select: {
+      id: true,
+      companyId: true,
+      contactName: true,
+      title: true,
+      email: true,
+      phone: true,
+      icpScore: true,
+      stage: true,
+      signals: true,
+      source: true,
+      ownerId: true,
+      lastActivityAt: true,
+      createdAt: true,
+      customFields: true,
+      company: { select: { name: true, industry: true, city: true } },
+    },
+  });
+
+  const ownerNames = new Map(owners.map((o) => [o.id, o.name]));
+  const pageRows = rows.map((l) => toRow(l, ownerNames));
+  await hydratePage(workspaceId, pageRows);
+
+  return {
+    rows: pageRows,
+    page,
+    pageCount,
+    pageSize,
+    total,
+    totalUnfiltered: total,
+    threshold: gateThresholdFromConfig(ws?.icpConfig),
+    facets: await loadFacets(workspaceId, owners),
     customFields,
   };
 }

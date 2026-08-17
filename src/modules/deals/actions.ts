@@ -18,6 +18,8 @@ import {
   ensurePipelines,
   listPipelines,
   loadPipelineBoard,
+  stageTotals,
+  DEAL_STAGE_PAGE_SIZE,
   type DealCardView,
   type PipelineView,
 } from "./store";
@@ -35,9 +37,16 @@ export interface DealsBoardData {
   activePipelineId: string | null;
   cards: DealCardView[];
   members: Array<{ id: string; name: string }>;
+  /** Deals per stage, so a capped column can say what it is hiding (P6/3). */
+  totals: Record<string, number>;
+  shown: number;
+  pageSize: number;
 }
 
-export async function getDealsBoard(pipelineId?: string): Promise<DealsBoardData> {
+export async function getDealsBoard(
+  pipelineId?: string,
+  perStage?: number,
+): Promise<DealsBoardData> {
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
 
@@ -51,11 +60,17 @@ export async function getDealsBoard(pipelineId?: string): Promise<DealsBoardData
   const members = await workspaceMembers(workspaceId);
   const ownerNames = new Map(members.map((m) => [m.id, m.name]));
 
+  const shown = Math.max(1, Math.min(400, perStage || DEAL_STAGE_PAGE_SIZE));
   return {
     pipelines,
     activePipelineId: active?.id ?? null,
-    cards: active ? await loadPipelineBoard(workspaceId, active.id, { ownerNames }) : [],
+    cards: active
+      ? await loadPipelineBoard(workspaceId, active.id, { ownerNames, perStage: shown })
+      : [],
     members,
+    totals: active ? await stageTotals(workspaceId, active.id) : {},
+    shown,
+    pageSize: DEAL_STAGE_PAGE_SIZE,
   };
 }
 

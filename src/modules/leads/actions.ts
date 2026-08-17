@@ -22,7 +22,9 @@ import {
   requiresReason,
   schedulesFollowups,
   cancelsFollowups,
+  STAGE_LABELS,
 } from "../pipeline/transitions";
+import { recordUndo, type UndoToken } from "../undo/store";
 import { wakeUpDate } from "../pipeline/schedule";
 import { scheduleFollowups, cancelFollowups } from "../pipeline/jobs";
 import { canQualify, type Qualification } from "../inbox/qualification";
@@ -307,12 +309,21 @@ export async function moveLeadStage(
   leadId: string,
   toStage: Stage,
   opts?: { reason?: string; wakeUpAt?: string },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; undo?: UndoToken | null } | { ok: false; error: string }> {
   const { workspaceId, userId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
   const lead = await db.lead.findUnique({
     where: { id: leadId },
-    select: { icpScore: true, stage: true, qualification: true, companyId: true },
+    select: {
+      icpScore: true,
+      stage: true,
+      qualification: true,
+      companyId: true,
+      // Captured for the undo's inverse, before the move overwrites them.
+      stageEnteredAt: true,
+      stageReason: true,
+      wakeUpAt: true,
+    },
   });
   if (!lead) throw new Error("Lead not found");
 
@@ -387,9 +398,33 @@ export async function moveLeadStage(
     console.error("[pipeline] stage automation failed", e);
   }
 
+  // Undoable for the length of the toast (P7/2). The inverse restores the
+  // stage AND the things the move overwrote — the entered-at timestamp and any
+  // wake-up date — because putting the stage back and leaving the clock reset
+  // is a different lead from the one that was there a second ago.
+  const undoToken = await recordUndo(workspaceId, userId, {
+    kind: toStage === "NOT_NOW" ? "lead_not_now" : "lead_stage",
+    label: `Moved to ${STAGE_LABELS[toStage] ?? toStage}`,
+    inverse: {
+      entity: "lead",
+      targets: [
+        {
+          id: leadId,
+          set: {
+            stage: lead.stage,
+            stageEnteredAt: lead.stageEnteredAt.toISOString(),
+            stageReason: lead.stageReason,
+            wakeUpAt: lead.wakeUpAt ? lead.wakeUpAt.toISOString() : null,
+          },
+        },
+      ],
+    },
+    expected: { [leadId]: { stage: toStage } },
+  });
+
   revalidatePath("/leads");
   revalidatePath("/pipeline");
-  return { ok: true };
+  return { ok: true, undo: undoToken };
 }
 
 // ---------------------------------------------------------------------------

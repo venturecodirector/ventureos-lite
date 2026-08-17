@@ -14,6 +14,7 @@ import { enqueueAnalyticsPdf } from "@/modules/audit/enqueue";
 import { collectReportInput } from "./report-data";
 import { buildWeeklyReport, type WeeklyReport } from "./reports";
 import { getLatestReport, type ReportView } from "./report-actions";
+import { cached } from "@/lib/ttl-cache";
 
 const closeSchema = z.object({
   leadId: z.string().min(1),
@@ -95,8 +96,20 @@ export interface AnalyticsView {
   latestReport: ReportView | null; // last stored Friday report (in-app view)
 }
 
+/**
+ * The Performance tab's aggregates, cached for 60 seconds (P6/3).
+ *
+ * Four reads and a full pass over every outcome the workspace has ever
+ * recorded, to produce numbers that change a few times a day. Keyed by
+ * workspace — a cache shared across tenants would be a tenancy hole with a
+ * performance justification.
+ */
 export async function getAnalytics(): Promise<AnalyticsView> {
   const { workspaceId } = await getActiveContext();
+  return cached(`analytics:${workspaceId}`, () => computeAnalytics(workspaceId));
+}
+
+async function computeAnalytics(workspaceId: string): Promise<AnalyticsView> {
   const db = getWorkspaceClient(workspaceId);
   const now = Date.now();
   const [input, { facts, totals }, topReferrers, latestReport] = await Promise.all([

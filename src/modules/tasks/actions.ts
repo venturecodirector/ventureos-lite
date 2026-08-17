@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
+import { recordUndo, type UndoToken } from "../undo/store";
 import { TASK_TYPES, groupTasks, orderTasks, type GroupedTasks, type TaskLike } from "./logic";
 
 /**
@@ -58,19 +59,39 @@ export async function createTask(raw: unknown): Promise<{ id: string }> {
   return { id: task.id };
 }
 
-export async function completeTask(taskId: string): Promise<{ ok: true }> {
-  const { workspaceId } = await getActiveContext();
+export async function completeTask(
+  taskId: string,
+): Promise<{ ok: true; undo?: UndoToken | null }> {
+  const { workspaceId, userId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
-  await db.task.updateMany({
-    where: { id: taskId, doneAt: null },
-    data: { doneAt: new Date() },
+  const task = await db.task.findUnique({
+    where: { id: taskId },
+    select: { id: true, title: true, doneAt: true },
   });
+  const doneAt = new Date();
+  const { count } = await db.task.updateMany({
+    where: { id: taskId, doneAt: null },
+    data: { doneAt },
+  });
+
+  // Undoable (P7/2), but only when something actually changed: offering to undo
+  // a tick that was already ticked is an offer to do nothing.
+  const undoToken =
+    count > 0 && task
+      ? await recordUndo(workspaceId, userId, {
+          kind: "task_done",
+          label: `Completed “${task.title}”`,
+          inverse: { entity: "task", targets: [{ id: taskId, set: { doneAt: null } }] },
+          expected: { [taskId]: { doneAt: doneAt.toISOString() } },
+        })
+      : null;
+
   revalidatePath("/");
   revalidatePath("/leads");
-  return { ok: true };
+  return { ok: true, undo: undoToken };
 }
 
-/** Undo, because a mis-click on a checkbox should not need a database. */
+/** Reopen, because a mis-click on a checkbox should not need a database. */
 export async function reopenTask(taskId: string): Promise<{ ok: true }> {
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);

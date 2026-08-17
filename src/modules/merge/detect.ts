@@ -85,6 +85,39 @@ function pairKey(a: string, b: string): string {
 }
 
 /**
+ * Blocking, so the fuzzy name pass is not quadratic (P6/3).
+ *
+ * The naive version compared every company with every other one: at 3,572
+ * companies that is 6.4 MILLION edit-distance computations on every Settings
+ * page load, which is how a 30-second page timeout got introduced. Blocking is
+ * the standard record-linkage answer — compare only candidates that already
+ * agree on a cheap key, here the first three characters of the normalised name.
+ *
+ * The trade is explicit: two names that differ in their first three characters
+ * will not be compared. "Danubia" vs "Danúbia" still blocks together (accents
+ * are folded first); "Danubia" vs "Anubia" no longer does. That is the right
+ * side of the trade — a typo in the first three letters of a company name is
+ * rare, and an unusable Settings page is not.
+ */
+const BLOCK_PREFIX = 3;
+/**
+ * A block bigger than this is not a set of duplicates, it is a naming
+ * convention — "Scale …" across 3,572 fixtures, or "Dr. …" across a list of
+ * practices. Comparing them all would reintroduce the quadratic blow-up for a
+ * block that will produce nothing but noise.
+ */
+const MAX_BLOCK = 200;
+
+function blocksOf<T>(items: T[], keyOf: (item: T) => string): T[][] {
+  const blocks = new Map<string, T[]>();
+  for (const item of items) {
+    const key = keyOf(item).slice(0, BLOCK_PREFIX);
+    blocks.set(key, [...(blocks.get(key) ?? []), item]);
+  }
+  return [...blocks.values()].filter((b) => b.length > 1 && b.length <= MAX_BLOCK);
+}
+
+/**
  * Duplicate candidates among companies.
  *
  * A pair is reported ONCE, under its strongest reason: a pair that shares both
@@ -146,16 +179,19 @@ export function findCompanyDuplicates(companies: CompanyLike[]): DuplicateCandid
   const named = live
     .map((c) => ({ c, key: normalizeCompanyName(c.name) }))
     .filter((x) => x.key.length >= 3);
-  for (let i = 0; i < named.length; i += 1) {
-    for (let j = i + 1; j < named.length; j += 1) {
-      if (seen.has(pairKey(named[i].c.id, named[j].c.id))) continue;
-      const score = similarity(named[i].key, named[j].key);
-      if (score < NAME_THRESHOLD) continue;
-      add(named[i].c, named[j].c, {
-        reason: "name",
-        confidence: Math.round(score * 70),
-        detail: `Similar name — “${named[i].c.name}” and “${named[j].c.name}”`,
-      });
+
+  for (const block of blocksOf(named, (x) => x.key)) {
+    for (let i = 0; i < block.length; i += 1) {
+      for (let j = i + 1; j < block.length; j += 1) {
+        if (seen.has(pairKey(block[i].c.id, block[j].c.id))) continue;
+        const score = similarity(block[i].key, block[j].key);
+        if (score < NAME_THRESHOLD) continue;
+        add(block[i].c, block[j].c, {
+          reason: "name",
+          confidence: Math.round(score * 70),
+          detail: `Similar name — “${block[i].c.name}” and “${block[j].c.name}”`,
+        });
+      }
     }
   }
 
@@ -199,20 +235,29 @@ export function findLeadDuplicates(leads: LeadLike[]): DuplicateCandidate[] {
     }
   }
 
-  const named = live
-    .map((l) => ({ l, key: foldText(l.contactName ?? "") }))
-    .filter((x) => x.key.length >= 3 && x.l.companyId);
-  for (let i = 0; i < named.length; i += 1) {
-    for (let j = i + 1; j < named.length; j += 1) {
-      if (named[i].l.companyId !== named[j].l.companyId) continue;
-      if (seen.has(pairKey(named[i].l.id, named[j].l.id))) continue;
-      const score = similarity(named[i].key, named[j].key);
-      if (score < NAME_THRESHOLD) continue;
-      add(named[i].l, named[j].l, {
-        reason: "name",
-        confidence: Math.round(score * 70),
-        detail: `Similar name at the same company — “${named[i].l.contactName}” and “${named[j].l.contactName}”`,
-      });
+  // Grouped by company FIRST. The rule is "similar name at the same company",
+  // so comparing every lead with every other one and then discarding the
+  // mismatches did 30 million pointless checks at 5,000 leads.
+  const byCompany = new Map<string, Array<{ l: LeadLike; key: string }>>();
+  for (const l of live) {
+    if (!l.companyId) continue;
+    const key = foldText(l.contactName ?? "");
+    if (key.length < 3) continue;
+    byCompany.set(l.companyId, [...(byCompany.get(l.companyId) ?? []), { l, key }]);
+  }
+  for (const group of byCompany.values()) {
+    if (group.length < 2 || group.length > MAX_BLOCK) continue;
+    for (let i = 0; i < group.length; i += 1) {
+      for (let j = i + 1; j < group.length; j += 1) {
+        if (seen.has(pairKey(group[i].l.id, group[j].l.id))) continue;
+        const score = similarity(group[i].key, group[j].key);
+        if (score < NAME_THRESHOLD) continue;
+        add(group[i].l, group[j].l, {
+          reason: "name",
+          confidence: Math.round(score * 70),
+          detail: `Similar name at the same company — “${group[i].l.contactName}” and “${group[j].l.contactName}”`,
+        });
+      }
     }
   }
 
