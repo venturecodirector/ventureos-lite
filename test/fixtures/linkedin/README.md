@@ -65,3 +65,61 @@ the two wrong values that were actually captured:
 - **The rail precedes the profile's own text in source order.** A rail name
   could only win the headline if it came first in DOM order, which is how a
   CSS-positioned right column gets sourced.
+
+## `real-profile-sdui*.html` — the real thing
+
+Two recordings of the same signed-in profile, made with **Save DOM snapshot** in
+August 2026. 620–660 kB each. These supersede the reconstructions for anything
+they cover: LinkedIn has moved to server-driven UI and the invented fixtures do
+not model it.
+
+What they establish, all verified rather than assumed:
+
+| Fact | Evidence in the fixture |
+|---|---|
+| Server-driven UI | `type="proto.sdui.components.core.Popover"`, 418–470 `componentkey` attributes |
+| Class names are useless | every class is a hash like `_36cbea85` |
+| No `<h1>` at all | `totalH1: 0` — **the name is in an `<h2>`** |
+| No id anchors | no `#about`, no `#experience`; sections are 11 `<section>` elements with `<h2>` headings |
+| Native popover API | 2 elements with `popover="manual"`, 2 with `inert=""` |
+| Contact info is a ROUTE | `<a href=".../in/<slug>/overlay/contact-info/">` |
+| The photo needs no popup | `<img>` inside `a[componentkey="topcard-logo-image-referencekey"]` |
+
+The real top card, with the chrome stripped:
+
+```html
+<h2>Kovács Anna</h2>
+<p>· 1st</p> <p>· 2nd</p>
+<p>CEO at Seyu</p>
+<p>'Seyu - Together for victory!'​ · Eötvös Loránd University</p>
+<div>
+  <p>Budapest, Hungary</p>
+  <p>·</p>
+  <p><a href=".../overlay/contact-info/">Contact info</a></p>
+</div>
+```
+
+### Three things the fixtures corrected
+
+**The profile photo's largest srcset candidate is 800w, not 1400w.** Its srcset
+is `100w 200w 400w 800w` (`profile-displayphoto-crop_800_800`). The 1400w
+candidate belongs to the **cover photo**, a landscape banner elsewhere in the top
+card — so "the largest srcset image inside the top card" picks the wrong image.
+Scope to the `topcard-logo-image` anchor.
+
+**The photo anchor IS the contact-info link.** Same element: `href` is the
+`/overlay/contact-info/` route and `componentkey` is
+`topcard-logo-image-referencekey`. One element, two jobs.
+
+**`href` alone cannot select the contact-info trigger.** Forty anchors in this
+page carry that identical href, including a "Send" button and two reaction
+counters. `componentkey`, or the anchor whose text is "Contact info", are the
+selectors that actually identify it.
+
+### What these fixtures do NOT contain
+
+**The contact-info overlay's content.** No `Email`/`Phone`/`Website` labels, no
+`mailto:` or `tel:` anchors — the overlay was not open when the snapshot was
+taken, and `<code>` bodies are emptied by the scrubber, so it cannot be
+recovered from these files. A contact-route fixture has to be recorded
+separately, with the overlay open.
