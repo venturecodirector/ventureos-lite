@@ -165,6 +165,108 @@ async function postAvatar({ leadId, bytes, mime }) {
 }
 
 /**
+ * Fetch and square an avatar IN THE SERVICE WORKER — retrieval leg (a).
+ *
+ * ── WHY THE SERVICE WORKER AND NOT THE PAGE ─────────────────────────────────
+ *
+ * A licdn photo URL is signed and time-limited. Three contexts can try it and
+ * only one works:
+ *
+ *   THE SERVER cannot: the signature is bound to the session that was served the
+ *   page, so an unauthenticated fetch from our own backend gets a 403. That is
+ *   the original "the photo could not be fetched".
+ *
+ *   THE PAGE cannot fetch it: media.licdn.com sends no CORS header for a
+ *   cross-origin XHR from linkedin.com, which is the `fetch:Failed to fetch`
+ *   recorded on every capture. It can still LOAD it into an <img> — but an <img>
+ *   without an authorised CORS response taints the canvas, and a tainted canvas
+ *   throws on export. So the in-page path is one step away from failure at all
+ *   times.
+ *
+ *   THE SERVICE WORKER can, given the host permission: its request carries no
+ *   page origin, so there is nothing for CORS to refuse. And it has
+ *   createImageBitmap and OffscreenCanvas, so it can decode, crop and encode
+ *   without a DOM and without a canvas that can ever be tainted.
+ *
+ * Returns base64 because that is what survives `chrome.runtime.sendMessage`.
+ */
+const AVATAR_SIZE = 400;
+
+async function fetchAvatar(url) {
+  const trail = [];
+  /**
+   * Parsed rather than pattern-matched.
+   *
+   * A regex here would also have been the FIRST `/^https:…/` literal in this file,
+   * and the package test lifts that literal out to check the profile-URL gate has
+   * not drifted from the popup's copy — so a second one silently hijacked that
+   * test. Parsing is the better check regardless: `endsWith` on a parsed hostname
+   * cannot be fooled by a path that merely contains "licdn.com".
+   */
+  let host = "";
+  try {
+    const u = new URL(String(url ?? ""));
+    if (u.protocol !== "https:") return { ok: false, reason: "not_https", trail };
+    host = u.hostname.toLowerCase();
+  } catch {
+    return { ok: false, reason: "not_a_url", trail };
+  }
+  if (host !== "licdn.com" && !host.endsWith(".licdn.com")) {
+    return { ok: false, reason: "not_a_licdn_url", trail };
+  }
+  let blob;
+  try {
+    const res = await fetch(url, { credentials: "omit", cache: "no-store" });
+    trail.push(`sw-fetch:${res.status}`);
+    if (!res.ok) return { ok: false, reason: `sw_fetch_status_${res.status}`, trail };
+    blob = await res.blob();
+    trail.push(`bytes:${blob.size}`);
+  } catch (e) {
+    trail.push(`sw-fetch:${String(e?.name ?? "Error")}`);
+    return { ok: false, reason: "sw_fetch_failed", trail };
+  }
+  if (!blob || blob.size === 0) return { ok: false, reason: "empty_body", trail };
+  if (blob.size > 8_000_000) return { ok: false, reason: "image_too_large", trail };
+
+  try {
+    const bitmap = await createImageBitmap(blob);
+    // Centred square crop, then one resize. A rectangular avatar squashed into a
+    // square is worse than a cropped one.
+    const side = Math.min(bitmap.width, bitmap.height);
+    const sx = Math.floor((bitmap.width - side) / 2);
+    const sy = Math.floor((bitmap.height - side) / 2);
+    const canvas = new OffscreenCanvas(AVATAR_SIZE, AVATAR_SIZE);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return { ok: false, reason: "no_2d_context", trail };
+    ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
+    bitmap.close?.();
+    const out = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.86 });
+    trail.push(`encoded:${out.size}`);
+
+    const buf = new Uint8Array(await out.arrayBuffer());
+    let binary = "";
+    const CHUNK = 0x8000;
+    for (let i = 0; i < buf.length; i += CHUNK) {
+      binary += String.fromCharCode.apply(null, buf.subarray(i, i + CHUNK));
+    }
+    return {
+      ok: true,
+      method: "service-worker",
+      mime: "image/jpeg",
+      width: AVATAR_SIZE,
+      height: AVATAR_SIZE,
+      bytes: btoa(binary),
+      encodedBytes: out.size,
+      sourceBytes: blob.size,
+      trail,
+    };
+  } catch (e) {
+    trail.push(`decode:${String(e?.name ?? "Error")}`);
+    return { ok: false, reason: "decode_or_encode_failed", trail };
+  }
+}
+
+/**
  * Every message the extension answers, from one place.
  *
  * Two callers reach this: the popup, and the bridge content script running on
@@ -189,6 +291,10 @@ function handle(msg) {
       return lookupProfile(String(msg.url ?? ""));
     case "openLead":
       return openLead(String(msg.leadId ?? ""));
+    case "fetchAvatar":
+      // Retrieval only. The upload is a separate message, so a retrieval failure
+      // and an upload failure can never be reported as the same thing.
+      return fetchAvatar(String(msg.url ?? ""));
     case "configure":
       return configure(msg);
     case "captureProfile":

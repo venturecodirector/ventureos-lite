@@ -85,6 +85,60 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   await db.lead.update({ where: { id: lead.id }, data: { avatarPath: rel } });
+
+  /**
+   * PATCH THE CAPTURE'S OWN DIAGNOSTICS with how this went.
+   *
+   * The capture is written before the photo is uploaded — the upload needs the
+   * lead id the capture returns — so the `photo` section stored with it can only
+   * ever describe RETRIEVAL. That is how a lead ended up carrying
+   * `photo.ok: true` while no avatar existed anywhere: retrieval had worked, and
+   * the four steps after it (encode, upload, store, attach) were unreported.
+   *
+   * This is the only place that knows the outcome of the last three, so it writes
+   * them into the same record rather than leaving the client to re-post a whole
+   * capture for the sake of one field. `ok` becomes true HERE and nowhere else,
+   * which is what makes "ok but no avatar" impossible rather than merely unlikely.
+   */
+  try {
+    const capture = await db.activity.findFirst({
+      where: { leadId: lead.id, type: { in: ["capture_created", "capture_updated"] } },
+      orderBy: { at: "desc" },
+      select: { id: true, payload: true },
+    });
+    const payload = (capture?.payload ?? null) as Record<string, unknown> | null;
+    const diagnostics = (payload?.diagnostics ?? null) as Record<string, unknown> | null;
+    if (capture && diagnostics && typeof diagnostics === "object") {
+      const photo = (diagnostics.photo ?? {}) as Record<string, unknown>;
+      await db.activity.update({
+        where: { id: capture.id },
+        data: {
+          payload: {
+            ...payload,
+            diagnostics: {
+              ...diagnostics,
+              photo: {
+                ...photo,
+                ok: true,
+                upload: {
+                  attached: true,
+                  stage: "attached",
+                  status: 200,
+                  storedBytes: buf.byteLength,
+                  storedPath: rel,
+                  mime: verdict.mime,
+                  width: verdict.width,
+                  height: verdict.height,
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+  } catch {
+    // A diagnostics patch must never cost the avatar that was just stored.
+  }
   await db.activity.create({
     data: {
       workspaceId: identity.workspaceId,

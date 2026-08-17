@@ -283,19 +283,43 @@ $("snapshot").addEventListener("click", async () => {
 
 
 /**
- * Read the photo's bytes in the page. No lead id needed, so this runs BEFORE the
- * capture is posted and its outcome can travel with the diagnostics — the
- * previous ordering lost the reason a photo failed as soon as the popup closed.
+ * Retrieve the avatar's bytes. THREE LEGS, IN ORDER, EACH RECORDED.
  *
- * Two injections rather than one: `executeScript({files})` cannot take
- * arguments, so a tiny function plants the URL on the isolated world's global
- * first and photo.js reads it. Both run in the same world, so the value carries.
+ * The reported diagnostics were `photo.ok: true, trail: ["fetch:Failed to fetch",
+ * "img:ok"], 400x400` — and no avatar on the lead. Retrieval had worked and
+ * something after it had not, but "after it" was four unreported steps: encode,
+ * upload, server-side store, attach to the lead. So the fix is as much about
+ * reporting as about mechanism.
+ *
+ *   (a) THE SERVICE WORKER fetches it. Its request carries no page origin, so
+ *       there is nothing for CORS to refuse, and it has OffscreenCanvas — so it
+ *       decodes, crops and encodes without a canvas that can ever be tainted.
+ *       Needs the media.licdn.com host permission, now declared.
+ *   (b) THE PAGE, via photo.js: an <img crossOrigin="anonymous"> into a canvas.
+ *       Works when the CDN does authorise it, and throws SecurityError when it
+ *       does not — which is the tainted-canvas case the brief predicted.
+ *   (c) NOT IMPLEMENTED, deliberately. The last-resort suggestion was to hand the
+ *       signed URL to the server and let IT fetch. That cannot work and is why
+ *       this whole path exists: the signature is bound to the browser session that
+ *       was served the page, so our backend gets a 403. Adding it would mean a leg
+ *       that always fails, reported as if it might not.
  */
-async function fetchPhotoBytes(tabId, photoUrl, skipped) {
+async function retrieveAvatar(tabId, photoUrl, skipped) {
+  const legs = [];
   if (!photoUrl) {
-    const why = skipped?.photoUrl ?? "no_photo_on_page";
-    return { ok: false, reason: why };
+    return { ok: false, reason: skipped?.photoUrl ?? "no_photo_on_page", legs };
   }
+
+  // (a) The service worker.
+  try {
+    const sw = await chrome.runtime.sendMessage({ type: "fetchAvatar", url: photoUrl });
+    legs.push({ leg: "service-worker", ok: !!sw?.ok, reason: sw?.reason ?? null, trail: sw?.trail ?? [] });
+    if (sw?.ok && sw.bytes) return { ...sw, method: "service-worker", legs };
+  } catch (e) {
+    legs.push({ leg: "service-worker", ok: false, reason: `message_failed_${String(e?.name ?? "error").toLowerCase()}` });
+  }
+
+  // (b) The page.
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
@@ -308,25 +332,64 @@ async function fetchPhotoBytes(tabId, photoUrl, skipped) {
       target: { tabId },
       files: ["photo.js"],
     });
-    return result ?? { ok: false, reason: "photo_script_returned_nothing" };
+    legs.push({
+      leg: "page-canvas",
+      ok: !!result?.ok,
+      reason: result?.reason ?? null,
+      trail: result?.trail ?? [],
+    });
+    if (result?.ok) return { ...result, method: "page-canvas", legs };
+    return { ok: false, reason: result?.reason ?? "photo_script_returned_nothing", legs };
   } catch (e) {
-    return { ok: false, reason: `injection_failed_${String(e?.name ?? "error").toLowerCase()}` };
+    const reason = `injection_failed_${String(e?.name ?? "error").toLowerCase()}`;
+    legs.push({ leg: "page-canvas", ok: false, reason });
+    return { ok: false, reason, legs };
   }
 }
 
-/** Upload bytes already read. Its own step, so a rejected picture costs no lead. */
-async function sendPhotoBytes(leadId, photo) {
-  if (!photo?.ok) return ` Photo not saved: ${String(photo?.reason ?? "unknown").replace(/_/g, " ")}.`;
-  if (!leadId) return " Photo not saved: the capture returned no lead id.";
+/**
+ * Upload bytes already retrieved, and report EVERY leg of it.
+ *
+ * Its own step, so a rejected picture costs no lead. The return value is
+ * structured rather than a sentence, because the sentence used to be the only
+ * record and it disappeared with the popup: `photo.ok: true` was stored in the
+ * lead's diagnostics while the upload that followed it failed silently.
+ */
+async function uploadAvatar(leadId, photo) {
+  if (!photo?.ok) {
+    return { attached: false, stage: "retrieval", reason: photo?.reason ?? "unknown" };
+  }
+  if (!leadId) return { attached: false, stage: "upload", reason: "capture_returned_no_lead_id" };
+
   const up = await chrome.runtime.sendMessage({
     type: "avatar",
     leadId,
     bytes: photo.bytes,
     mime: photo.mime,
   });
-  if (up?.ok) return ` Photo saved (${photo.width}×${photo.height}).`;
-  const reason = up?.data?.reason ?? up?.error ?? `status ${up?.status ?? "?"}`;
-  return ` Photo rejected by the server: ${String(reason).replace(/_/g, " ")}.`;
+  const status = up?.status ?? null;
+  if (up?.ok && up?.data?.ok !== false) {
+    return {
+      attached: true,
+      stage: "attached",
+      status,
+      // What the SERVER says it stored, not what we think we sent.
+      storedBytes: up?.data?.bytes ?? null,
+      storedPath: up?.data?.stored ? "yes" : null,
+    };
+  }
+  return {
+    attached: false,
+    stage: status ? "server" : "upload",
+    status,
+    reason: String(up?.data?.reason ?? up?.data?.error ?? up?.error ?? `status_${status ?? "none"}`),
+  };
+}
+
+/** The human sentence, derived from the structured result above. */
+function avatarNote(result) {
+  if (result.attached) return ` Photo saved (${result.storedBytes ?? "?"} bytes).`;
+  return ` Photo not saved at the ${result.stage} step: ${String(result.reason).replace(/_/g, " ")}.`;
 }
 
 /**
@@ -472,7 +535,7 @@ $("capture").addEventListener("click", async () => {
     // Sent with the capture so the LEAD can explain itself later, rather than
     // the explanation living in a popup that is about to close.
     msg("Reading the photo…");
-    const photoResult = await fetchPhotoBytes(tab.id, photoUrl, payload.skipped);
+    const photoResult = await retrieveAvatar(tab.id, photoUrl, payload.skipped);
 
     body.diagnostics = buildDiagnostics(payload, {
       /**
@@ -487,16 +550,49 @@ $("capture").addEventListener("click", async () => {
       contact: { found: !!contact, note: contactNote ?? null },
       // The bytes themselves never go into the diagnostics — only whether they
       // arrived, how, and why not.
-      photo: photoResult.ok
-        ? { ok: true, width: photoResult.width, height: photoResult.height, trail: photoResult.trail ?? [] }
-        : { ok: false, reason: photoResult.reason, trail: photoResult.trail ?? [] },
+      /**
+       * RETRIEVAL ONLY, and labelled as such.
+       *
+       * `photo.ok: true` used to be written here and meant "we got the bytes",
+       * while the upload that followed could fail silently — so a lead with no
+       * avatar carried diagnostics claiming the photo was fine. The upload legs
+       * are patched in below, after they have actually happened, and `ok` is
+       * reserved for the whole chain.
+       */
+      photo: {
+        retrieved: photoResult.ok,
+        method: photoResult.method ?? null,
+        reason: photoResult.ok ? null : photoResult.reason,
+        width: photoResult.width ?? null,
+        height: photoResult.height ?? null,
+        encodedBytes: photoResult.encodedBytes ?? null,
+        sourceBytes: photoResult.sourceBytes ?? null,
+        legs: photoResult.legs ?? [],
+        trail: photoResult.trail ?? [],
+        // Filled in after the upload; `ok` stays false until the lead has it.
+        ok: false,
+        upload: null,
+      },
     });
 
     const res = await chrome.runtime.sendMessage({ type: "capture", payload: body });
     if (res?.ok) {
       const what = res.data?.created ? "Captured as a new lead" : "Existing lead updated";
       // The bytes were read before the post; this only sends them.
-      const photoNote = await sendPhotoBytes(res.data?.leadId, photoResult);
+      /**
+       * The upload, then the diagnostics ABOUT the upload — in that order, so a
+       * lead can never carry a photo section that claims more than happened.
+       */
+      const upload = await uploadAvatar(res.data?.leadId, photoResult);
+      const photoNote = avatarNote(upload);
+      if (body.diagnostics?.photo) {
+        body.diagnostics.photo.upload = upload;
+        body.diagnostics.photo.ok = upload.attached;
+      }
+      // No second capture write. The SERVER patches the stored diagnostics from
+      // the avatar endpoint, which is the only place that knows how the store and
+      // the attach actually went — and re-posting a capture to carry a status
+      // would re-run the whole lead-write path for the sake of one field.
       // A capture that read nothing but the URL used to look identical to a
       // good one — that is how a lead called "unknown" with no data happened
       // without anybody noticing.

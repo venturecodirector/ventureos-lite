@@ -1,11 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Venture OS — Capture",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "description": "Capture the LinkedIn profile you are viewing into Venture OS. Reads a page when you ask it to \u2014 from the popup, or when Venture OS requests one. Never posts, messages or acts for you.",
   "minimum_chrome_version": "116",
 
   "permissions": ["activeTab", "scripting", "storage", "clipboardWrite", "downloads"],
+
+  "_comment_host_permissions": "media.licdn.com only, and only so the SERVICE WORKER can fetch avatar image bytes. A profile photo URL is signed and time-limited and refuses an unauthenticated server-side fetch, and an in-page fetch is blocked by CORS — the diagnostics recorded 'fetch:Failed to fetch' on every capture. A service-worker request carries no page origin, so it is the one context that can retrieve the bytes. Images only; nothing is read from any page here.",
+  "host_permissions": ["https://media.licdn.com/*"],
 
   "optional_host_permissions": ["https://*/*"],
 

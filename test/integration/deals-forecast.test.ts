@@ -212,8 +212,18 @@ describe("quarterly stage-probability calibration", () => {
 
   it("costs no Claude budget", async () => {
     await closeDeals(24, 6);
-    const before = await prismaUnsafe.claudeUsage.count();
+    /**
+     * Scoped to THIS workspace, not counted globally.
+     *
+     * A global count races every other test file: vitest runs files in parallel
+     * against one database, so a Claude call made elsewhere between the two counts
+     * failed this assertion with an off-by-one that had nothing to do with the
+     * calibration job. What the test means is "the calibration spends no budget",
+     * and that is a per-workspace claim.
+     */
+    const where = { workspaceId: { in: [wsA, wsB] } };
+    const before = await prismaUnsafe.claudeUsage.count({ where });
     await processStageProbabilityCalibration();
-    expect(await prismaUnsafe.claudeUsage.count()).toBe(before);
+    expect(await prismaUnsafe.claudeUsage.count({ where })).toBe(before);
   });
 });
