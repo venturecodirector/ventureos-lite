@@ -33,6 +33,7 @@ import { processColdSends } from "../modules/campaigns/jobs";
 import { processInvoicePolls } from "../modules/invoicing/jobs";
 import { processSignalEngine, processDailyInsight } from "../modules/signal/jobs";
 import { processStageProbabilityCalibration } from "../modules/deals/jobs";
+import { processWorkflowOverdueSweep } from "../modules/workflow/triggers";
 import { processKeywordTracking } from "../modules/serp/jobs";
 import { processLogUpload, processLogRetention } from "../modules/logs/jobs";
 import { processMailSyncSweep } from "../modules/email/jobs";
@@ -175,6 +176,10 @@ async function main(): Promise<void> {
         const n = await processQuarterlyWinLoss();
         // eslint-disable-next-line no-console
         console.log(`[worker] win/loss digest sent for ${n} workspace(s)`);
+      } else if (job.name === "workflow-overdue") {
+        const n = await processWorkflowOverdueSweep();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] workflow overdue sweep fired ${n} rule(s)`);
       } else if (job.name === "quarterly-stage-probability") {
         const n = await processStageProbabilityCalibration();
         // eslint-disable-next-line no-console
@@ -278,6 +283,14 @@ async function main(): Promise<void> {
     "quarterly-winloss",
     {},
     { repeat: { pattern: "0 8 1 1,4,7,10 *" }, jobId: "quarterly-winloss" },
+  );
+  // Workflow "task overdue by N days" — 07:30 daily. Once a day rather than on
+  // the minute the clock passes: a rule that fired at 17:00:01 is nobody's idea
+  // of "overdue by two days" (P7/5).
+  await wakeupsQueue().add(
+    "workflow-overdue",
+    {},
+    { repeat: { pattern: "30 7 * * *" }, jobId: "workflow-overdue" },
   );
   // Quarterly stage-probability recalibration — 08:30 on the 1st of the
   // quarter, half an hour after the win/loss digest so the two do not compete

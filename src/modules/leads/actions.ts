@@ -25,6 +25,7 @@ import {
   STAGE_LABELS,
 } from "../pipeline/transitions";
 import { recordUndo, type UndoToken } from "../undo/store";
+import { onLeadCreated, onLeadStageChanged } from "../workflow/triggers";
 import { wakeUpDate } from "../pipeline/schedule";
 import { scheduleFollowups, cancelFollowups } from "../pipeline/jobs";
 import { canQualify, type Qualification } from "../inbox/qualification";
@@ -149,6 +150,7 @@ export async function createLeadManual(raw: unknown): Promise<
       notes: input.notes,
     },
   });
+  await onLeadCreated(workspaceId, lead.id);
   revalidatePath("/leads");
   revalidatePath("/referrers");
   return { ok: true, leadId: lead.id };
@@ -175,6 +177,7 @@ export async function captureLinkedin(raw: unknown): Promise<{ leadId: string }>
       notes: input.pageText,
     },
   });
+  await onLeadCreated(workspaceId, lead.id);
   revalidatePath("/leads");
   return { leadId: lead.id };
 }
@@ -393,6 +396,9 @@ export async function moveLeadStage(
     // The one permitted non-manual Claude trigger (spec §4.8): entering
     // Meeting-booked queues the brief, bounded to one call per booking.
     if (toStage === "MEETING_BOOKED") await enqueueBriefForLead(workspaceId, leadId);
+    // Workflow rules last, and best-effort: an automation must never be the
+    // reason a stage move fails (P7/5).
+    await onLeadStageChanged(workspaceId, leadId);
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[pipeline] stage automation failed", e);

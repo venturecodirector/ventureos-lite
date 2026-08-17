@@ -25,7 +25,13 @@ import { allMembers, leadAndOwners, leadRecipients, workspaceOwners } from "./re
  * stay free of network I/O and testable. Push failure is swallowed separately
  * from in-app failure: a dead phone endpoint must not lose the bell entry.
  */
-async function safeDeliver(input: DeliverInput): Promise<void> {
+/**
+ * Exported for the workflow engine (v2 P7/5), which raises a notification for
+ * an event this module has no opinion about. Everything else in here goes
+ * through a named helper below, and should keep doing so — a named helper is
+ * where the copy and the dedupe rule for a notification type live.
+ */
+export async function safeDeliver(input: DeliverInput): Promise<void> {
   let pushUserIds: string[] = [];
   try {
     ({ pushUserIds } = await deliverNotification(input));

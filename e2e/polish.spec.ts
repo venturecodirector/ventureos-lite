@@ -181,3 +181,63 @@ test("empty screens say what the module is for", async ({ page }) => {
     await expect(referrers).toContainText("no referrers yet");
   }
 });
+
+test("a workflow rule creates a draft a human must send, and it appears in the log", async ({
+  page,
+}) => {
+  const name = `E2E rule ${tag()}`;
+  await page.goto("/settings");
+
+  const panel = page.getByTestId("settings-workflows");
+  await expect(panel).toBeVisible();
+  // The copy states the guarantee where somebody chooses the action.
+  await expect(panel).toContainText("Email actions only ever prepare a draft");
+
+  await panel.getByTestId("rule-new").click();
+  const editor = page.getByTestId("rule-editor");
+  await editor.getByTestId("rule-name").fill(name);
+  await editor.getByTestId("rule-trigger").selectOption("lead_stage_changed");
+  await editor.getByLabel("Stage").selectOption("CONTACTED");
+  await editor.getByTestId("action-type").selectOption("draft_email");
+  await expect(editor).toContainText("It is never sent");
+  await editor.getByPlaceholder("Subject").fill("Following up");
+  await editor.getByPlaceholder("Draft body").fill("Hi — following up on our chat.");
+  await editor.getByTestId("rule-save").click();
+  await expect(page.getByTestId("rule-list")).toContainText(name);
+
+  // Now trigger it: a lead at or above the gate, moved to Contacted.
+  const suffix = tag();
+  const leadName = `Rule lead ${suffix}`;
+  await createLead(page, leadName, `Rule Co ${suffix}`);
+  const row = page.locator("tr", { hasText: leadName });
+  await row.getByRole("button", { name: "Override" }).click();
+  await page.getByRole("button", { name: "4", exact: true }).click();
+  await page.getByPlaceholder("Reason (required)").fill("e2e workflow");
+  await page.getByRole("button", { name: "Save override" }).click();
+  await row.getByRole("button", { name: /Contacted/ }).click();
+  await expect(page.locator("tr", { hasText: leadName })).toContainText("contacted");
+
+  // The run log records it.
+  await page.goto("/settings");
+  const rule = page
+    .getByTestId("rule-list")
+    .locator("li")
+    .filter({ hasText: name });
+  await rule.getByTestId("rule-log-toggle").click();
+  await expect(rule.getByTestId("rule-log")).toContainText("Prepared an email draft");
+
+  // And the draft is on the lead, unsent.
+  await page.goto("/leads");
+  await page.locator("tr", { hasText: leadName }).getByTestId("lead-open-detail").click();
+  await expect(page.getByTestId("lead-timeline")).toContainText("Following up");
+
+  // Clean up so the rule does not fire for every later spec.
+  await page.goto("/settings");
+  await page
+    .getByTestId("rule-list")
+    .locator("li")
+    .filter({ hasText: name })
+    .getByRole("button", { name: "Delete" })
+    .click();
+  await expect(page.getByTestId("rule-list").filter({ hasText: name })).toHaveCount(0);
+});

@@ -16,6 +16,7 @@ import { resolveSendingIdentity } from "@/modules/mail/identity";
 import { computeLineTotal, formatHuf, type QuoteItem } from "./quote-math";
 import { getAcceptanceProvider } from "./acceptance-provider";
 import { notifyQuoteAccepted } from "../notifications/notify";
+import { onQuoteAccepted } from "../workflow/triggers";
 import { brandFrom, type WorkspaceBrand } from "@/modules/workspaces/brand";
 
 export interface PublicQuote {
@@ -231,6 +232,9 @@ export async function acceptQuote(
   } catch {
     /* notification best-effort */
   }
+  // Workflow rules (P7/5). Best-effort, and after the acceptance is recorded:
+  // an automation must never be the reason a client's assent fails to save.
+  await onQuoteAccepted(doc.workspaceId, doc.leadId);
 
   revalidatePath("/documents");
   revalidatePath("/pipeline");

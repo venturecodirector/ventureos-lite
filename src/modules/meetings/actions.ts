@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prismaUnsafe, getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { moveLeadStage } from "@/modules/leads/actions";
+import { onMeetingOutcome } from "../workflow/triggers";
 import { getCalendarProvider, type CalendarCredentials } from "./calendar";
 import { getWriteAccount, saveRefreshedTokens } from "./credentials";
 import { calendarFailureActivity, type BriefStatus } from "./logic";
@@ -233,6 +234,8 @@ export async function logMeetingOutcome(
     // The handoff point — advance to Handed off.
     await moveLeadStage(meeting.leadId, "HANDED_OFF");
   }
+  // Workflow rules (P7/5), best-effort and last.
+  await onMeetingOutcome(workspaceId, meeting.leadId, input.result);
 
   revalidatePath("/meetings");
   revalidatePath("/pipeline");

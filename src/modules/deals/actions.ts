@@ -5,6 +5,7 @@ import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { workspaceMembers } from "@/modules/leads/table";
 import { DEFAULT_PIPELINES } from "./pipelines";
+import { onDealStageChanged } from "@/modules/workflow/triggers";
 import {
   createDealIn,
   convertLeadIn,
@@ -103,6 +104,7 @@ export async function moveDealStage(
   const { workspaceId, userId } = await getActiveContext();
   const res = await moveStageIn(workspaceId, userId, dealId, stageId, opts);
   if (res.ok) {
+    await onDealStageChanged(workspaceId, dealId);
     revalidatePath("/deals");
     revalidatePath("/analytics");
   }

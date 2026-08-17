@@ -1797,6 +1797,76 @@ model PushSubscription {
   @@map("push_subscriptions")
 }
 
+/// A WHEN / IF / THEN rule (playbook-v2 P7/5).
+///
+/// WORKFLOW-LITE, and the "lite" is load-bearing. Twenty rules, one trigger
+/// each, a flat condition list and a short action list — deliberately not a
+/// graph, because a workflow engine you can draw loops in is a workflow engine
+/// somebody will draw a loop in.
+///
+/// THE ONE RULE THAT CANNOT BEND (CLAUDE.md hard rule #2): the email action
+/// produces a DRAFT a human must open, read and send. There is no configuration
+/// that makes it send, and there is no code path that would.
+model WorkflowRule {
+  id            String   @id @default(cuid())
+  workspaceId   String   @map("workspace_id")
+  name          String
+  /// lead_stage_changed | deal_stage_changed | quote_accepted |
+  /// meeting_outcome_logged | task_overdue | lead_created
+  trigger       String
+  /// Trigger-specific settings, e.g. { toStage } or { days } or { source }.
+  triggerConfig Json     @default("{}") @map("trigger_config")
+  /// [{ field, operator, value }] — ANDed. Custom fields use `cf:<key>`.
+  conditions    Json     @default("[]")
+  /// [{ type, ...config }] in order.
+  actions       Json     @default("[]")
+  /// The kill switch. Off means the rule is kept and does nothing.
+  enabled       Boolean  @default(true)
+  /// Bumped on every edit, and stamped onto each run — so a run log entry says
+  /// which VERSION of the rule produced it, and a rule someone rewrote last
+  /// week cannot be read as an explanation of what happened the week before.
+  version       Int      @default(1)
+  createdBy     String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  runs WorkflowRun[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, enabled])
+  @@map("workflow_rules")
+}
+
+/// What fired, on what, and what happened (playbook-v2 P7/5).
+///
+/// Every evaluation is logged, including the ones that matched nothing —
+/// "why did my rule not fire?" is the question an execution log exists to
+/// answer, and a log that only records successes cannot answer it.
+model WorkflowRun {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  ruleId      String   @map("rule_id")
+  ruleVersion Int      @map("rule_version")
+  trigger     String
+  entityType  String?  @map("entity_type")
+  entityId    String?  @map("entity_id")
+  /// matched | no_match | skipped | failed
+  status      String
+  /// One line a person can read: what it did, or why it did not.
+  detail      String   @db.Text
+  /// Per-action outcomes, for the detail view.
+  results     Json     @default("[]")
+  /// How deep in a chain of rule-triggered-rule this run sat. Cycle protection.
+  depth       Int      @default(0)
+  at          DateTime @default(now())
+
+  rule WorkflowRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, at])
+  @@index([ruleId, at])
+  @@map("workflow_runs")
+}
+
 /// One undoable action, and the inverse that undoes it (playbook-v2 P7/2).
 ///
 /// COMMAND PATTERN, SERVER SIDE. The playbook is explicit that undo must not be

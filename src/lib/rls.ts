@@ -79,6 +79,8 @@ const BUSINESS_TABLES = [
   "api_usage",
   "capture_tokens",
   "undo_entries",
+  "workflow_rules",
+  "workflow_runs",
 ];
 
 /**
