@@ -40,7 +40,9 @@ Venture OS Lite is the single internal workspace for Venture CO Group's business
 | **Admin** | Everything within assigned workspace(s) |
 | **BDR** (Fanni) | Leads, prospecting, audits, outreach, inbox, meetings, content, analytics — within assigned workspace(s) |
 
-**Granular grants** on top of roles, assignable per user per workspace: `documents.quote.create`, `documents.contract.create`, `documents.certificate.create`, `documents.send`, `templates.edit`, `signal_engine.approve`, `exports.run`. **Default: all `documents.*` and `templates.*` grants belong to Owner only; Fanni gets none until explicitly granted.** Every grant change is audit-logged.
+**Granular grants** on top of roles, assignable per user per workspace: `documents.quote.create`, `documents.contract.create`, `documents.certificate.create`, `documents.send`, `templates.edit`, `signal_engine.approve`, `exports.run`, **`fields.manage`** (v2 — Owner-defined fields), **`data.merge`** (v2 — merging two companies or two leads). **Default: all `documents.*` and `templates.*` grants belong to Owner only; Fanni gets none until explicitly granted.** Every grant change is audit-logged.
+
+**Owner-only actions** that are not grants because they are not delegable in practice: workflow rules (standing permission for the system to act on its own), the forecast's commit threshold, deleting a lead, and rolling an import back — the last two are the same capability wearing two hats, so they answer to the same rule.
 
 ## 4. Modules
 
@@ -174,8 +176,44 @@ Prospector finds businesses whose owners answer phones, not LinkedIn.
 - Human confirmation is mandatory before submission (accounting is consequential); the returned invoice number and PDF link attach to the document chain; payment status polls back to the pipeline card.
 - Per-workspace Agent key; failures land in Today Queue. Chain complete: *prospect found → audited → contacted → met → quoted → accepted → contracted → certified → invoiced* — one system, end to end.
 
+### 4.25 Deals & Pipelines — v2 (P4)
+- **A Lead is a person; a Deal is a piece of work with money attached.** The boundary: a lead owns the pre-deal journey (Researched → Replied), a deal owns everything from Qualified onward. The lead board labels its columns accordingly and links across; a lead that has crossed over wears a deal chip.
+- **Pipelines and stages are data, per workspace.** Seeded with *Web projects* (default) and *Grants*, which exist because they close on different clocks — an application sits with the awarding body for weeks and is not rotting while it does. Each stage carries a default probability, a rotting threshold and a kind (`open` / `won` / `lost`); dragging onto a terminal stage closes the deal, and status follows the board.
+- **Deal cards** show value (integer HUF), probability (marked when inherited from the stage), expected close, a rotting flag, the document chain and the invoice status. Value and close date edit in place. Columns cap at 25 with "load more".
+- **Quotes, contracts and certificates chain onto the DEAL** once one exists; a contract and a certificate inherit their parent's deal.
+- **Weighted forecast** (Analytics → Forecast): Σ value × probability by expected-close month, per pipeline and overall, split commit/upside at a configurable threshold and compared against the monthly revenue target. Closed deals are excluded — a forecast that grows when something closes is not a forecast. Deals with no close date are bucketed as *unscheduled* rather than dropped.
+- **Quarterly recalibration**: a deterministic job compares each open stage's configured probability against its actual win rate and raises a Signal Engine proposal at n≥20 and a gap of ≥10 points. No Claude call; nothing self-modifies.
+- Migration record: `docs/migrations/p4-deals.md`.
+
+### 4.26 Custom Fields — v2 (P5/1)
+- Owner-defined fields on **Lead, Company and Deal**, per workspace: text, number, date, single-select, multi-select, checkbox, URL, with a required flag and an archived flag.
+- A **definition registry plus one typed JSON column per entity**, not a column per field — adding a field must not be a migration, and the physical schema stays identical across tenants so the tenant guard and RLS keep meaning what they say. Validation is a zod schema built from the definitions, server-side.
+- **Type and key are immutable; archive is the only removal.** Changing either would reinterpret every stored value, and deleting a definition would strand values nothing can read or erase.
+- Fields appear on the record, as optional table columns, in the filter builder, in CSV import and export, and in search where the type is textual. They join the GDPR erasure cascade, and anonymization clears the whole object.
+
+### 4.27 Duplicate Merge — v2 (P5/2)
+- Candidates by shared tax id (certain), shared domain (strong), or fuzzy-same name (suggestive), each pair reported once under its strongest reason. Lead detection is narrower: identical email, or a fuzzy-same name *at the same company*.
+- Merge shows a field-by-field comparison with smart defaults (a value beats an absence; between two values the newer record's wins), then re-links every activity, message, call, meeting, document, email thread, task, deal, outcome, subscription and learned address mapping.
+- The loser is **tombstoned, never deleted**, so a bookmark or an external system's stored id still resolves — through a chain, if it has been merged twice. Tombstones drop out of tables, boards and search.
+- **Reversible for 30 days**, restoring by the ids the merge actually moved rather than by whatever now points at the survivor. Grant-gated on `data.merge`, audit-logged both ways.
+
+### 4.28 CSV Import v2 — v2 (P5/3)
+- **Saved mapping templates** per source, reusable and updated in place when re-saved under the same name.
+- **A validation preview with a reason per row** — bad email, bad URL, nothing identifying, duplicated in the file, already here, a custom-field value the definition refuses — and a per-row skip. Skip-or-update decides what a match with an existing lead means.
+- Every import is a tracked **ImportBatch**; created and updated rows carry the batch id, and the batch stores what each row looked like before and after.
+- **Rollback within 7 days** deletes what the import created and reverts what it updated — and REFUSES, naming each row, when a person has touched it since. A refused rollback is a no-op, never a partial one. Owner-only, like the single-lead delete.
+
+### 4.29 Automation (workflow-lite) — v2 (P7/5)
+- **WHEN** a trigger fires — a lead or deal reaching a stage, a quote accepted, a meeting outcome logged, a task overdue by N days, a lead arriving from a source — **IF** a flat list of field comparisons all hold (custom fields included) — **THEN** run up to five actions in order.
+- Actions: create a task, **prepare an email DRAFT**, add or remove a signal tag, move to Not now, notify a user.
+- **The email action drafts and stops.** There is no send path from the engine (CLAUDE.md hard rule #2); a person opens the draft, reads it and sends it.
+- Twenty rules per workspace, Owner-gated, each with a kill switch and a version stamped onto every run. **Cycle protection is two rules**: a rule cannot re-trigger itself, and no more than three chained rule executions run per originating event — the second is what stops a mutually-triggering pair.
+- The execution log records **every evaluation, including the no-matches**, because "why did my rule not fire?" is what a run log is for.
+
 ### 4.24 Settings / Admin
 ICP & score weights, gate threshold, targets, frame library, template management, **workspace management (§7), user & grant management,** Mailgun config (transactional + cold domains), **cold-email compliance gate & counsel sign-off record,** booking-page config, Számlázz.hu Agent keys, registry API keys, API keys, **Claude budget caps,** data retention, audit log, feature flags.
+
+Added in v2: **Fields** (§4.26), **Data quality** — duplicate candidates, merge history and import batches (§4.27, §4.28), **Automation** (§4.29), **Branding** (white-label letterhead), **Security** — active sessions with per-device revoke, and **Notifications** — the per-type channel matrix.
 
 ## 5. Claude API usage (frugal by design — see §6)
 
@@ -190,6 +228,8 @@ ICP & score weights, gate threshold, targets, frame library, template management
 | Signal Engine | Sonnet 4.6 | Weekly cron | — |
 | Daily insight | Haiku 4.5 | Daily cron | — |
 | Document scope paragraph | Haiku 4.5 | Manual, optional | — |
+
+**v2 added no Claude call sites.** Deals, custom fields, merge, import v2, rate limiting, performance, inline editing, undo, the command palette, onboarding and workflow-lite are all deterministic. The quarterly stage-probability recalibration in particular is arithmetic on purpose: asking a model to compute a win rate is how a probability becomes a guess.
 
 All calls server-side; prompt registry versioned in repo; JSON-schema-validated structured outputs with repair-retry; **Anthropic prompt caching** on the long static system prompts (ICP definition, brand voice) to cut input costs further. Verify model names/pricing at docs.claude.com at build time.
 
@@ -239,6 +279,41 @@ AuditShare(id, audit_id, slug, expires_at, first_opened_at, open_count)
 Invoice(id, workspace_id, document_id, szamlazz_id, number, pdf_url,
         status[prepared|submitted|issued|paid|failed], at)
 ClaudeUsage(id, workspace_id, use_case, model, tokens_in, tokens_out, cost, at)
+
+-- v2 (playbook-v2 P2-P7)
+MailAccount / EmailThread / EmailMessage / AddressLink        -- two-way email sync (P2)
+Task(id, workspace_id, type, title, due_at, entity_type,      -- polymorphic link (P3/3)
+     entity_id, assignee_id, done_at, source)
+SavedView(id, workspace_id, entity, owner_id, shared,         -- filters + columns + sort (P3/2)
+          filters, columns, sort, position)
+Notification / NotificationPreference / PushSubscription      -- notification centre (P6/1)
+Pipeline(id, workspace_id, key, name, position, is_default)   -- deals layer (P4)
+DealStage(id, pipeline_id, key, name, position, probability,
+          rotting_days, kind[open|won|lost])
+Deal(id, workspace_id, lead_id, company_id, title, value,     -- integer HUF
+     currency, expected_close_at, probability, pipeline_id,
+     stage_id, stage_entered_at, owner_id,
+     status[open|won|lost], closed_at, lost_reason, source)
+  -- Document, Subscription and DealOutcome gain deal_id
+CustomFieldDef(id, workspace_id, entity[lead|company|deal],   -- Owner-defined fields (P5/1)
+               key, label, type, options, required, archived, position)
+  -- Lead, Company and Deal gain custom_fields (typed JSON)
+MergeRecord(id, workspace_id, entity, survivor_id, loser_id,  -- 30-day undo (P5/2)
+            snapshot, choices, revert_until, reverted_at)
+  -- Lead and Company gain merged_into_id + merged_at (tombstones)
+ImportTemplate(id, workspace_id, name, source, mapping)       -- CSV import v2 (P5/3)
+ImportBatch(id, workspace_id, filename, template_id, status,
+            created_count, updated_count, skipped_count,
+            records, rollback_until, rolled_back_at)
+  -- Lead and Company gain import_batch_id
+UndoEntry(id, workspace_id, user_id, kind, label, inverse,    -- server-side undo (P7/2)
+          expected, undone_at, expires_at)
+WorkflowRule(id, workspace_id, name, trigger, trigger_config, -- workflow-lite (P7/5)
+             conditions, actions, enabled, version)
+WorkflowRun(id, workspace_id, rule_id, rule_version, trigger,
+            entity_type, entity_id, status, detail, results, depth, at)
+  -- Workspace gains deals_config; User gains lock_count, tour_seen_at,
+  -- checklist_hidden_at
 -- v1.0 entities (Company, Lead, Activity, Message, Frame, Meeting, Insight,
 -- Target, User, AuditLog) all gain workspace_id.
 ```

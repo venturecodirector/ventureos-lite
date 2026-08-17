@@ -504,6 +504,105 @@ want a different location, export `FILES_DIR` before running and it is honoured.
 
 ---
 
+## 9. What v2 added, in one place
+
+The v2 release (playbook-v2 P4–P7) added five Owner-facing things. Each has its
+own section above where it needed one; this is the map.
+
+### Deals, pipelines and the forecast
+
+A **lead** is a person you are trying to reach. A **deal** is a piece of work
+with money attached. Everything up to Replied is the lead board; from Qualified
+onward it is the deals board, and the two link across so nobody has to remember
+which one a name is on.
+
+Pipelines are **yours to shape**: *Web projects* and *Grants* come seeded because
+they close on completely different clocks, and you can rename, re-weight and
+re-order the stages of either. Each stage has a default probability (what the
+forecast weighs a deal there at) and a rotting threshold (how long a card may sit
+before it turns amber).
+
+**Analytics → Forecast** multiplies value by probability and groups by expected
+close month, split into *commit* (at or above your threshold) and *upside*.
+Closed deals are excluded on purpose — a forecast that grows every time
+something closes is a scoreboard, not a forecast.
+
+Once a quarter the system compares each stage's configured probability against
+what actually closed and, if the gap is real and the sample is at least twenty,
+raises a proposal in the approval queue. It never changes a number on its own.
+
+### Your own fields
+
+**Settings → Fields.** Add fields to leads, companies and deals: text, number,
+date, single or multi select, checkbox, URL. They show on the record, as
+optional table columns, in the filter builder, in CSV import and export, and in
+search where they hold words.
+
+Two things the screen deliberately will not let you do, both for the same
+reason — they would silently change what your existing data MEANS:
+
+- **change a field's type.** A number turned into a dropdown leaves every value
+  already stored invalid, and nothing could tell you which records had stopped
+  making sense. Archive it and add a new one.
+- **delete a field.** Archiving keeps the values readable (and erasable when
+  somebody asks); deleting would strand them.
+
+### Data quality: duplicates and imports
+
+**Settings → Data quality** lists records that look like the same company or the
+same person — a shared adószám is certain, a shared domain is strong, a similar
+name is a suggestion — and every import that has run.
+
+**Merging** shows you both records field by field and lets you pick a side for
+each before anything moves. The losing record is kept as a tombstone, so old
+links still work, and the whole merge can be undone for **30 days**.
+
+**Imports** are undoable for **7 days**. The rollback removes what the import
+created and puts back what it changed — and it will REFUSE, naming the records,
+if somebody has worked on them since. That refusal is the feature: a rollback
+that quietly discards a colleague's correction is a second import, not an undo.
+
+Rolling an import back deletes leads, so it is Owner-only, the same rule as
+deleting a lead by hand.
+
+### Automation
+
+**Settings → Automation.** Rules of the form *when* something happens, *if* it
+looks a certain way, *then* do this. Twenty per workspace, Owner-only, each with
+an on/off switch and a run log.
+
+The one thing worth knowing before writing a rule: **the email action prepares a
+DRAFT and stops.** It writes the message onto the lead and waits for a person to
+open it, read it and send it. There is no setting that makes it send, and there
+is no code path that would — that guarantee is the same one that governs every
+other message this system touches.
+
+The run log records **every** evaluation, including the times a rule considered
+an event and decided not to act. That is deliberate: the question people
+actually ask is "why did my rule *not* fire?", and a log of successes cannot
+answer it.
+
+A rule cannot trigger itself, and no more than three rules run in a chain from
+one original event. Two rules that trigger each other are stopped by the second
+limit, not the first.
+
+### Sessions, and getting signed out less
+
+A session now lasts **30 days**, or **7 days without use** — whichever comes
+first. The old behaviour signed you out mid-week; the idle limit is the part
+that actually protects a laptop left in a drawer.
+
+**Settings → security** lists your signed-in devices by something you can
+recognise ("Chrome on macOS"), highlights the one you are using, and lets you
+revoke any of the others individually. A sign-in on your account raises a
+notification to you and to nobody else.
+
+Five failed sign-ins lock the account, and each consecutive lock waits longer —
+fifteen minutes, then thirty, an hour, four hours, a day — resetting the moment
+somebody gets in. Every lockout is on the audit log.
+
+---
+
 ## Quick reference
 
 | Task | Where |
@@ -515,6 +614,18 @@ want a different location, export `FILES_DIR` before running and it is honoured.
 | New workspace | Settings → workspaces → create workspace |
 | Edit a template | Templates → pick type + language → save → activate |
 | Change AI cap | Settings → AI budget |
+| Add your own field | Settings → Fields |
+| Merge two duplicates | Settings → Data quality → Compare… |
+| Undo a merge (30 days) | Settings → Data quality → recent merges → Undo |
+| Roll an import back (7 days) | Settings → Data quality → imports → Roll back |
+| Write an automation rule | Settings → Automation → New rule |
+| See why a rule did not fire | Settings → Automation → show run log |
+| Revoke one device | Settings → security → Revoke |
+| Convert a lead to a deal | open the lead → Deals → Convert to deal |
+| Change a deal's value | Deals → click the amount on the card |
+| Read the forecast | Analytics → Forecast |
+| Set the commit threshold | Analytics → Forecast → Commit threshold |
+| Everything by keyboard | ⌘K, or `?` for the full map |
 | See AI spend | Analytics → AI usage |
 | Draft outreach | Outreach → pick a lead → ✦ Draft with Claude |
 | Erase a lead | Settings → Data & privacy → Erase lead data |
@@ -533,6 +644,13 @@ These are permanently recorded with actor and timestamp:
 - lead erasures
 - DRAFT watermark removal (document finalization)
 - invoice submissions to Számlázz.hu
-- password changes, 2FA enable/disable, and bulk session revocations
+- password changes, 2FA enable/disable, and session revocations (bulk and single)
+- account lockouts after repeated failed sign-ins
+- adding, editing and archiving a custom field
+- merging two records, and undoing a merge
+- running an import, and rolling one back
+- creating, editing, enabling, disabling and deleting an automation rule
+- every undo, alongside the action it reversed
+- changing the forecast's commit threshold
 
 The audit log cannot be edited from the UI.

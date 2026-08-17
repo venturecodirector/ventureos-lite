@@ -235,7 +235,7 @@ export function SettingsDataQuality({ view }: { view: DataQualityView }) {
                 </span>
                 {b.rolledBackAt ? (
                   <span className="text-[11px] text-muted">rolled back</span>
-                ) : b.canRollback ? (
+                ) : b.canRollback && view.canRollback ? (
                   <button
                     type="button"
                     className={BTN}

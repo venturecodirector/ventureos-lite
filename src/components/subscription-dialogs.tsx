@@ -39,17 +39,26 @@ export function AddSubscriptionDialog({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // The list is capped server-side, so it has to be searchable: a workspace
+  // with hundreds of companies otherwise cannot reach the ones after the cap.
+  const [companyQuery, setCompanyQuery] = useState("");
   useEffect(() => {
     let active = true;
-    listSubscribableCompanies().then((list) => {
-      if (!active) return;
-      setCompanies(list);
-      if (list[0]) setCompanyId(list[0].id);
-    });
+    const timer = setTimeout(() => {
+      listSubscribableCompanies(companyQuery).then((list) => {
+        if (!active) return;
+        setCompanies(list);
+        // Keep a chosen company selected while the search narrows around it.
+        setCompanyId((current) =>
+          current && list.some((c) => c.id === current) ? current : (list[0]?.id ?? ""),
+        );
+      });
+    }, 200);
     return () => {
       active = false;
+      clearTimeout(timer);
     };
-  }, []);
+  }, [companyQuery]);
 
   async function save() {
     setBusy(true);
@@ -89,6 +98,13 @@ export function AddSubscriptionDialog({ onClose }: { onClose: () => void }) {
 
       <label className={label}>
         Client
+        <input
+          value={companyQuery}
+          onChange={(e) => setCompanyQuery(e.target.value)}
+          placeholder="Search companies…"
+          data-testid="sub-company-search"
+          className={`${input} mt-1`}
+        />
         <select
           value={companyId}
           onChange={(e) => setCompanyId(e.target.value)}
@@ -96,6 +112,7 @@ export function AddSubscriptionDialog({ onClose }: { onClose: () => void }) {
           className={`${input} mt-1`}
         >
           {companies === null && <option>Loading…</option>}
+          {companies?.length === 0 && <option value="">no company matches that</option>}
           {companies?.map((c) => (
             <option key={c.id} value={c.id}>
               {c.isClient ? "★ " : ""}

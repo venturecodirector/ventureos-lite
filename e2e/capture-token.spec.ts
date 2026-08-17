@@ -5,9 +5,13 @@ import { test, expect } from "@playwright/test";
  * only a hash is stored.
  */
 test("an owner can issue and revoke a capture token", async ({ page }) => {
+  // A LABEL UNIQUE TO THIS RUN. A fixed one accumulated across runs — the
+  // revoke assertion then matched two rows and failed in strict mode, which is
+  // the test's own leftovers rather than the product.
+  const label = `e2e laptop ${Math.random().toString(36).slice(2, 8)}`;
   await page.goto("/settings");
 
-  await page.getByPlaceholder(/Which browser/i).fill("e2e laptop");
+  await page.getByPlaceholder(/Which browser/i).fill(label);
   await page.getByTestId("issue-capture-token").click();
 
   const shown = page.getByTestId("issued-token");
@@ -15,8 +19,9 @@ test("an owner can issue and revoke a capture token", async ({ page }) => {
   await expect(shown).toContainText(/vos_cap_/);
 
   // It appears in the list, and can be revoked again.
-  await expect(page.getByText("e2e laptop")).toBeVisible();
+  const row = page.locator("li", { hasText: label });
+  await expect(row).toBeVisible();
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Revoke" }).first().click();
-  await expect(page.getByText("e2e laptop")).toBeHidden({ timeout: 10_000 });
+  await row.getByRole("button", { name: "Revoke" }).click();
+  await expect(page.getByText(label)).toHaveCount(0, { timeout: 10_000 });
 });

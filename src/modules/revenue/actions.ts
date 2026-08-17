@@ -93,12 +93,34 @@ export interface CompanyOption {
 }
 
 /** Companies a subscription can be attached to — clients first, then the rest. */
-export async function listSubscribableCompanies(): Promise<CompanyOption[]> {
+/**
+ * Companies a subscription can be attached to.
+ *
+ * SEARCHABLE, because the list is capped. It used to take the first 500 by
+ * name and nothing else: a workspace with more than that silently could not
+ * subscribe the ones after "M", with no indication that anything was missing.
+ * A cap on a dropdown is fine; a cap you cannot search past is a company you
+ * cannot bill.
+ *
+ * Tombstoned companies are excluded — a merged-away record is not something to
+ * start charging (P5/2).
+ */
+export async function listSubscribableCompanies(query?: string): Promise<CompanyOption[]> {
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
+  const q = (query ?? "").trim();
+  // Postgres `contains` is case-sensitive and needs the flag; MySQL rejects it.
+  const insensitive = (process.env.DB_FLAVOR ?? "postgres") === "postgres";
+
   const companies = await db.company.findMany({
+    where: {
+      mergedIntoId: null,
+      ...(q
+        ? { name: insensitive ? { contains: q, mode: "insensitive" } : { contains: q } }
+        : {}),
+    },
     orderBy: { name: "asc" },
-    take: 500,
+    take: 200,
     select: { id: true, name: true, clientStatus: true },
   });
   return companies

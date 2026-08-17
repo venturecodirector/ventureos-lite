@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
+import { NOTIFICATION_TYPES } from "../src/modules/notifications/types";
 
 /**
  * The notification bell and centre (playbook-v2 P6/1).
@@ -152,8 +153,11 @@ test("the preference matrix lists every type this role may receive", async ({ pa
   await expect(panel).toBeVisible();
 
   const rows = page.getByTestId("preference-row");
-  // The seeded runner is an Owner, so the Owner-only type is present too.
-  await expect(rows).toHaveCount(10);
+  // Derived from the catalogue rather than hardcoded: the count changed the
+  // moment P6/2 added the new-sign-in type, and a literal here only ever
+  // catches the person who added a type, never a bug.
+  // The seeded runner is an Owner, so the Owner-only types are present too.
+  await expect(rows).toHaveCount(NOTIFICATION_TYPES.length);
   await expect(panel).toContainText("Signal Engine proposal");
   await expect(panel).toContainText("Callback due");
 });

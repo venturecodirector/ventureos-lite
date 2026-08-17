@@ -440,6 +440,14 @@ test("a subscription can be added, and it promotes the company to client", async
 
   await page.goto("/analytics?tab=revenue");
   await page.getByTestId("add-subscription").click();
+  // The picker is capped and searchable (the seeded workspace has hundreds of
+  // companies), so narrow to this one before selecting it.
+  const target = await prisma.company.findUniqueOrThrow({ where: { id: companyId } });
+  await page.getByTestId("sub-company-search").fill(target.name);
+  await expect(page.getByTestId("sub-company").locator(`option[value="${companyId}"]`)).toHaveCount(
+    1,
+    { timeout: 10_000 },
+  );
   await page.getByTestId("sub-company").selectOption(companyId);
   await page.getByTestId("sub-plan").fill("Hosting + retainer");
   await page.getByTestId("sub-amount").fill("120000");

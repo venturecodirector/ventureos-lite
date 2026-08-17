@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
+import { requireOwner } from "@/lib/authz";
 import {
   deleteImportTemplate,
   listImportBatches,
@@ -96,7 +97,24 @@ export type RollbackActionResult =
   | { ok: true; deleted: number; reverted: number }
   | { ok: false; error: string; conflicts?: RollbackConflict[] };
 
+/**
+ * Roll an import back.
+ *
+ * OWNER-ONLY, matching the single-lead delete. Running an import is a BDR's
+ * ordinary work and stays ungated; a rollback DELETES leads, and "who may
+ * delete a lead" is already settled elsewhere in this codebase — having it be
+ * one answer on the lead modal and a different one on a batch would be the
+ * kind of inconsistency an audit finds later.
+ *
+ * The conflict checks still hold underneath: an Owner cannot roll back over
+ * work either.
+ */
 export async function rollbackBatch(batchId: string): Promise<RollbackActionResult> {
+  try {
+    await requireOwner();
+  } catch {
+    return { ok: false, error: "Only an Owner can roll an import back." };
+  }
   const { workspaceId, userId } = await getActiveContext();
   const res = await rollbackImport(workspaceId, userId, batchId);
   if (!res.ok) return res;

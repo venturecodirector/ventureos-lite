@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
-import { requireGrant, GrantError } from "@/lib/authz";
+import { requireGrant, requireOwner, GrantError } from "@/lib/authz";
 import {
   listDuplicateCandidates,
   listMergeHistory,
@@ -45,6 +45,8 @@ export interface DataQualityView {
   /** Import batches and their rollback windows (P5/3) — same screen, same job. */
   batches: BatchRow[];
   canMerge: boolean;
+  /** Owner-only, matching the single-lead delete (P5/3). */
+  canRollback: boolean;
 }
 
 export async function getDataQuality(): Promise<DataQualityView> {
@@ -54,7 +56,21 @@ export async function getDataQuality(): Promise<DataQualityView> {
     listMergeHistory(workspaceId),
     listImportBatches(workspaceId),
   ]);
-  return { companies, leads, history, batches, canMerge: (await requireMergeGrant()) === null };
+  let owner = false;
+  try {
+    await requireOwner();
+    owner = true;
+  } catch {
+    owner = false;
+  }
+  return {
+    companies,
+    leads,
+    history,
+    batches,
+    canMerge: (await requireMergeGrant()) === null,
+    canRollback: owner,
+  };
 }
 
 export async function getMergePreview(raw: unknown): Promise<
