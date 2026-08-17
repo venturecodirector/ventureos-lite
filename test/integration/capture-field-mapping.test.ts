@@ -229,3 +229,93 @@ describe("a captured location always reaches the lead", () => {
     expect(lead!.locationRaw).toBe("Dana Whitfield, Hungary");
   });
 });
+
+/**
+ * END TO END, on the /in/mgoldberger fixture (all six items).
+ *
+ * The extension reads the committed fixture in jsdom, the payload goes through the
+ * real capture route, and the lead is checked. This is the assertion the brief
+ * asks for, and it is the one that would have caught every reported symptom at
+ * once: an empty Name, the name in the job-title slot, a blank City, no role or
+ * employer, and a Hungarian lead in California.
+ */
+describe("the mgoldberger fixture, from page to lead", () => {
+  it("produces a correct lead", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { JSDOM } = await import("jsdom");
+
+    const EXT = join(process.cwd(), "extension");
+    const read = (n: string) => readFileSync(join(EXT, n), "utf8");
+    const dom = new JSDOM(
+      readFileSync(join(process.cwd(), "test/fixtures/linkedin/g-abbreviated-slug-us-metro.html"), "utf8"),
+      { url: "https://www.linkedin.com/in/mgoldberger/" },
+    );
+    let scrollY = 0;
+    Object.defineProperty(dom.window, "scrollY", { get: () => scrollY, configurable: true });
+    dom.window.scrollTo = ((_x: number, y: number) => {
+      scrollY = typeof y === "number" ? y : 0;
+    }) as typeof dom.window.scrollTo;
+
+    const g: Record<string, unknown> = {};
+    for (const f of ["selectors.js", "names.js"]) {
+      new Function("globalThis", "window", "document", read(f))(g, dom.window, dom.window.document);
+    }
+    const payload = new Function(
+      "document",
+      "window",
+      "location",
+      "URL",
+      "globalThis",
+      `return (${read("content.js").trim().replace(/;\s*$/, "")})`,
+    )(dom.window.document, dom.window, dom.window.location, dom.window.URL, g) as Record<
+      string,
+      unknown
+    >;
+
+    // ---- what the reader found -------------------------------------------
+    expect(payload.name).toBe("Mark Goldberger");
+    expect(payload.headline).toBe(
+      "VP Sales @ Metaview | Startup Advisor and Investor | Ramp and Navan Alum",
+    );
+    expect(payload.jobTitle).toBe("VP Sales");
+    expect(payload.companyName).toBe("Metaview");
+    expect(payload.location).toBe("San Francisco Bay Area");
+    expect(payload.photoUrl).toMatch(/^https:\/\/media\.licdn\.com\//);
+
+    // ---- through the real route ------------------------------------------
+    const { _from, _attempts, provenance, skipped, boundary, route, refused, flags, photoUrl, ...body } =
+      payload as Record<string, unknown>;
+    void _from; void _attempts; void provenance; void skipped; void boundary;
+    void route; void refused; void flags; void photoUrl;
+
+    const url = "https://www.linkedin.com/in/mgoldberger";
+    const res = await post({ ...body, url });
+    expect([200, 201]).toContain(res.status);
+
+    const lead = await leadFor(url);
+    expect(lead).not.toBeNull();
+
+    // Name in the Name field — the reported symptom was an empty one.
+    expect(lead!.contactName).toBe("Mark Goldberger");
+    // Job title in the job-title field, headline in the headline field.
+    expect(lead!.title).toBe("VP Sales");
+    expect(lead!.headline).toBe(
+      "VP Sales @ Metaview | Startup Advisor and Investor | Ramp and Navan Alum",
+    );
+    // The name is in exactly one place.
+    for (const other of [lead!.title, lead!.headline, lead!.bio]) {
+      expect(other).not.toBe("Mark Goldberger");
+    }
+    // City resolved out of a US metro region, raw string kept.
+    expect(lead!.company?.name).toBe("Metaview");
+    expect(lead!.company?.city).toBe("San Francisco");
+    expect(lead!.locationRaw).toBe("San Francisco Bay Area");
+    // English, from the person's own words, not the HU default.
+    expect(lead!.language).toBe("EN");
+    expect(lead!.languageConfidence).toBe("high");
+    // The photo URL was read; the avatar itself is attached by its own request,
+    // which `capture-avatar-chain` covers leg by leg.
+    expect(lead!.avatarPath).toBeNull();
+  });
+});

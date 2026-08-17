@@ -469,6 +469,12 @@ model Lead {
   /// Language to write to this contact in. Feeds the outreach drafter, which
   /// previously always assumed Hungarian.
   language       Lang       @default(HU)
+  /// How the language was decided: "high" / "medium" / "low" from detection, or
+  /// "manual" once a human has chosen. The default alone was the bug — every lead
+  /// inherited the workspace's language, so an English profile in California came
+  /// out Hungarian and its outreach draft would have been written in Hungarian.
+  /// "manual" is never overwritten by a later capture.
+  languageConfidence String? @map("language_confidence")
   stage          Stage      @default(RESEARCHED)
   stageEnteredAt DateTime   @default(now()) @map("stage_entered_at")
   stageReason    String?    @map("stage_reason")

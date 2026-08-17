@@ -13,6 +13,7 @@ import { storeAvatar } from "@/modules/capture/avatar";
 import { normalizeDomain } from "@/modules/leads/dedupe";
 import { captureBodySchema } from "@/modules/capture/body";
 import { parseLocation } from "@/modules/capture/location";
+import { detectLanguage, DEFAULT_LANG, shouldReplaceLanguage } from "@/modules/capture/language";
 import { resolveContact } from "@/modules/capture/resolve-contact";
 import { composeCapturedNotes, mergeCapturedNotes } from "@/modules/capture/notes";
 
@@ -72,6 +73,7 @@ export async function POST(req: Request): Promise<Response> {
     where: { linkedinUrl: input.url },
     select: {
       id: true, contactName: true, bio: true, personBrief: true, title: true, headline: true,
+      language: true, languageConfidence: true,
       email: true, phone: true, notes: true,
     },
   });
@@ -103,6 +105,27 @@ export async function POST(req: Request): Promise<Response> {
    * The raw line is stored on the lead either way, so nothing is ever lost.
    */
   const city = place.ok ? place.city : null;
+
+  /**
+   * The lead's language, from the lead's own words.
+   *
+   * `Lead.language` defaults to HU and nothing looked at the text, so every lead
+   * inherited the workspace's language — a profile in the San Francisco Bay Area
+   * whose bio and posts are entirely English came out Hungarian. That field picks
+   * the outreach template, tells Claude which language to write in, and words the
+   * quote and the contract, so it is not cosmetic.
+   *
+   * Deterministic and free: Hungarian-only letters, stopword rates in both
+   * directions, and the country as a tie-breaker only. No Claude call — this runs
+   * on every capture, and hard rule #3 is that Claude is manually triggered.
+   */
+  const detected = detectLanguage({
+    bio: input.bio,
+    headline: input.headline,
+    posts: input.posts,
+    location: input.location,
+    fallback: DEFAULT_LANG,
+  });
 
   // The contact-info overlay, resolved. The extension sends every candidate with
   // the label LinkedIn put on it; picking which of three websites is the
@@ -184,6 +207,19 @@ export async function POST(req: Request): Promise<Response> {
           headline: existing.headline ?? input.headline ?? undefined,
           // Always kept, resolved or not — see the note on `city` above.
           locationRaw: input.location ?? undefined,
+          /**
+           * The language, only if this detection is an improvement.
+           *
+           * Never over a human's choice ("manual"), and never a confident value
+           * replaced by a vaguer one — a second capture with less text must not
+           * undo what a first capture with more text worked out.
+           */
+          ...(shouldReplaceLanguage(
+            { language: existing.language, languageConfidence: existing.languageConfidence },
+            detected,
+          )
+            ? { language: detected.language, languageConfidence: detected.confidence }
+            : {}),
           email: existing.email ?? contact.email ?? undefined,
           phone: existing.phone ?? contact.phone ?? undefined,
           bio: input.bio ?? undefined,
@@ -201,6 +237,9 @@ export async function POST(req: Request): Promise<Response> {
           title: input.jobTitle ?? null,
           headline: input.headline ?? null,
           locationRaw: input.location ?? null,
+          // From the person's own words, not from the schema default.
+          language: detected.language,
+          languageConfidence: detected.confidence,
           email: contact.email ?? null,
           phone: contact.phone ?? null,
           linkedinUrl: input.url,
@@ -278,6 +317,7 @@ export async function POST(req: Request): Promise<Response> {
         diagnostics: input.diagnostics ?? null,
         contactReasons: contact.reasons,
         locationReason: place.ok ? null : place.reason,
+        language: detected,
         city,
       },
     },

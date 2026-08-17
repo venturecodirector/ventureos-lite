@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { MANUAL_CONFIDENCE } from "@/modules/capture/language";
 import { revalidatePath } from "next/cache";
 import type { Lang } from "@prisma/client";
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
@@ -167,6 +168,8 @@ const updateSchema = z.object({
   leadId: z.string().min(1),
   contactName: z.string().trim().max(160),
   title: z.string().trim().max(160),
+  // Its own field. Free prose the person wrote, longer than a job title.
+  headline: z.string().trim().max(400).optional(),
   email: z.string().trim().max(200),
   phone: z.string().trim().max(60),
   linkedinUrl: z.string().trim().max(500),
@@ -242,10 +245,19 @@ export async function updateLeadDetail(raw: unknown): Promise<UpdateLeadResult> 
     data: {
       contactName: input.contactName || null,
       title: input.title || null,
+      headline: input.headline || null,
       email: input.email || null,
       phone: input.phone || null,
       linkedinUrl: input.linkedinUrl || null,
       language: input.language,
+      /**
+       * A human choosing a language PINS it.
+       *
+       * Captures re-detect the language from the profile text, so without this
+       * marker the next capture could silently undo a correction the operator had
+       * just made. `shouldReplaceLanguage` refuses to touch "manual".
+       */
+      languageConfidence: MANUAL_CONFIDENCE,
       notes: input.notes || null,
       signals: input.signals,
       lastActivityAt: new Date(),

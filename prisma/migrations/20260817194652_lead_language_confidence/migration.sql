@@ -1,0 +1,17 @@
+-- How the lead's language was decided.
+--
+-- `language` defaulted to HU and nothing ever looked at the captured text, so
+-- every lead inherited the workspace's language. A profile in the San Francisco
+-- Bay Area whose bio and posts are entirely English came out Hungarian — and that
+-- field picks the outreach template, instructs Claude which language to write in,
+-- and words the quote and the contract.
+--
+-- Values: "high" / "medium" / "low" from detection, "manual" once a human has
+-- chosen in the form. A later capture never overwrites "manual", and only
+-- overwrites a "low" with something more confident.
+--
+-- NULL for every existing row, which is honest: those languages were assigned by
+-- the default and nobody knows whether they are right. They are left alone rather
+-- than re-detected, because the text they were captured from may no longer be on
+-- the lead.
+ALTER TABLE "leads" ADD COLUMN "language_confidence" TEXT;
