@@ -9,6 +9,7 @@ import { SettingsNotifications } from "@/components/settings-notifications";
 import { SettingsHealthRules } from "@/components/settings-health-rules";
 import { SettingsBranding } from "@/components/settings-branding";
 import { SettingsFields } from "@/components/settings-fields";
+import { SettingsDataQuality } from "@/components/settings-data-quality";
 import { SettingsExtension } from "@/components/settings-extension";
 import { ProposalQueue } from "@/components/proposal-queue";
 import { GdprPanel } from "@/components/gdpr-panel";
@@ -25,6 +26,7 @@ import { getNotificationPreferences } from "@/modules/notifications/preference-a
 import { getHealthRules } from "@/modules/revenue/health-actions";
 import { getWorkspaceBrand } from "@/modules/workspaces/brand-actions";
 import { listFieldDefs } from "@/modules/fields/store";
+import { getDataQuality } from "@/modules/merge/actions";
 import { listCaptureTokens } from "@/modules/capture/actions";
 import { buildExtensionPackage } from "@/modules/extension/package";
 import { listProposals } from "@/modules/signal/actions";
@@ -73,6 +75,8 @@ export default async function SettingsPage({
   // the workspace's fields ARE even though only an Owner may change them.
   const customFields = await listFieldDefs(workspaceId);
   const canManageFields = await hasGrant("fields.manage");
+  // Duplicates and merge history (P5/2). Read by everyone; merging is gated.
+  const dataQuality = await getDataQuality();
   // Version only — the zip itself is built on demand by the download route.
   const extensionVersion = (await buildExtensionPackage()).version;
   return (
@@ -82,6 +86,7 @@ export default async function SettingsPage({
         <SettingsNotifications initial={notificationPrefs} />
         <SettingsBranding initial={brand} isOwner={owner} />
         <SettingsFields defs={customFields} canManage={canManageFields} />
+        <SettingsDataQuality view={dataQuality} />
         <SettingsHealthRules initial={healthRules} isOwner={owner} />
         <SettingsExtension tokens={captureTokens} version={extensionVersion} />
         {owner && (

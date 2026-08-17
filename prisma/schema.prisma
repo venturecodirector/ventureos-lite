@@ -412,6 +412,11 @@ model Company {
   deals         Deal[]
   /// Owner-defined field values (P5/1). See Lead.customFields.
   customFields  Json?            @map("custom_fields")
+  /// Set when this company was merged INTO another (P5/2). The row is kept as a
+  /// tombstone rather than deleted, so a bookmarked link, a stale tab or an
+  /// external system's stored id still resolves — to the survivor.
+  mergedIntoId  String?          @map("merged_into_id")
+  mergedAt      DateTime?        @map("merged_at")
 
   @@unique([workspaceId, taxId])
   @@index([workspaceId])
@@ -478,10 +483,14 @@ model Lead {
   /// GDPR: a custom field can hold anything a person typed into it, so the
   /// whole object joins the erasure cascade and the anonymization job.
   customFields Json?         @map("custom_fields")
+  /// Set when this lead was merged INTO another (P5/2). See Company.mergedIntoId.
+  mergedIntoId String?       @map("merged_into_id")
+  mergedAt     DateTime?     @map("merged_at")
 
   @@index([workspaceId])
   @@index([companyId])
   @@index([workspaceId, ownerId])
+  @@index([mergedIntoId])
   @@map("leads")
 }
 
@@ -1769,6 +1778,41 @@ model PushSubscription {
 
   @@index([workspaceId, userId])
   @@map("push_subscriptions")
+}
+
+/// One merge, and everything needed to undo it (playbook-v2 P5/2).
+///
+/// A merge moves every activity, email, task, document, call and deal off one
+/// record onto another and tombstones the loser. That is not a typo-level
+/// mistake to make — it is two clients becoming one — so the pre-merge state is
+/// stored whole and the operation is reversible for 30 days.
+///
+/// The snapshot holds BOTH sides: the loser's full row (so it can be restored
+/// exactly) and, per relinked table, the ids that moved (so the revert puts
+/// back precisely what the merge took and nothing a person has since attached
+/// to the survivor).
+model MergeRecord {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  /// company | lead
+  entity      String
+  survivorId  String    @map("survivor_id")
+  loserId     String    @map("loser_id")
+  /// { loser: {...row}, survivorBefore: {...row}, moved: { activities: [...], ... } }
+  snapshot    Json
+  /// Field-by-field choices, for the audit trail: which side each value came from.
+  choices     Json?
+  performedBy String?   @map("performed_by")
+  /// After this, the undo is gone and the tombstone is permanent.
+  revertUntil DateTime  @map("revert_until")
+  revertedAt  DateTime? @map("reverted_at")
+  revertedBy  String?   @map("reverted_by")
+  at          DateTime  @default(now())
+
+  @@index([workspaceId, at])
+  @@index([workspaceId, entity, survivorId])
+  @@index([loserId])
+  @@map("merge_records")
 }
 
 /// An Owner-defined field on a Lead, Company or Deal (playbook-v2 P5/1).

@@ -7,6 +7,7 @@ import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { MAX_ICP_SCORE } from "@/modules/leads/scoring";
 import { listFieldDefsWith } from "@/modules/fields/store";
+import { resolveSurvivor } from "@/modules/merge/store";
 import { readValues, type FieldDef, type FieldValues } from "@/modules/fields/types";
 
 /**
@@ -66,8 +67,12 @@ export async function getLeadDetail(leadId: string): Promise<LeadDetail | null> 
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
 
+  // A merged-away lead is a tombstone, not a 404 (P5/2): a bookmark, a stale
+  // tab or an external system's stored id resolves to whatever survived.
+  const resolvedId = await resolveSurvivor(workspaceId, "lead", leadId);
+
   const lead = await db.lead.findUnique({
-    where: { id: leadId },
+    where: { id: resolvedId },
     include: {
       company: true,
       activities: { orderBy: { at: "desc" }, take: 40 },

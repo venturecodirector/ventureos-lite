@@ -55,6 +55,9 @@ export async function searchWorkspace(raw: unknown): Promise<SearchHit[]> {
   const [leads, companies, documents] = await Promise.all([
     db.lead.findMany({
       where: {
+        // A merged-away lead is a tombstone: its id still resolves, but it is
+        // not a result anyone wants to click (P5/2).
+        mergedIntoId: null,
         OR: [
           { contactName: like(q) },
           { email: like(q) },
@@ -76,6 +79,7 @@ export async function searchWorkspace(raw: unknown): Promise<SearchHit[]> {
     }),
     db.company.findMany({
       where: {
+        mergedIntoId: null,
         OR: [
           { name: like(q) },
           { domain: like(q) },

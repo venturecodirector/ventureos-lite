@@ -12,6 +12,8 @@ export default async function PipelinePage() {
   const db = getWorkspaceClient(workspaceId);
 
   const leads = await db.lead.findMany({
+    // Merged-away leads are tombstones, not cards (P5/2).
+    where: { mergedIntoId: null },
     orderBy: { stageEnteredAt: "asc" },
     include: { company: { select: { name: true } } },
   });

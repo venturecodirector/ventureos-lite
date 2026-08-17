@@ -66,6 +66,9 @@ type LoadedLead = Awaited<ReturnType<typeof fetchLeads>>[number];
 async function fetchLeads(workspaceId: string) {
   const db = getWorkspaceClient(workspaceId);
   return db.lead.findMany({
+    // Tombstones are not rows a person works — a merged-away lead lives on so
+    // its id still resolves, not so it can clutter the table (P5/2).
+    where: { mergedIntoId: null },
     select: {
       id: true,
       companyId: true,

@@ -18,6 +18,7 @@ import {
 import { PIPELINE_STAGES, SIDE_STAGES, STAGE_LABELS } from "@/modules/pipeline/transitions";
 import { LeadAvatar } from "./lead-avatar";
 import { CustomFieldsEditor } from "./custom-fields-editor";
+import { duplicatesForLead } from "@/modules/merge/actions";
 import { Modal } from "./modal";
 
 const INPUT =
@@ -52,6 +53,12 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
   // The money side of this lead (P4/b). Loaded alongside the detail so the
   // modal can say "this became a deal" instead of leaving the two apart.
   const [deals, setDeals] = useState<LeadDealLink[] | null>(null);
+  // "Possible duplicate" (P5/2). Computed on demand: a duplicate is a
+  // relationship between two rows, and a stored flag on one goes stale the
+  // moment the other is edited.
+  const [duplicates, setDuplicates] = useState<
+    Array<{ id: string; label: string; detail: string; confidence: number }>
+  >([]);
 
   useEffect(() => {
     let live = true;
@@ -70,6 +77,9 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
     getDealsForLead(leadId)
       .then((d) => live && setDeals(d))
       .catch(() => live && setDeals([]));
+    duplicatesForLead(leadId)
+      .then((d) => live && setDuplicates(d))
+      .catch(() => live && setDuplicates([]));
     return () => {
       live = false;
     };
@@ -182,6 +192,29 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
         >
           {msg.text}
         </p>
+      )}
+
+      {/* Possible duplicate (P5/2). A banner, not a block: the two records may
+          genuinely be two people, and only a person can tell. */}
+      {duplicates.length > 0 && (
+        <section
+          className="mb-3 rounded-[11px] border border-[rgba(255,176,66,0.4)] bg-[rgba(255,176,66,0.08)] p-3"
+          data-testid="duplicate-banner"
+        >
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-warn">
+            Possible duplicate
+          </p>
+          <ul className="grid gap-1">
+            {duplicates.map((d) => (
+              <li key={d.id} className="text-[12.5px] text-[#C9CEE3]">
+                {d.detail}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[11.5px] text-muted">
+            Compare and merge them in Settings → Data quality.
+          </p>
+        </section>
       )}
 
       {/* The capture brief: written once by Haiku from the About text and the

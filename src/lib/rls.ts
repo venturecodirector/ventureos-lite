@@ -60,6 +60,7 @@ const BUSINESS_TABLES = [
   "deal_stages",
   "deals",
   "custom_field_defs",
+  "merge_records",
 ];
 
 const CURRENT_WS = "current_setting('app.current_workspace', true)";

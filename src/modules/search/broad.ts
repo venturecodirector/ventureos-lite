@@ -35,6 +35,7 @@ export async function broadSearch(
   const [leadFieldDefs, leads, companies, documents] = await Promise.all([
     listFieldDefsWith(db, "lead"),
     db.lead.findMany({
+      where: { mergedIntoId: null },
       take: CANDIDATE_LIMIT,
       orderBy: { lastActivityAt: "desc" },
       select: {
@@ -49,6 +50,7 @@ export async function broadSearch(
       },
     }),
     db.company.findMany({
+      where: { mergedIntoId: null },
       take: CANDIDATE_LIMIT,
       orderBy: { name: "asc" },
       select: { id: true, name: true, domain: true, website: true, taxId: true, city: true },

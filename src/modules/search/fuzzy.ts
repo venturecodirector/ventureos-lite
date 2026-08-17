@@ -214,6 +214,30 @@ export function scoreFields(
  * and someone pasting one from an invoice should not have to guess which form
  * we stored.
  */
+/**
+ * How alike two strings are, 0..1 (playbook-v2 P5/2 duplicate detection).
+ *
+ * Normalised edit distance rather than trigram overlap: the strings being
+ * compared here are company and person names — short, and usually differing by
+ * a suffix, an accent or a typo, which is exactly what edit distance measures
+ * well and what trigram overlap measures badly at this length.
+ *
+ * Both sides are folded first, so "Danubia Kft" and "danubia kft" are identical
+ * rather than merely similar.
+ */
+export function similarity(a: string, b: string): number {
+  const x = foldText(a);
+  const y = foldText(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  const longest = Math.max(x.length, y.length);
+  // A cap keeps the DP bounded. `boundedLevenshtein` answers cap+1 rather than
+  // the true distance once it gives up, which is fine here: the ratio it
+  // produces is already below any threshold worth acting on.
+  const distance = boundedLevenshtein(x, y, Math.ceil(longest / 2));
+  return Math.max(0, 1 - distance / longest);
+}
+
 export function taxIdMatches(query: string, taxId: string | null | undefined): boolean {
   const digits = (s: string) => s.replace(/\D/g, "");
   const q = digits(query);
