@@ -249,7 +249,7 @@ export function LeadEngine({
   // research call that would be refused. P1/1b — what we already know from the
   // paste without spending anything.
   const parsed = useMemo(() => preParse(paste), [paste]);
-  const canResearch = useMemo(() => hasAnalyzableText(paste), [paste]);
+  const hasText = useMemo(() => hasAnalyzableText(paste), [paste]);
   // The first LinkedIn profile URL in the pasted text — what the extension
   // would be asked to read.
   const linkedInUrl = (() => {
@@ -257,7 +257,15 @@ export function LeadEngine({
     return match ? match[0].split("?")[0]!.replace(/\/$/, "") : null;
   })();
 
-  const urlOnly = paste.trim().length > 0 && !canResearch;
+  // A bare profile URL IS enough when the extension is here to read the page —
+  // it is the whole reason the extension exists. Previously the button stayed
+  // disabled in exactly that case, so the only way to research anything was to
+  // paste the profile text by hand, and the extension's own captures could not
+  // be researched at all.
+  const canReadWithExtension = hasExtension && !!linkedInUrl;
+  const canResearch = hasText || canReadWithExtension;
+
+  const urlOnly = paste.trim().length > 0 && !hasText;
   const [showCsv, setShowCsv] = useState(false);
   const [overrideFor, setOverrideFor] = useState<string | null>(null);
 
@@ -313,6 +321,23 @@ export function LeadEngine({
     setError(null);
     setRail({ status: "streaming" });
     try {
+      // A bare profile URL: let the extension read the page first, then
+      // research what it captured. One button, one press — which is what a
+      // person means by "research this profile".
+      if (!hasText && canReadWithExtension && linkedInUrl) {
+        const res = await captureProfileViaExtension(linkedInUrl);
+        if (!res.ok || !res.leadId) {
+          setRail({ status: "idle" });
+          setError(res.ok ? "The capture did not come back with a lead." : res.message);
+          return;
+        }
+        const read = await runResearch(res.leadId);
+        setRail({ status: "done", card: read.card, icpScore: read.icpScore, leadId: res.leadId });
+        setPaste("");
+        router.refresh();
+        return;
+      }
+
       const { leadId } = await captureLinkedin({
         url: firstUrl(paste) || paste.slice(0, 120),
         pageText: paste,
@@ -360,8 +385,18 @@ export function LeadEngine({
                 data-testid="research-guidance"
                 className="mt-2.5 rounded-[10px] border border-[rgba(245,184,65,0.35)] bg-[rgba(245,184,65,0.08)] px-3.5 py-2.5 text-[12.5px] text-warn"
               >
-                Paste the profile <b>text</b> alongside the URL, or let the
-                extension read the page — there is nothing to analyse yet.
+                {canReadWithExtension ? (
+                  <>
+                    Only a URL so far — <b>Research with Claude</b> will read
+                    the page with the extension first, or you can read it now
+                    without researching.
+                  </>
+                ) : (
+                  <>
+                    Paste the profile <b>text</b> alongside the URL, or let the
+                    extension read the page — there is nothing to analyse yet.
+                  </>
+                )}
                 {hasExtension && linkedInUrl && (
                   <div className="mt-2">
                     <button
@@ -417,7 +452,13 @@ export function LeadEngine({
             <div className="mt-3 flex flex-wrap items-center gap-2.5">
               <button
                 onClick={() => startTransition(researchFromPaste)}
-                title={canResearch ? undefined : "Needs profile text, not just a URL"}
+                title={
+                  canResearch
+                    ? canReadWithExtension && !hasText
+                      ? "Reads the profile with the extension, then researches it"
+                      : undefined
+                    : "Needs profile text, not just a URL"
+                }
                 data-testid="research-button"
                 disabled={pending || rail.status === "streaming" || !canResearch}
                 className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"

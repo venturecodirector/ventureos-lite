@@ -91,6 +91,8 @@ export type CaptureOutcome =
   | {
       ok: true;
       created: boolean;
+      /** The lead the capture landed on, so the caller can research it. */
+      leadId: string | null;
       read: string[];
       readFrom: Record<string, string>;
       /** Set when a photo was read but could not be stored. */
@@ -125,6 +127,7 @@ export async function captureProfileViaExtension(url: string): Promise<CaptureOu
     return {
       ok: true,
       created: !!res.data?.created,
+      leadId: res.data?.leadId ?? null,
       read: res.read ?? [],
       readFrom: res.readFrom ?? {},
       avatarProblem: res.data?.avatarProblem ?? null,

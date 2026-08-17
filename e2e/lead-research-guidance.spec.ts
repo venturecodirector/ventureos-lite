@@ -3,6 +3,13 @@ import { test, expect } from "@playwright/test";
 /**
  * P1/1a+1b — a URL with no text must not offer a Claude call, and the
  * deterministic extraction must be visible before any AI runs.
+ *
+ * "With no text" now has one exception, and this browser is deliberately on the
+ * other side of it: when the capture extension is installed, a bare profile URL
+ * IS enough, because the button reads the page with the extension first and
+ * then researches what it captured. There is no extension in a Playwright
+ * browser, so the original rule is what applies here — which is also why the
+ * disabled state below is still the honest assertion rather than a stale one.
  */
 test("a bare URL gets guidance instead of a doomed research call", async ({ page }) => {
   await page.goto("/leads");
