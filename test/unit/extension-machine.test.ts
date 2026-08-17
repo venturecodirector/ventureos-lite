@@ -785,3 +785,209 @@ describe("the name never leaks into another field", () => {
     expect(explained, "the headline is empty with no record of why").toBe(true);
   });
 });
+
+// ── item 4: patience, and the fallback chain ──────────────────────────────
+
+describe("LOAD_SECTIONS is patient enough to be useful", () => {
+  const html = (extra = "") => `<!doctype html><html><head><title>Teszt Elek | LinkedIn</title></head>
+    <body><main><div class="card">
+      <a href="/in/teszt-elek/"><img src="https://media.licdn.com/x.jpg" srcset="https://media.licdn.com/profile-displayphoto/x.jpg 400w"></a>
+      <a href="/in/teszt-elek/">Teszt Elek</a>
+      <div>Head of Growth @ Acme</div>
+      <div>Budapest, Hungary</div>
+    </div>
+      <section><h2>About</h2><div data-testid="expandable-text-box"><span>${"word ".repeat(20)}</span></div></section>
+      <div data-testid="lazy-column"></div>${extra}
+    </main></body></html>`;
+
+  /**
+   * The reported trail was scroll:600 -> scroll:1200 -> no_new_sections, 450ms
+   * total, on a profile that plainly has an Experience section. One unproductive
+   * step ended it.
+   */
+  it("does not give up after a single unproductive step", async () => {
+    // The section mounts on the FOURTH scroll, which the old two-step heuristic
+    // could never reach.
+    let scrolls = 0;
+    let doc!: Document;
+    const onScroll = () => {
+      scrolls += 1;
+      if (scrolls < 4 || doc.querySelector("section h2[data-lazy]")) return;
+      const s = doc.createElement("section");
+      s.innerHTML =
+        '<h2 data-lazy="1">Experience</h2><ul><li><span>Növekedési vezető</span>' +
+        "<span>Acme Kft. · Full-time</span><span>2021 - Present</span></li></ul>";
+      doc.querySelector('[data-testid="lazy-column"]')!.appendChild(s);
+    };
+    const { dom, g } = page("", "https://www.linkedin.com/in/teszt-elek/", html(), onScroll);
+    doc = dom.window.document;
+
+    const result = await (g.VentureMachine as Machine).run({
+      ...FAST,
+      loadSectionsMs: 3_000,
+      scrollSettleMs: 20,
+      scrollMaxSteps: 10,
+      window: dom.window,
+      document: doc,
+    });
+
+    const load = result.machine.steps.find((s) => s.name === "LOAD_SECTIONS")!;
+    expect(load.ok, `LOAD_SECTIONS: ${load.reason}`).toBe(true);
+    expect(scrolls).toBeGreaterThanOrEqual(4);
+    expect(result.sections!.mounted).toBe(true);
+  });
+
+  it("stops after THREE consecutive unproductive steps, not one", async () => {
+    const { dom, g } = page("", "https://www.linkedin.com/in/teszt-elek/", html());
+    const result = await (g.VentureMachine as Machine).run({
+      ...FAST,
+      loadSectionsMs: 3_000,
+      scrollSettleMs: 10,
+      scrollMaxSteps: 12,
+      window: dom.window,
+      document: dom.window.document,
+    });
+    const load = result.machine.steps.find((s) => s.name === "LOAD_SECTIONS")!;
+    const trail = (load.detail as { trail: string[] }).trail;
+    expect(trail).toContain("three_unproductive_steps");
+    // Three scrolls before giving up, where the old code managed two in total.
+    expect(trail.filter((t) => t.startsWith("scroll:")).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("watches the main column with a MutationObserver", async () => {
+    const { dom, g } = page("", "https://www.linkedin.com/in/teszt-elek/", html());
+    const result = await (g.VentureMachine as Machine).run({
+      ...FAST,
+      loadSectionsMs: 1_500,
+      scrollSettleMs: 10,
+      window: dom.window,
+      document: dom.window.document,
+    });
+    const load = result.machine.steps.find((s) => s.name === "LOAD_SECTIONS")!;
+    expect((load.detail as { trail: string[] }).trail).toContain("observer:on");
+  });
+
+  it("accepts the Hungarian headings too", async () => {
+    const { dom, g } = page(
+      "",
+      "https://www.linkedin.com/in/teszt-elek/",
+      html('<section><h2>Tapasztalat</h2><ul><li><span>Ügyvezető</span><span>Acme Kft.</span></li></ul></section>'),
+    );
+    const result = await (g.VentureMachine as Machine).run({
+      ...FAST,
+      loadSectionsMs: 1_000,
+      window: dom.window,
+      document: dom.window.document,
+    });
+    expect(result.machine.steps.find((s) => s.name === "LOAD_SECTIONS")!.ok).toBe(true);
+  });
+
+  it("restores the scroll position it borrowed", async () => {
+    const { dom, g } = page("", "https://www.linkedin.com/in/teszt-elek/", html());
+    const result = await (g.VentureMachine as Machine).run({
+      ...FAST,
+      loadSectionsMs: 1_200,
+      scrollSettleMs: 10,
+      window: dom.window,
+      document: dom.window.document,
+    });
+    expect((dom.window as unknown as { scrollY: number }).scrollY).toBe(0);
+    expect(result.machine.cleanupVerified!.scrollRestored).toBe(true);
+  });
+
+  it("reports what it did even when the step runs out of budget", async () => {
+    const { dom, g } = page("real-profile-sdui.html", PROFILE_URL);
+    const result = await (g.VentureMachine as Machine).run({
+      ...FAST,
+      loadSectionsMs: 120,
+      scrollSettleMs: 200,
+      window: dom.window,
+      document: dom.window.document,
+    });
+    // `sections` is reported from a finally, so a timed-out step is still
+    // distinguishable from a step that never ran.
+    expect(result.sections).not.toBeNull();
+    expect(Array.isArray(result.sections!.headings)).toBe(true);
+  });
+});
+
+describe("the fallback chain for role and employer", () => {
+  const MG = "https://www.linkedin.com/in/mgoldberger/";
+
+  /** THE SPECIFIED CASE: no Experience section, so the About text answers. */
+  it("yields VP Sales / Metaview on the mgoldberger fixture", () => {
+    const { dom, g } = page("g-abbreviated-slug-us-metro.html", MG);
+    const out = extractFrom(dom, g);
+    expect(out.jobTitle).toBe("VP Sales");
+    expect(out.companyName).toBe("Metaview");
+    for (const f of ["jobTitle", "companyName"] as const) {
+      expect(out.provenance[f]).toMatchObject({ source: "derived", confidence: "medium" });
+    }
+  });
+
+  it("reads the real headline off the post byline when the card has none", () => {
+    const { dom, g } = page("g-abbreviated-slug-us-metro.html", MG);
+    const out = extractFrom(dom, g);
+    expect(out.headline).toBe(
+      "VP Sales @ Metaview | Startup Advisor and Investor | Ramp and Navan Alum",
+    );
+    expect(out.provenance.headline).toMatchObject({ source: "derived", confidence: "medium" });
+  });
+
+  it("records which source in the chain answered", () => {
+    const { dom, g } = page("g-abbreviated-slug-us-metro.html", MG);
+    const out = extractFrom(dom, g);
+    const trail = (out._attempts.jobTitle ?? []).join(" ");
+    // The Experience section was tried and was absent; a later source answered.
+    expect(trail).toContain("section:experience:absent");
+    expect(trail).toContain("accepted");
+  });
+
+  it("still prefers the Experience section when it IS mounted", () => {
+    const { dom, g } = page(
+      "a-authenticated-with-right-rail.html",
+      "https://www.linkedin.com/in/anna-kovacs-fixture/",
+    );
+    const out = extractFrom(dom, g);
+    expect(out.provenance.jobTitle).toMatchObject({ source: "experience", confidence: "high" });
+  });
+
+  it("parses the About opening clause in its three written forms", () => {
+    const forms: [string, string, string][] = [
+      ["As VP Sales at Metaview, I'm focused on discovery.", "VP Sales", "Metaview"],
+      ["I'm Head of Growth at Acme, and I like numbers.", "Head of Growth", "Acme"],
+      ["Mint ügyvezető at Alföld Présüzem, gyártást vezetek.", "ügyvezető", "Alföld Présüzem"],
+    ];
+    for (const [about, role, company] of forms) {
+      const html = `<!doctype html><html><head><title>Teszt Elek | LinkedIn</title></head>
+        <body><main><div class="card">
+          <a href="/in/teszt-elek/"><img src="https://media.licdn.com/x.jpg" srcset="https://media.licdn.com/profile-displayphoto/x.jpg 400w"></a>
+          <a href="/in/teszt-elek/">Teszt Elek</a>
+          <div>Budapest, Hungary</div>
+          <div>500+ connections</div>
+        </div>
+          <section><h2>About</h2><div data-testid="expandable-text-box"><span>${about} ${"filler ".repeat(8)}</span></div></section>
+        </main></body></html>`;
+      const { dom, g } = page("", "https://www.linkedin.com/in/teszt-elek/", html);
+      const out = extractFrom(dom, g);
+      expect(out.jobTitle, about).toBe(role);
+      expect(out.companyName, about).toBe(company);
+    }
+  });
+
+  it("refuses prose that merely mentions a company", () => {
+    const html = `<!doctype html><html><head><title>Teszt Elek | LinkedIn</title></head>
+      <body><main><div class="card">
+        <a href="/in/teszt-elek/"><img src="https://media.licdn.com/x.jpg" srcset="https://media.licdn.com/profile-displayphoto/x.jpg 400w"></a>
+        <a href="/in/teszt-elek/">Teszt Elek</a>
+        <div>Budapest, Hungary</div>
+        <div>500+ connections</div>
+      </div>
+        <section><h2>About</h2><div data-testid="expandable-text-box"><span>We are hiring at Acme and building the future of payments for everyone everywhere.</span></div></section>
+      </main></body></html>`;
+    const { dom, g } = page("", "https://www.linkedin.com/in/teszt-elek/", html);
+    const out = extractFrom(dom, g);
+    expect(out.jobTitle).toBeUndefined();
+    expect(out.companyName).toBeUndefined();
+  });
+});

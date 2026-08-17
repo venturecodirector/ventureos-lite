@@ -65,19 +65,28 @@
    * performance tweak, it is the thing that makes "the popup froze" impossible.
    */
   const DEFAULTS = {
-    globalMs: 20_000,
+    globalMs: 28_000,
     routeMs: 3_000,
     topcardMs: 4_000,
     openContactMs: 4_000,
     readContactMs: 1_000,
     closeContactMs: 3_000,
     expandBioMs: 2_500,
-    loadSectionsMs: 6_000,
+    /**
+     * 12 seconds, and the global watchdog is raised to match.
+     *
+     * The old 6s with two 600px steps gave up after 450ms on a page whose
+     * Experience section is further down than that. Lazy columns need depth AND
+     * settle time; this step is the slowest one by design.
+     */
+    loadSectionsMs: 12_000,
     readPostsMs: 1_000,
     /** LOAD_SECTIONS scrolling. */
-    scrollStepPx: 600,
-    scrollMaxSteps: 8,
-    scrollSettleMs: 220,
+    scrollStepPx: 800,
+    scrollMaxSteps: 24,
+    // At least 400ms: LinkedIn fetches, THEN renders, and a shorter wait samples
+    // the gap between the two and reads it as "nothing mounted".
+    scrollSettleMs: 400,
   };
 
   const now = () => Date.now();
@@ -279,7 +288,15 @@
       }
       if (res.error) {
         const reason = `threw_${String(res.error?.name ?? "Error")}`;
-        record.steps.push({ name, ok: false, reason, ms });
+        /**
+         * The MESSAGE too, not just the constructor name.
+         *
+         * `threw_TypeError` alone says a step broke and nothing about where, which
+         * made a genuine bug in LOAD_SECTIONS indistinguishable from a dozen other
+         * possibilities. Truncated, because a stack is not diagnostics.
+         */
+        const message = String(res.error?.message ?? "").slice(0, 160);
+        record.steps.push({ name, ok: false, reason, ms, detail: { message } });
         return { ok: false, reason };
       }
       const value = res.value ?? {};
@@ -494,49 +511,161 @@
       await step("LOAD_SECTIONS", opts.loadSectionsMs, async () => {
         const originalY = win.scrollY ?? 0;
         const trail = [];
-        let previous = sectionHeadings(doc).size;
+        let mutations = 0;
+
+        /**
+         * Watch the main column instead of only counting headings.
+         *
+         * A lazily-mounted section arrives as a DOM insertion, and a heading count
+         * taken between two scrolls can miss the moment it lands — the old step
+         * compared counts and gave up the first time two consecutive samples
+         * matched. An observer sees the insertion itself, so "something mounted" is
+         * observed rather than inferred.
+         */
+        // Hoisted above the try so the `finally` can report them even when the
+        // step runs out of budget half way through.
         let steps = 0;
-        for (; steps < opts.scrollMaxSteps; steps += 1) {
-          if (outOfTime()) {
-            trail.push("watchdog");
-            break;
-          }
-          if (hasWantedSections(doc)) {
-            trail.push("wanted_present");
-            break;
-          }
-          win.scrollTo(0, originalY + (steps + 1) * opts.scrollStepPx);
-          trail.push(`scroll:${originalY + (steps + 1) * opts.scrollStepPx}`);
-          await sleep(opts.scrollSettleMs, win);
-          const count = sectionHeadings(doc).size;
-          if (count > previous) {
-            previous = count;
-            continue;
-          }
-          // Nothing new mounted from that step; one more chance, then stop.
-          if (steps > 0) {
-            trail.push("no_new_sections");
-            break;
-          }
-        }
-        // Scroll is restored here AND in cleanup: here so the following steps read
-        // the page the operator is looking at, in cleanup because this step can
-        // time out halfway.
+
+        /**
+         * Seeded IMMEDIATELY, before anything can await.
+         *
+         * A step abandoned by the watchdog mid-`await` never reaches its `finally`
+         * in time to be reported — `withTimeout` resolves and the machine moves on
+         * while the suspended function is still parked on a sleep. So the field is
+         * given a real value the moment the step starts: "began, mounted nothing"
+         * stays distinguishable from "never ran", which is the whole point of
+         * reporting it.
+         */
+        gathered.sections = { mounted: false, steps: 0, mutations: 0, headings: [] };
+        const target = doc.querySelector("main") ?? doc.querySelector('[role="main"]') ?? doc.body;
+        let observer = null;
         try {
-          win.scrollTo(0, originalY);
-          trail.push("scroll:restored");
+          if (typeof win.MutationObserver === "function") {
+            observer = new win.MutationObserver((records) => {
+              for (const r of records) {
+                for (const node of r.addedNodes ?? []) {
+                  if (node.nodeType !== 1) continue;
+                  if (node.matches?.("section, article") || node.querySelector?.("section, article")) {
+                    mutations += 1;
+                  }
+                }
+              }
+            });
+            observer.observe(target, { childList: true, subtree: true });
+            trail.push("observer:on");
+          }
         } catch {
-          trail.push("scroll:restore_failed");
+          trail.push("observer:unavailable");
         }
-        const mounted = hasWantedSections(doc);
-        gathered.sections = { mounted, steps, headings: [...sectionHeadings(doc)] };
-        return mounted
-          ? { ok: true, detail: { steps, trail } }
-          : {
-              ok: false,
-              reason: "experience_never_mounted",
-              detail: { steps, trail, headings: gathered.sections.headings },
-            };
+
+        try {
+          /**
+           * Scroll to the bottom in steps, recomputing the height every time.
+           *
+           * The document GROWS as sections mount, so a height read once is wrong by
+           * the second step. The old version took two 600px steps and stopped —
+           * 450ms in total on a page whose Experience section sits well below that,
+           * which is why it reported `experience_never_mounted` on a profile that
+           * plainly has one.
+           *
+           * Patience is the whole fix: at least 400ms of settle per step, and three
+           * consecutive unproductive steps before giving up rather than one.
+           */
+          let unproductive = 0;
+          let y = originalY;
+          const deadlineForStep = now() + Math.min(opts.loadSectionsMs, deadline - now());
+
+          for (; steps < opts.scrollMaxSteps; steps += 1) {
+            if (now() >= deadlineForStep || outOfTime()) {
+              trail.push("budget_spent");
+              break;
+            }
+            if (hasWantedSections(doc)) {
+              trail.push("wanted_present");
+              break;
+            }
+
+            const height = Math.max(
+              doc.documentElement?.scrollHeight ?? 0,
+              doc.body?.scrollHeight ?? 0,
+            );
+            const viewport = win.innerHeight ?? 800;
+            const atBottom = height > 0 && y + viewport >= height - 8;
+            if (atBottom) {
+              trail.push(`bottom:${height}`);
+              break;
+            }
+
+            const before = sectionHeadings(doc).size;
+            const seenMutations = mutations;
+            y = Math.min(y + opts.scrollStepPx, Math.max(0, height - viewport));
+            win.scrollTo(0, y);
+            trail.push(`scroll:${y}`);
+            await sleep(opts.scrollSettleMs, win);
+
+            const grew = sectionHeadings(doc).size > before || mutations > seenMutations;
+            if (grew) {
+              unproductive = 0;
+              continue;
+            }
+            unproductive += 1;
+            // THREE, not one. A single quiet step is normal: the observer may not
+            // have fired yet, and LinkedIn fetches before it renders.
+            if (unproductive >= 3) {
+              trail.push("three_unproductive_steps");
+              break;
+            }
+          }
+
+          /**
+           * One last chance for a fetch already in flight — minus a margin.
+           *
+           * Waiting the whole remaining budget meant the wait ended exactly ON the
+           * step's deadline, so `withTimeout` fired first and a step that had done
+           * its job reported `step_timed_out` and lost its detail. Leave 150ms to
+           * return in.
+           */
+          if (!hasWantedSections(doc)) {
+            const room = Math.max(0, deadlineForStep - now() - 150);
+            if (room > 0) await waitFor(() => hasWantedSections(doc), Math.min(600, room), win);
+          }
+
+          try {
+            win.scrollTo(0, originalY);
+            trail.push("scroll:restored");
+          } catch {
+            trail.push("scroll:restore_failed");
+          }
+
+          const mounted = hasWantedSections(doc);
+          // Computed HERE, not read from `gathered.sections`: that is assigned in
+          // the finally below, which runs after this expression is evaluated, so
+          // reading it here threw "Cannot read properties of null" and turned a
+          // working step into `threw_TypeError`.
+          const headings = [...sectionHeadings(doc)];
+          return mounted
+            ? { ok: true, detail: { steps, mutations, trail } }
+            : { ok: false, reason: "experience_never_mounted", detail: { steps, mutations, trail, headings } };
+        } finally {
+          try {
+            observer?.disconnect();
+          } catch {
+            /* nothing to do about a detached observer */
+          }
+          /**
+           * Reported from the FINALLY, so it survives the step running out of
+           * budget. Assigned at the end of the happy path it was null whenever
+           * this step timed out — and "the section did not mount" then looked
+           * identical to "the step never ran", which is exactly the ambiguity
+           * diagnostics v3 exists to remove.
+           */
+          gathered.sections = {
+            mounted: hasWantedSections(doc),
+            steps,
+            mutations,
+            headings: [...sectionHeadings(doc)],
+          };
+        }
       });
 
       // ---- READ_POSTS -----------------------------------------------------

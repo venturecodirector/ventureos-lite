@@ -659,7 +659,8 @@
   const isChrome = (l) =>
     CHROME.test(l) ||
     /\b[\d\s,.]+\+?\s*(connections?|followers?|követő|kapcsolat|ismerős)\b/i.test(l) ||
-    /^·?\s*\d+(st|nd|rd|th)\b/i.test(l) ||
+    /^[·•]?\s*\d+(st|nd|rd|th)\b/i.test(l) ||
+    /^[·•]\s*\d/.test(l) ||
     /^[·•|,\s]+$/.test(l) ||
     l.length <= 1;
 
@@ -717,8 +718,21 @@
    * that happens to sit in the same card.
    */
   const HEADLINE_SEPARATOR = /[|@·•]|\s+at\s+|\s+@\s+/i;
-  const ROLE_VOCABULARY =
-    /\b(ceo|cto|coo|cfo|cmo|cro|vp|svp|evp|head|director|manager|lead|leader|founder|co-?founder|owner|partner|president|chief|principal|engineer|developer|designer|consultant|advisor|adviser|specialist|analyst|architect|scientist|recruiter|marketer|strategist|investor|ügyvezető|vezető|igazgató|tanácsadó|fejlesztő|mérnök|tervező|értékesítő|szakértő|elemző|alapító|tulajdonos)\b/i;
+  /**
+   * Two halves, and the split matters.
+   *
+   * English role words are matched on WORD boundaries. Hungarian ones are matched
+   * as SUFFIXES, because the language compounds them: "Gyártásvezető" is a role and
+   * `\bvezető\b` cannot see it — the character before "vezető" is "s", so there is
+   * no boundary there at all.
+   */
+  const ROLE_VOCABULARY_EN =
+    /\b(ceo|cto|coo|cfo|cmo|cro|vp|svp|evp|head|director|manager|lead|leader|founder|co-?founder|owner|partner|president|chief|principal|engineer|developer|designer|consultant|advisor|adviser|specialist|analyst|architect|scientist|recruiter|marketer|strategist|investor)\b/i;
+  const ROLE_VOCABULARY_HU =
+    /(ügyvezető|vezető|igazgató|tanácsadó|fejlesztő|mérnök|tervező|értékesítő|szakértő|elemző|alapító|tulajdonos|munkatárs)/i;
+  const ROLE_VOCABULARY = {
+    test: (v) => ROLE_VOCABULARY_EN.test(v) || ROLE_VOCABULARY_HU.test(v),
+  };
   const hasHeadlineSignal = (v) => HEADLINE_SEPARATOR.test(v) || ROLE_VOCABULARY.test(v);
 
   const validateHeadline = (value) => {
@@ -900,6 +914,55 @@
   const jobLimit = (v) => (v.length > 200 ? "job_title_too_long" : null);
   const companyLimit = (v) => (v.length > 200 ? "company_name_too_long" : null);
 
+  /**
+   * The author byline on this person's own posts.
+   *
+   * On /in/mgoldberger the real headline — "VP Sales @ Metaview | Startup Advisor
+   * and Investor | Ramp and Navan Alum" — appears NOWHERE in the top card. It is
+   * in the byline above each post, which LinkedIn renders because a reader
+   * scrolling past needs to know who is talking. So it is a legitimate source for
+   * the headline and for role/employer, and it is attributable: it is the byline of
+   * a post authored by the profile's owner.
+   *
+   * The post BODY is excluded — an expandable-text-box is prose, not a byline.
+   */
+  const bylineLines = attempt([], () => {
+    const activity = sectionMatching(/(activity|aktivitas|posts|bejegyzes)/);
+    if (!activity) return [];
+    const out = [];
+    for (const li of $$("li", activity)) {
+      // Only the owner's own posts.
+      const author = $$('a[href*="/in/"]', li).some((a) =>
+        (a.getAttribute("href") ?? "").toLowerCase().includes(`/in/${ownerSlug}`),
+      );
+      if (!author) continue;
+      for (const el of $$("span, div, p", li)) {
+        if (el.closest('[data-testid="expandable-text-box"]')) continue;
+        const t = clean(label(el));
+        if (!t || t.length < 5 || t.length > 200) continue;
+        if (isChrome(t) || isSomeoneElse(t)) continue;
+        if (!out.includes(t)) out.push(t);
+      }
+    }
+    return out;
+  });
+
+  /**
+   * THE HEADLINE, FROM THE BYLINE — when the top card did not carry one.
+   *
+   * On /in/mgoldberger the top card has no headline line at all. The real one is
+   * above each of the person's posts, and it is the multi-part string the brief
+   * quotes: "VP Sales @ Metaview | Startup Advisor and Investor | Ramp and Navan
+   * Alum". `derived` at MEDIUM confidence, because it comes from a byline rather
+   * than from the card's own headline slot — and it still has to pass the same
+   * validator, so it can never be the name or a location.
+   */
+  if (!fields.headline) {
+    for (const line of bylineLines) {
+      if (offer("headline", "derived", "medium", line, validateHeadline)) break;
+    }
+  }
+
   const expEl = sectionMatching(/(experience|tapasztalat|munkatapasztalat)/);
   if (expEl) {
     const first = $("li", expEl) ?? expEl;
@@ -981,42 +1044,101 @@
    * a headline is marketing copy as often as it is a job title, and a wrong
    * company name propagates into a quote.
    */
-  const derivedRole = attempt(null, () => {
-    const h = fields.headline?.value;
-    if (!h) return null;
-    // The first separator wins; anything after a second one is a tagline.
-    const m = /^\s*(.{2,80}?)\s+(?:at|@|\||·|—|–)\s+(.{2,80}?)\s*(?:[|·—–].*)?$/i.exec(h);
-    if (!m) return null;
-    const role = clean(m[1]);
-    const company = clean(m[2]);
-    if (!role || !company) return null;
-    // A clause, not a role: verbs and long word counts mean prose.
-    if (role.split(/\s+/).length > 6 || company.split(/\s+/).length > 6) return null;
-    if (/\b(is|are|was|were|helping|building|making|we|our)\b/i.test(role)) return null;
-    return { role, company };
-  });
-
-  if (derivedRole) {
-    offer("jobTitle", "derived", "medium", derivedRole.role, jobLimit);
-    offer("companyName", "derived", "medium", derivedRole.company, (v) =>
-      companyLimit(v) ?? (isSomeoneElse(v) ? "company_matches_another_person_on_page" : null),
-    );
-  } else if (!expEl) {
-    note("jobTitle", "headline-pattern", "absent");
-    note("companyName", "headline-pattern", "absent");
-  }
+  /**
+   * "Role at Company" in any of its written forms.
+   *
+   * Deliberately conservative. Only explicit separators are read, and both halves
+   * have to look like a role and a company rather than a sentence — a headline is
+   * marketing copy as often as it is a job title, and a wrong company name
+   * propagates into a quote.
+   */
+  const parseRoleAndCompany = (text) => {
+    const t = clean(text);
+    if (!t) return null;
+    const patterns = [
+      // "As VP Sales at Metaview, I'm focused on…" — the About opening clause.
+      // `of` is deliberately NOT a separator here: "Head of Growth",
+      // "Director of Sales" and "VP of Engineering" are single role titles, and
+      // treating `of` as the split point turned "Head of Growth at Acme" into the
+      // role "Head" at the company "Growth".
+      /^\s*(?:as|mint)\s+(?:the\s+)?(.{2,60}?)\s+(?:at|@|-nál|-nél)\s+(.{2,60}?)\s*(?:[,.;:]|$)/i,
+      // "I'm VP Sales at Metaview" / "I am VP Sales at Metaview".
+      // Written without a group straight after `i`, which the extension's static
+      // "calls-nothing-it-has-not-defined" check would read as a call to `i`.
+      /^\s*(?:i'm|i am)\s+(?:the\s+|a\s+|an\s+)?(.{2,60}?)\s+(?:at|@)\s+(.{2,60}?)\s*(?:[,.;:]|$)/i,
+      // "VP Sales @ Metaview | Startup Advisor" — the plain headline form. The
+      // first separator wins; anything after a second one is a tagline.
+      /^\s*(.{2,80}?)\s+(?:at|@|\||·|—|–)\s+(.{2,80}?)\s*(?:[|·—–].*)?$/i,
+    ];
+    for (const re of patterns) {
+      const m = re.exec(t);
+      if (!m) continue;
+      const role = clean(m[1]);
+      const company = clean(m[2]);
+      if (!role || !company) continue;
+      if (role.split(/\s+/).length > 6 || company.split(/\s+/).length > 6) continue;
+      // A clause, not a role.
+      if (/\b(is|are|was|were|helping|building|making|we|our|focused|working)\b/i.test(role)) continue;
+      if (!ROLE_VOCABULARY.test(role)) continue;
+      return { role, company };
+    }
+    return null;
+  };
 
   /**
-   * The top card's own company aside, when the page renders one.
+   * THE FALLBACK CHAIN for role and employer, in order, recording which answered.
    *
-   * Last resort and lowest confidence: it is a logo link to a company page, so it
-   * is the employer LinkedIn has associated with the profile even when the
-   * headline says nothing.
+   * The Experience section is lazy-mounted and frequently never arrives, so a
+   * reader that only knows how to read it reports `section:experience:absent` for
+   * ever. Four more sources, each of which the person wrote about themselves:
+   *
+   *   (ii)  the headline           "VP Sales @ Metaview | …"
+   *   (iii) the top card's company link or current-position line
+   *   (iv)  the About text's opening clause  "As VP Sales at Metaview, I'm…"
+   *   (v)   the author byline on their own posts
+   *
+   * All four are `derived` at MEDIUM confidence — inference from prose, not a
+   * field LinkedIn labelled.
    */
-  if (!fields.companyName && card.ok) {
-    const companyLink = $$('a[href*="/company/"]', card.el).find((a) => clean(label(a)));
-    offer("companyName", "derived", "medium", companyLink ? label(companyLink) : null, companyLimit);
+  const roleSources = [
+    ["headline-pattern", () => parseRoleAndCompany(fields.headline?.value)],
+    [
+      "topcard-company",
+      () => {
+        if (!card.ok) return null;
+        const link = $$('a[href*="/company/"]', card.el).find((a) => clean(label(a)));
+        const company = link ? clean(label(link)) : null;
+        return company ? { role: null, company } : null;
+      },
+    ],
+    ["about-opening", () => parseRoleAndCompany(fields.bio?.value?.slice(0, 240))],
+    [
+      "post-byline",
+      () => {
+        for (const line of bylineLines) {
+          const parsed = parseRoleAndCompany(line);
+          if (parsed) return parsed;
+        }
+        return null;
+      },
+    ],
+  ];
+
+  for (const [source, read] of roleSources) {
+    if (fields.jobTitle && fields.companyName) break;
+    const found = attempt(null, read);
+    if (!found) {
+      note("jobTitle", source, "absent");
+      note("companyName", source, "absent");
+      continue;
+    }
+    if (found.role) offer("jobTitle", "derived", "medium", found.role, jobLimit);
+    offer("companyName", "derived", "medium", found.company, (v) =>
+      companyLimit(v) ?? (isSomeoneElse(v) ? "company_matches_another_person_on_page" : null),
+    );
+    note("jobTitle", source, fields.jobTitle ? "accepted" : "rejected(no_role_in_source)");
   }
+
 
 
   // ---- the photo ----------------------------------------------------------
