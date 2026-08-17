@@ -21,7 +21,36 @@ function isObjection(body: string): boolean {
 }
 
 export async function POST(req: Request) {
-  const form = await req.formData();
+  /**
+   * PARSE DEFENSIVELY. This endpoint is public by necessity — Mailgun has no way
+   * to authenticate before we read the signature out of the form — so anything on
+   * the internet can POST to it.
+   *
+   * It used to call `req.formData()` as its very first statement, with no
+   * content-type check and no try/catch, so any POST carrying JSON or an empty
+   * body raised an unhandled TypeError:
+   *
+   *     TypeError: Content-Type was not one of "multipart/form-data" or
+   *     "application/x-www-form-urlencoded"
+   *
+   * 29 of those in 48 hours of production logs. Harmless to the data — nothing had
+   * been read yet — but it is an unhandled throw on a public route, which means
+   * log noise that buries real errors and a free way to fill the disk.
+   *
+   * A malformed request now gets a cheap, quiet refusal.
+   */
+  const contentType = req.headers.get("content-type") ?? "";
+  if (!/multipart\/form-data|application\/x-www-form-urlencoded/i.test(contentType)) {
+    return new Response("expected form-encoded body", { status: 415 });
+  }
+
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    // A declared form content-type with a body that is not one.
+    return new Response("malformed form body", { status: 400 });
+  }
   const get = (k: string) => (form.get(k) ? String(form.get(k)) : "");
 
   if (!verify(get("timestamp"), get("token"), get("signature"))) {

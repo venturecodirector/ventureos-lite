@@ -181,6 +181,7 @@ export async function enrichCompanySite(companyId: string): Promise<EnrichmentRe
     return { text: null, skipped: "no_domain", fromCache: false };
   }
 
+  let robotRules: ReturnType<typeof parseRobots> | null = null;
   // robots.txt first. A site that asks us not to read a page does not get read,
   // even though this is a single request on a company we are researching.
   try {
@@ -190,6 +191,9 @@ export async function enrichCompanySite(companyId: string): Promise<EnrichmentRe
     });
     if (res.ok) {
       const rules = parseRobots(await res.text(), VENTURE_USER_AGENT);
+      // Kept, so the contact-page attempt below is judged by the same rules
+      // rather than re-fetching robots.txt or quietly ignoring it.
+      robotRules = rules;
       if (!isAllowed(rules, path)) {
         await stampFetch(company.id, null);
         return { text: null, skipped: "robots", fromCache: false };
@@ -220,8 +224,74 @@ export async function enrichCompanySite(companyId: string): Promise<EnrichmentRe
     return { text: null, skipped: "unreachable", fromCache: false };
   }
 
+  /**
+   * ONE MORE PAGE, and only when the homepage gave us no address.
+   *
+   * Hungarian sites overwhelmingly put contact details on /kapcsolat or
+   * /impresszum rather than on the front page — the impresszum is a legal
+   * requirement, so it is the most reliable place an email exists at all. Reading
+   * only the homepage therefore left the Email field blank on a large share of
+   * exactly the prospected leads this is meant to serve.
+   *
+   * Deliberately bounded: at most ONE extra request, skipped entirely when the
+   * homepage already yielded an address, each candidate checked against the same
+   * robots rules, and the first hit wins. That is a second page on a company we
+   * are actively researching, once every thirty days — not a crawl.
+   */
+  if (contacts.emails.length === 0) {
+    const found = await fetchContactPage(origin, robotRules);
+    if (found) {
+      contacts = {
+        emails: found.emails,
+        // Keep a homepage phone if we already had one; it is likelier to be the
+        // main line than a number buried in an impresszum.
+        phones: contacts.phones.length > 0 ? contacts.phones : found.phones,
+      };
+    }
+  }
+
   await stampFetch(company.id, text);
   return { text, skipped: text ? null : "empty", fromCache: false, contacts };
+}
+
+/** Paths that carry contact details, commonest first. */
+const CONTACT_PATHS = [
+  "/kapcsolat",
+  "/impresszum",
+  "/contact",
+  "/kapcsolatok",
+  "/elerhetoseg",
+  "/about",
+];
+
+/**
+ * Try the contact pages in order and return the first that yields an address.
+ *
+ * Stops at the first hit, and at the first path robots allows but that answers
+ * with anything other than HTML. Every failure is silent: this is a best-effort
+ * extra on top of a result we already have.
+ */
+async function fetchContactPage(
+  origin: string,
+  rules: ReturnType<typeof parseRobots> | null,
+): Promise<SiteContacts | null> {
+  for (const path of CONTACT_PATHS) {
+    if (rules && !isAllowed(rules, path)) continue;
+    try {
+      const res = await fetch(`${origin}${path}`, {
+        headers: { "User-Agent": VENTURE_USER_AGENT, Accept: "text/html" },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        redirect: "follow",
+      });
+      if (!res.ok) continue;
+      if (!(res.headers.get("content-type") ?? "").includes("text/html")) continue;
+      const found = extractSiteContacts(await res.text());
+      if (found.emails.length > 0) return found;
+    } catch {
+      // Unreachable, timed out, or refused — try the next candidate.
+    }
+  }
+  return null;
 }
 
 /** Record the attempt either way, so a dead site is not refetched every run. */

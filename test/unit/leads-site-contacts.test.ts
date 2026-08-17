@@ -138,3 +138,97 @@ describe("the prompt states the shape it wants", () => {
     expect(PROSPECT_CLASSIFY_SYSTEM).toMatch(/not a bare array/i);
   });
 });
+
+/**
+ * The contact-page fallback, and the public-route crash.
+ *
+ * These are the two things I had NOT fixed when I first said the Google-lead
+ * problem was solved: reading only the homepage leaves the Email field blank on
+ * most Hungarian sites, because the address lives on /kapcsolat or /impresszum —
+ * the impresszum being a legal requirement is precisely why it is the reliable
+ * place for one.
+ */
+describe("the contact-page fallback", () => {
+  it("tries the Hungarian paths first, then the English ones", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const src = readFileSync(join(process.cwd(), "src/modules/leads/enrichment.ts"), "utf8");
+    const order = ["/kapcsolat", "/impresszum", "/contact"];
+    const positions = order.map((p) => src.indexOf(`"${p}"`));
+    expect(positions.every((n) => n > -1), "a contact path is missing").toBe(true);
+    // Commonest first: a Hungarian agency's prospects are Hungarian sites.
+    expect(positions[0]).toBeLessThan(positions[2]!);
+  });
+
+  it("only runs when the homepage yielded no address", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const src = readFileSync(join(process.cwd(), "src/modules/leads/enrichment.ts"), "utf8");
+    // Bounded: skipped entirely when we already have one.
+    expect(src).toMatch(/if \(contacts\.emails\.length === 0\) \{[\s\S]{0,200}fetchContactPage/);
+  });
+
+  it("judges the extra page by the same robots rules", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const src = readFileSync(join(process.cwd(), "src/modules/leads/enrichment.ts"), "utf8");
+    expect(src).toMatch(/robotRules/);
+    expect(src).toMatch(/if \(rules && !isAllowed\(rules, path\)\) continue;/);
+  });
+});
+
+describe("the public mailgun route refuses malformed posts quietly", () => {
+  /**
+   * 29 unhandled TypeErrors in 48 hours of production logs. `req.formData()` was
+   * the route's first statement — no content-type check, no try/catch — so any
+   * POST carrying JSON crashed it before the signature was even read. Harmless to
+   * the data, but an unhandled throw on a public route is log noise that buries
+   * real errors.
+   */
+  it("checks the content type before parsing, and catches a bad body", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const src = readFileSync(
+      join(process.cwd(), "src/app/api/mailgun/inbound/route.ts"),
+      "utf8",
+    );
+    const parseAt = src.indexOf("await req.formData()");
+    const guardAt = src.indexOf("expected form-encoded body");
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(guardAt, "the guard runs after the parse").toBeLessThan(parseAt);
+    expect(src).toMatch(/try \{[\s\S]{0,80}await req\.formData\(\)[\s\S]{0,200}catch/);
+    expect(src).toMatch(/status: 415/);
+  });
+
+  it("answers a JSON post with 415 rather than throwing", async () => {
+    const { POST } = await import("../../src/app/api/mailgun/inbound/route");
+    const res = await POST(
+      new Request("https://app.test/api/mailgun/inbound", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ hello: "world" }),
+      }),
+    );
+    expect(res.status).toBe(415);
+  });
+
+  it("answers a bodyless post with 415 too", async () => {
+    const { POST } = await import("../../src/app/api/mailgun/inbound/route");
+    const res = await POST(
+      new Request("https://app.test/api/mailgun/inbound", { method: "POST" }),
+    );
+    expect(res.status).toBe(415);
+  });
+
+  it("answers a lying content-type with 400, not an exception", async () => {
+    const { POST } = await import("../../src/app/api/mailgun/inbound/route");
+    const res = await POST(
+      new Request("https://app.test/api/mailgun/inbound", {
+        method: "POST",
+        headers: { "content-type": "multipart/form-data; boundary=nope" },
+        body: "this is not multipart at all",
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+});
