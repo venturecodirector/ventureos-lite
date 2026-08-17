@@ -27,6 +27,10 @@ interface Verdict {
 }
 interface Names {
   fold(s: string): string;
+  allNameTokens(s: string): string[];
+  surnameToken(s: string): string;
+  isConcatenationOfTokens(flat: string, tokens: string[]): boolean;
+  matchesInitialsPattern(flat: string, tokens: string[]): boolean;
   slugify(s: string): string;
   isDisambiguator(t: string): boolean;
   slugTokens(s: string): string[];
@@ -37,7 +41,7 @@ interface Names {
   trimToTitleName(candidate: string, title: string): string | null;
   looksGlued(v: string): boolean;
   sharedRatio(name: string, slug: string): number;
-  nameAgreesWithSlug(name: string, slug: string): Verdict;
+  nameAgreesWithSlug(name: string, slug: string, opts?: { title?: string }): Verdict;
   nameAgreesWithTitle(name: string, title: string): Verdict;
   SUBSET_MIN_RATIO: number;
 }
@@ -237,5 +241,94 @@ describe("glued-together candidates, straight from the fixtures", () => {
     for (const ok of ["Anna Kovács", "Ronald McDonald", "Luca DeLuca", "Tóth-Szűcs Örs Ábel"]) {
       expect(N.looksGlued(ok), ok).toBe(false);
     }
+  });
+});
+
+
+/**
+ * ── ABBREVIATED SLUGS ──────────────────────────────────────────────────────
+ *
+ * /in/mgoldberger. One token, formed from an initial and a surname, with no
+ * separator to split on — so every word-set rule above is blind to it. Nine
+ * attempts were rejected on that profile and the lead was saved with no name,
+ * which then cascaded: a rejected name is not excluded from the card's own lines,
+ * so the headline extractor took it and the form showed "Mark Goldberger" in the
+ * job-title slot with an empty Name field.
+ */
+describe("the abbreviated-slug table", () => {
+  const TABLE: { slug: string; name: string; accept: boolean; note: string }[] = [
+    { slug: "mgoldberger", name: "Mark Goldberger", accept: true, note: "initial + surname" },
+    { slug: "tamas-daniel-vezer", name: "Tamás Dániel Vezér", accept: true, note: "unchanged" },
+    { slug: "tom-vechy-vecsernyes", name: "Tom 'Vechy' Vecsernyes", accept: true, note: "unchanged" },
+    { slug: "jsmith", name: "John Smith", accept: true, note: "initial + surname, short" },
+    { slug: "jsmith", name: "Anna Kovács", accept: false, note: "a different person" },
+    { slug: "mdgoldberger", name: "Mark D Goldberger", accept: true, note: "two initials + surname" },
+    { slug: "markgoldberger", name: "Mark Goldberger", accept: true, note: "concatenated, in order" },
+    { slug: "goldbergermark", name: "Mark Goldberger", accept: true, note: "concatenated, reversed" },
+  ];
+
+  for (const { slug, name, accept, note } of TABLE) {
+    it(`${accept ? "accepts" : "rejects"} "${name}" at /in/${slug} — ${note}`, () => {
+      const v = N.nameAgreesWithSlug(name, slug, { title: `${name} | LinkedIn` });
+      expect(v.ok, `${name} vs ${slug}: ${v.why ?? v.rule}`).toBe(accept);
+      if (accept) expect(v.rule).toBeTruthy();
+      else expect(v.why).toBe("name_disagrees_with_profile_url");
+    });
+  }
+
+  it("names which rule accepted, so a dump can be read", () => {
+    expect(N.nameAgreesWithSlug("Mark Goldberger", "mgoldberger").rule).toBe(
+      "slug_is_initials_plus_surname",
+    );
+    expect(N.nameAgreesWithSlug("Mark Goldberger", "markgoldberger").rule).toBe(
+      "slug_is_concatenated_name_tokens",
+    );
+  });
+
+  it("accepts on surname + an exactly-naming title, as two independent agreements", () => {
+    // The given name is absent from the slug entirely, so no other rule fires.
+    const v = N.nameAgreesWithSlug("Mark Goldberger", "goldberger-nyc", {
+      title: "Mark Goldberger | LinkedIn",
+    });
+    expect(v.ok).toBe(true);
+    expect(v.rule).toBe("surname_in_slug_and_title_names_exactly");
+  });
+
+  it("still rejects when the surname is absent from the slug entirely", () => {
+    for (const [name, slug] of [
+      ["Anna Kovács", "jsmith"],
+      ["Teljesen Más Ember", "tamas-daniel-vezer"],
+      ["Mark Goldberger", "dwhitfield"],
+    ] as const) {
+      expect(N.nameAgreesWithSlug(name, slug, { title: `${name} | LinkedIn` }).ok, slug).toBe(false);
+    }
+  });
+
+  describe("the pieces, on their own", () => {
+    it("cuts a concatenated slug into the name's tokens, in any order", () => {
+      expect(N.isConcatenationOfTokens("markgoldberger", ["mark", "goldberger"])).toBe(true);
+      expect(N.isConcatenationOfTokens("goldbergermark", ["mark", "goldberger"])).toBe(true);
+      // Not a cover: leftover characters.
+      expect(N.isConcatenationOfTokens("markgoldbergerx", ["mark", "goldberger"])).toBe(false);
+      expect(N.isConcatenationOfTokens("markjones", ["mark", "goldberger"])).toBe(false);
+    });
+
+    it("reads initials plus a later token, and refuses a coincidence", () => {
+      expect(N.matchesInitialsPattern("mgoldberger", ["mark", "goldberger"])).toBe(true);
+      expect(N.matchesInitialsPattern("mdgoldberger", ["mark", "d", "goldberger"])).toBe(true);
+      // "g" is not Mark's initial, and "oldberger" is not a token.
+      expect(N.matchesInitialsPattern("goldberge", ["mark", "goldberger"])).toBe(false);
+      expect(N.matchesInitialsPattern("mjones", ["mark", "goldberger"])).toBe(false);
+    });
+
+    it("keeps single-letter tokens, which the initials rule needs", () => {
+      expect(N.allNameTokens("Mark D Goldberger")).toEqual(["mark", "d", "goldberger"]);
+      expect(N.nameTokens("Mark D Goldberger")).toEqual(["mark", "goldberger"]);
+    });
+
+    it("picks the longest token as the surname", () => {
+      expect(N.surnameToken("Mark Goldberger")).toBe("goldberger");
+      expect(N.surnameToken("Tóth-Szűcs Örs Ábel")).toBe("szucs");
+    });
   });
 });

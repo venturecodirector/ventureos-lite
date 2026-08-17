@@ -603,7 +603,10 @@
       const byTitle = NM.nameAgreesWithTitle(value, document.title ?? "");
       if (!byTitle.ok) return byTitle.why;
       if (ownerSlug) {
-        const bySlug = NM.nameAgreesWithSlug(value, ownerSlug);
+        // The title travels with it: one of the acceptance rules is "the slug
+        // carries the surname AND the title names this person exactly", which is
+        // two independent agreements rather than a looser single one.
+        const bySlug = NM.nameAgreesWithSlug(value, ownerSlug, { title: document.title ?? "" });
         if (!bySlug.ok) return bySlug.why;
       }
       return null;

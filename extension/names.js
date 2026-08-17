@@ -81,6 +81,75 @@
     return slugify(name).split("-").filter((t) => t.length >= 2);
   }
 
+  /**
+   * Every token INCLUDING single letters.
+   *
+   * `nameTokens` drops one-character tokens because they are noise when comparing
+   * word sets. The initials rule needs them: "Mark D Goldberger" abbreviates to
+   * `mdgoldberger`, and without the `d` that slug cannot be explained.
+   */
+  function allNameTokens(name) {
+    return slugify(name).split("-").filter(Boolean);
+  }
+
+  /** The surname: the longest token, which is the one a slug almost always keeps. */
+  function surnameToken(name) {
+    return nameTokens(name).reduce((best, t) => (t.length > best.length ? t : best), "");
+  }
+
+  /**
+   * Can this string be cut up entirely into the name's own tokens?
+   *
+   * Handles the slug that concatenates a name with no separators at all —
+   * `markgoldberger`, `goldbergermark` — in any order, each token used once.
+   * Depth-first because the pieces can be ambiguous: "annamaria" could start with
+   * "anna" or "annamaria", and only one of the two leads to a full cover.
+   */
+  function isConcatenationOfTokens(flat, tokens) {
+    if (!flat) return false;
+    const seen = new Set();
+    const walk = (rest, remaining) => {
+      if (rest.length === 0) return true;
+      const key = `${rest.length}|${remaining.join(",")}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      for (let i = 0; i < remaining.length; i += 1) {
+        const t = remaining[i];
+        if (t.length >= 2 && rest.startsWith(t)) {
+          const next = remaining.slice(0, i).concat(remaining.slice(i + 1));
+          if (walk(rest.slice(t.length), next)) return true;
+        }
+      }
+      return false;
+    };
+    return walk(flat, tokens.slice());
+  }
+
+  /**
+   * Does this slug read as initials plus a full later token?
+   *
+   * `mgoldberger` for Mark Goldberger, `mdgoldberger` for Mark D Goldberger,
+   * `jsmith` for John Smith. The leading letters must be the initials of the
+   * name's leading tokens IN ORDER, and the tail must be one of the tokens that
+   * follows them — anything looser would accept a stranger who happens to share a
+   * letter.
+   */
+  function matchesInitialsPattern(flat, tokens) {
+    if (!flat || tokens.length < 2) return false;
+    // k = how many leading tokens are reduced to their initial.
+    for (let k = 1; k < tokens.length; k += 1) {
+      const initials = tokens.slice(0, k).map((t) => t[0]).join("");
+      if (!flat.startsWith(initials)) continue;
+      const tail = flat.slice(initials.length);
+      if (tail.length < 3) continue;
+      // The remainder has to be a later token, or a concatenation of them.
+      const later = tokens.slice(k);
+      if (later.includes(tail)) return true;
+      if (isConcatenationOfTokens(tail, later)) return true;
+    }
+    return false;
+  }
+
   /** The person's name as written in a LinkedIn page title, or null. */
   function nameFromTitle(title) {
     const raw = String(title ?? "").replace(/\s+/g, " ").trim();
@@ -171,7 +240,7 @@
    * tokens appear in the slug. Rejects only when there is no overlap worth the
    * name — which is the one case where the value really is somebody else's.
    */
-  function nameAgreesWithSlug(name, slug) {
+  function nameAgreesWithSlug(name, slug, opts = {}) {
     const n = new Set(nameTokens(name));
     const s = slugTokens(slug);
     if (n.size === 0) return { ok: false, why: "name_has_no_comparable_tokens", rule: null };
@@ -188,6 +257,58 @@
     // one-word slug cannot carry a whole name.
     if (s.length === 1 && n.has(s[0])) {
       return { ok: true, why: null, rule: "single_slug_token_present_in_name" };
+    }
+
+    /**
+     * ── ABBREVIATED SLUGS ────────────────────────────────────────────────────
+     *
+     * Everything above compares WORD SETS, and a word set cannot explain
+     * `/in/mgoldberger`: one token, formed from an initial and a surname, with no
+     * separator to split on. Nine attempts were rejected on that profile and the
+     * lead was created with no name at all — which then cascaded, because a
+     * rejected name is not excluded from the card's own lines and the headline
+     * extractor took it instead.
+     *
+     * The rules below explain the shapes a slug can legitimately take. Each is
+     * reported by name, so a diagnostics dump says WHICH one accepted a value.
+     */
+    const flat = slugTokens(slug).join("");
+    const ordered = allNameTokens(name);
+
+    // Concatenated with no separators: markgoldberger, goldbergermark.
+    if (isConcatenationOfTokens(flat, ordered)) {
+      return { ok: true, why: null, rule: "slug_is_concatenated_name_tokens" };
+    }
+
+    // Initials plus a full later token: mgoldberger, mdgoldberger, jsmith.
+    if (matchesInitialsPattern(flat, ordered)) {
+      return { ok: true, why: null, rule: "slug_is_initials_plus_surname" };
+    }
+
+    /**
+     * The surname, plus a title that names this person exactly.
+     *
+     * Two independent agreements: the slug carries the family name, and the page
+     * title — which LinkedIn writes itself — reads "<Name> | LinkedIn". Together
+     * that is stronger evidence than any token ratio.
+     */
+    const surname = surnameToken(name);
+    const hasSurname = surname.length >= 4 && flat.includes(surname);
+    if (hasSurname && titleNamesExactly(opts.title ?? "", name)) {
+      return { ok: true, why: null, rule: "surname_in_slug_and_title_names_exactly" };
+    }
+
+    /**
+     * THE FLOOR: reject only when the surname is absent from the slug entirely.
+     *
+     * A slug that carries the family name is about this person, whatever else it
+     * does with the given names — initials, nicknames, truncation, a middle name
+     * promoted to the front. What it cannot be is somebody else, which is what
+     * the rejection below is for: `jsmith` against "Anna Kovács" has no surname
+     * in common and is a different human.
+     */
+    if (hasSurname) {
+      return { ok: true, why: null, rule: "surname_present_in_slug" };
     }
     return { ok: false, why: "name_disagrees_with_profile_url", rule: null, ratio };
   }
@@ -215,6 +336,10 @@
 
   globalThis.VentureNames = {
     fold,
+    allNameTokens,
+    surnameToken,
+    isConcatenationOfTokens,
+    matchesInitialsPattern,
     slugify,
     isDisambiguator,
     slugTokens,
