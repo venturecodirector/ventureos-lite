@@ -78,8 +78,25 @@ export async function storeAvatar(leadId: string, url: string): Promise<AvatarRe
     await writeFile(join(FILES_DIR, rel), buf);
     return { path: rel, reason: null };
   } catch (e) {
-    const name = e instanceof Error ? e.name : "";
-    return no(name === "TimeoutError" ? "the photo host timed out" : "the photo could not be fetched");
+    // Say WHICH failure it was.
+    //
+    // "the photo could not be fetched" was every network error collapsed into
+    // one sentence, and it cost a whole debugging round: the host was
+    // reachable, DNS resolved, a plain request to the same CDN returned fine,
+    // and the message ruled none of that out. `fetch` in Node reports the real
+    // reason on `cause` — ENOTFOUND, ECONNRESET, a TLS failure — and throwing
+    // it away is what made a five-second diagnosis into a redeploy.
+    //
+    // The code, never the URL: these are signed CDN links that identify a
+    // person, and this string is shown in a popup and stored in an activity.
+    const err = e as { name?: string; message?: string; cause?: { code?: string; message?: string } };
+    const code = err?.cause?.code ?? err?.name ?? "";
+    if (code === "TimeoutError" || code === "AbortError") return no("the photo host timed out");
+    const detail = code || err?.cause?.message?.slice(0, 40) || err?.message?.slice(0, 40);
+    // Logged with the host so a recurring CDN problem is visible in the logs,
+    // where the full address is not.
+    console.warn(`[avatar] fetch failed for ${parsed.hostname}: ${detail ?? "unknown"}`);
+    return no(`the photo could not be fetched (${detail || "unknown"})`);
   }
 }
 

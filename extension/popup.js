@@ -85,6 +85,69 @@ $("test").addEventListener("click", async () => {
   }
 });
 
+/**
+ * Copy a description of the page's shape, for when a capture reads too little.
+ *
+ * Runs BOTH halves: the real reader, so its own verdict is in the report, and
+ * the probes behind it, so the verdict can be explained. A field missing from
+ * `_from` and a probe showing no <h1> are the same fact seen from two sides,
+ * and having only the first is what turned the last round of this into
+ * guesswork.
+ */
+$("diagnose").addEventListener("click", async () => {
+  $("diagnose").disabled = true;
+  msg("Reading the page's shape…");
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!PROFILE_URL.test(tab?.url ?? "")) {
+      msg("Open a LinkedIn profile or a Sales Navigator lead first.", "err");
+      return;
+    }
+
+    const [{ result: probes }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["diagnose.js"],
+    });
+    const [{ result: payload }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["content.js"],
+    });
+
+    // The reader's verdict, as layers and absences — never the values. Which
+    // fields came back empty is the whole question; what they would have said
+    // is somebody's personal data and no help in answering it.
+    const { _from: readFrom = {}, posts = [], photoUrl, url, ...rest } = payload ?? {};
+    const fields = Object.keys(rest);
+    const report = {
+      extension: chrome.runtime.getManifest().version,
+      read: readFrom,
+      missing: [
+        "name", "headline", "companyName", "location", "jobTitle",
+        "email", "phone", "websiteUrl", "bio", "photoUrl",
+      ].filter((f) => !readFrom[f]),
+      postsRead: posts.length,
+      // The photo is reported as a shape because the failure being chased is
+      // "the server could not fetch it", and that is a question about the
+      // address, not the picture.
+      photo: photoUrl
+        ? { scheme: photoUrl.split(":")[0], length: photoUrl.length, hasQuery: photoUrl.includes("?") }
+        : null,
+      fieldsSent: fields.length,
+      probes,
+    };
+
+    await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+    msg(
+      `Copied. ${report.missing.length} field(s) could not be read: ${report.missing.join(", ") || "none"}.`,
+      report.missing.length ? "err" : "ok",
+    );
+  } catch (e) {
+    msg(`Could not read this page (${String(e?.message ?? e).slice(0, 60)}).`, "err");
+  } finally {
+    $("diagnose").disabled = false;
+  }
+});
+
 $("capture").addEventListener("click", async () => {
   $("capture").disabled = true;
   msg("Reading the page…");

@@ -26,6 +26,12 @@
       linear-gradient(135deg, #310B59, #7427C6) border-box;
   }
   button:disabled { opacity: .6; cursor: default; }
+  /* Secondary: the diagnostic is a repair tool, not the thing you came for. */
+  button.secondary {
+    background: rgba(239,241,248,.04); border: 1px solid rgba(239,241,248,.09);
+    font-weight: 500; color: #858CAE;
+  }
+  button.secondary:hover { color: #EFF1F8; }
   .msg { margin-top: 10px; font-size: 12px; }
   .ok { color: #3DDC97; }
   .err { color: #FFB3C2; }
@@ -37,6 +43,13 @@
 
 <button id="capture">Capture this profile</button>
 <div class="msg" id="msg"></div>
+
+<button id="diagnose" class="secondary">Copy diagnostics</button>
+<p class="muted">
+  Use this when a capture reads less than it should. It copies the page's
+  <b>shape</b> — never its text — so the reader can be fixed against the real
+  layout instead of a guess.
+</p>
 
 <details id="settings">
   <summary>Settings</summary>

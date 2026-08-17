@@ -280,6 +280,87 @@ describe("layouts that are not the one we expected", () => {
   });
 });
 
+describe("a profile with no <h1> — reported from a real capture", () => {
+  /**
+   * The real page read `bio (structure)`, `name (title)` and nothing else: no
+   * headline, no location, no job title, no company. One cause explains all of
+   * it — there was no <h1> for the reader to anchor the top card on, so the
+   * name fell through to the page <title> and the card was never found, while
+   * the About section (located by its heading, not the h1) read perfectly.
+   */
+  const NO_H1 = `<!doctype html>
+<html><head><title>Nagy Anna | LinkedIn</title></head>
+<body><main>
+  <div class="artdeco-card">
+    <div class="ph5 pb5"><div class="mt2 relative">
+      <div class="AbCdEf"><span class="text-heading-xlarge inline t-24">Nagy Anna</span></div>
+      <div class="text-body-medium break-words">Ügyvezető @ Danubia Fogászat</div>
+      <span class="text-body-small inline t-black--light">Budapest, Budapest, Hungary</span>
+      <ul><li><span class="t-bold">500+ connections</span></li></ul>
+    </div></div>
+  </div>
+  <section class="artdeco-card">
+    <div><h2>${dbl("About")}</h2></div>
+    <div class="inline-show-more-text">${dbl("Fogászati rendelőt vezetek Budán 1998 óta.")}</div>
+  </section>
+</main></body></html>`;
+
+  const out = extract(NO_H1);
+
+  it("finds the name by what the title already told us it is", () => {
+    // Content, not markup: the smallest element whose text IS the name. A
+    // renamed class or a swapped tag cannot break that.
+    expect(out.name).toBe("Nagy Anna");
+  });
+
+  it("recovers the headline and location the missing h1 used to cost", () => {
+    expect(out.headline).toBe("Ügyvezető @ Danubia Fogászat");
+    expect(out.location).toBe("Budapest, Budapest, Hungary");
+    expect(out._from.headline).toBe("structure");
+  });
+
+  it("still reads the About section, as it always did", () => {
+    expect(out.bio).toContain("Fogászati rendelőt vezetek");
+  });
+
+  it("anchors on an explicit aria heading when there is one", () => {
+    const aria = extract(`<!doctype html><html><head><title>Kis Éva | LinkedIn</title></head>
+      <body><main><div>
+        <div role="heading" aria-level="1">Kis Éva</div>
+        <div>Termékmenedzser</div>
+      </div></main></body></html>`);
+    expect(aria.headline).toBe("Termékmenedzser");
+  });
+});
+
+describe("headings LinkedIn renders twice", () => {
+  it("matches a section whose heading reads 'TapasztalatTapasztalat'", () => {
+    // Sections are found by what their heading SAYS, so a doubled screen-reader
+    // copy is the difference between having an Experience block and silently
+    // not having one.
+    const out = extract(`<!doctype html><html><head><title>Balogh Zsolt | LinkedIn</title></head>
+      <body><main>
+        <section><div><h1>Balogh Zsolt</h1><div>Igazgató</div></div></section>
+        <section><h2>${dbl("Tapasztalat")}</h2><ul><li>
+          ${dbl("Marketing igazgató")}${dbl("Rába Marketing Kft. · Teljes munkaidős")}
+        </li></ul></section>
+      </main></body></html>`);
+    expect(out.jobTitle).toBe("Marketing igazgató");
+    expect(out.companyName).toBe("Rába Marketing Kft.");
+  });
+
+  it("leaves a heading that genuinely repeats itself alone", () => {
+    // "About" doubled is "AboutAbout"; a heading that just happens to contain a
+    // repeat must not be halved into nonsense.
+    const out = extract(`<!doctype html><html><head><title>Papp Ilona | LinkedIn</title></head>
+      <body><main>
+        <section><div><h1>Papp Ilona</h1><div>Ügyvéd</div></div></section>
+        <section><h2>About</h2><div>Húsz éve dolgozom társasági jogban, főként középvállalatoknak.</div></section>
+      </main></body></html>`);
+    expect(out.bio).toContain("társasági jogban");
+  });
+});
+
 describe("Sales Navigator, where the same person has a different address", () => {
   const SALES = "https://www.linkedin.com/sales/lead/ACwAAB1234567,NAME_SEARCH,a1b2";
 

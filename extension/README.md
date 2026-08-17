@@ -66,6 +66,27 @@ Everything read is written to the lead's **notes** as a delimited block as well
 as to its own fields, which is what "Research with Claude" reads. A re-capture
 replaces that block and leaves anything you typed around it alone.
 
+Things a LinkedIn profile does **not** carry, so this will never read them: a
+company registration number (adószám) and, usually, a company domain. The tax
+number comes from the company-registry lookup in the app; the domain arrives
+only when the person published a website link on their profile.
+
+## When a capture reads too little
+
+Press **Copy diagnostics** in the popup and send what it copies.
+
+It reports the page's *shape* — was there an `<h1>`, which sections were found
+and under what heading, how many lines the top card yielded, what the images
+look like. Every piece of text is replaced by a signature (`«24c 3w latin»`),
+so it says where a headline lives without saying whose it is. Section headings
+come through in the clear, because matching them by name is the mechanism being
+tested and "About" is not personal data.
+
+This exists because LinkedIn's markup cannot be inspected from outside — it
+needs a signed-in session on a real profile. Without a report from the actual
+page, a fix is written blind, and a test fixture invented to match a guess
+passes happily while the real page stays broken.
+
 Everything captured is personal data: it joins the GDPR erasure cascade and the
 anonymization job like any other lead field.
 

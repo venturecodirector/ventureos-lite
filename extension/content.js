@@ -168,6 +168,23 @@
   const isPlace = (l) => l.length <= 100 && l.includes(",") && !/[\d@]/.test(l);
 
   /**
+   * A heading's text, said once.
+   *
+   * LinkedIn renders section headings twice — one copy for sight, one for
+   * screen readers — so `textContent` on the <h2> gives "AboutAbout" and
+   * "TapasztalatTapasztalat". Sections are found by what their heading SAYS,
+   * which makes this the difference between finding the Experience block and
+   * silently not having one. The anchored patterns happen to survive a doubled
+   * string; nothing should depend on that.
+   */
+  const headingText = (el) => {
+    const raw = text(el);
+    if (!raw) return null;
+    const half = raw.slice(0, raw.length / 2);
+    return half.length > 0 && half + half === raw ? half : raw;
+  };
+
+  /**
    * Each visible line of a container, once, in document order.
    *
    * The doubled screen-reader copy is what makes this awkward: LinkedIn renders
@@ -279,9 +296,47 @@
   // SEMANTIC attributes — headings, list items, aria — never a class.
 
   /**
+   * The element that states the person's name.
+   *
+   * Everything about the top card hangs off this, so it must not depend on one
+   * tag. It used to be `main h1` alone, and on a real profile that returned
+   * nothing: the name arrived from the page <title> instead, and with no anchor
+   * there was no card, so the headline and the location came back empty while
+   * the About section — which is found a different way — read perfectly. A
+   * whole card missing because of one selector is the failure this list exists
+   * to prevent.
+   *
+   * The last resort is the interesting one. The page <title> already tells us
+   * the NAME ("Nagy Anna | LinkedIn"), so the smallest element whose text is
+   * exactly that name is the heading, whatever LinkedIn chose to build it out
+   * of. Content, not markup — it cannot be broken by renaming a class or
+   * swapping a tag.
+   */
+  const nameAnchor = attempt(null, () => {
+    const scope = $("main") || $('[role="main"]') || document.body;
+    const semantic =
+      $("h1", scope) ||
+      $("h1") ||
+      $('[role="heading"][aria-level="1"]', scope) ||
+      $(".text-heading-xlarge", scope);
+    if (semantic) return semantic;
+
+    const fromTitle = clean(titleParts[0]);
+    if (!fromTitle || fromTitle.length < 3) return null;
+    // Smallest match wins: the name appears again in ancestors, whose text is
+    // the concatenation of their children's.
+    let best = null;
+    for (const el of $$("h1, h2, h3, span, div, a, p", scope)) {
+      if (clean(el.textContent) !== fromTitle) continue;
+      if (!best || (el.textContent ?? "").length <= (best.textContent ?? "").length) best = el;
+    }
+    return best;
+  });
+
+  /**
    * The card holding the person's name.
    *
-   * Walks up from the <h1> to the nearest ancestor that reads like a card
+   * Walks up from the name to the nearest ancestor that reads like a card
    * rather than trusting any one tag. LinkedIn has shipped the top card as a
    * <section>, as a <div class="artdeco-card">, and as neither; anchoring on
    * "the ancestor with enough distinct lines in it" survives all three, and
@@ -289,7 +344,7 @@
    */
   const topCard = attempt(null, () => {
     const main = $("main") || $('[role="main"]') || document.body;
-    const h1 = $("h1", main);
+    const h1 = nameAnchor;
     if (!h1) return null;
     let node = h1.parentElement;
     let best = h1.parentElement;
@@ -324,7 +379,7 @@
     };
 
     for (const el of $$("section, article", main)) {
-      add(el, text($("h2, h3", el)));
+      add(el, headingText($("h2, h3", el)));
     }
     // The id anchors: <div id="about"> sits immediately before its card.
     for (const id of ["about", "experience", "education", "skills", "content_collections"]) {
@@ -347,8 +402,7 @@
       };
 
       // -- the top card: name, then the subtitle under it
-      const main = $("main") || $('[role="main"]') || document.body;
-      out.name = text($("h1", main));
+      out.name = text(nameAnchor);
       if (topCard) {
         const lines = textLines(topCard).filter(
           (l) =>
