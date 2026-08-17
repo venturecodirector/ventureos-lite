@@ -112,9 +112,17 @@ function Notches({ score }: { score: number | null }) {
   );
 }
 
+/**
+ * A signal pill, sized for a column that is scanned rather than read.
+ *
+ * The margins are gone because the row lays the pills out with `gap`, and the
+ * vertical one (`mb-1`) was half of why a signals cell could be two lines tall.
+ * `max-w` plus `truncate` is the other half: a long trigger phrase now shortens
+ * instead of widening the column, and the full text is on the cell's title.
+ */
 function Tag({ children }: { children: React.ReactNode }) {
   return (
-    <span className="mr-1 mb-1 inline-flex items-center rounded-full border border-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-ink">
+    <span className="inline-flex max-w-[8.5rem] items-center truncate rounded-full border border-accent-soft px-1.5 py-px text-[10.5px] font-semibold leading-[1.35] text-accent-ink">
       {children}
     </span>
   );
@@ -516,16 +524,50 @@ export function LeadsTable(props: LeadsTableProps) {
                         (l.signals.length === 0 ? (
                           <span className="text-muted">—</span>
                         ) : (
-                          <>
-                            {l.signals.slice(0, 3).map((s, i) => (
+                          /**
+                           * ONE LINE, ALWAYS.
+                           *
+                           * The pills used to wrap, so a lead with three signals
+                           * made its row two lines tall — and because a table row
+                           * is as tall as its tallest cell, a handful of busy
+                           * leads stretched the whole list. The column is scanned,
+                           * not read: what matters at a glance is that there ARE
+                           * signals and roughly which.
+                           *
+                           * Nothing is hidden. Two pills fit the width, the rest
+                           * become a count, and the title carries the full list
+                           * for anyone who wants it without opening the lead.
+                           */
+                          <span
+                            /**
+                             * Capped, because this column is NOT secondary: it is
+                             * one of the five default columns and it stays visible
+                             * at 390px. Unwrapped pills would otherwise take
+                             * whatever width they liked and squeeze Stage off a
+                             * phone screen.
+                             */
+                            className="flex max-w-[12rem] items-center gap-1 overflow-hidden"
+                            title={l.signals.join(", ")}
+                          >
+                            {/*
+                              ONE pill when there are three or more, two when
+                              there are exactly two.
+
+                              Fitting two pills AND a count into the capped width
+                              meant both got clipped mid-word — "hiring marketin",
+                              "outdated websi" — which reads as a rendering bug
+                              rather than as a summary. A single legible signal
+                              plus "+3" says more than two broken ones.
+                            */}
+                            {l.signals.slice(0, l.signals.length > 2 ? 1 : 2).map((s, i) => (
                               <Tag key={i}>{s}</Tag>
                             ))}
-                            {l.signals.length > 3 && (
-                              <span className="text-[11px] text-muted">
-                                +{l.signals.length - 3}
+                            {l.signals.length > 2 && (
+                              <span className="shrink-0 text-[11px] tabular-nums text-muted">
+                                +{l.signals.length - 1}
                               </span>
                             )}
-                          </>
+                          </span>
                         ))}
                       {c.key === "stage" && (
                         <>
