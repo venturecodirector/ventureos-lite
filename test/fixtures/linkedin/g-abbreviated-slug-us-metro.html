@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Mark Goldberger | LinkedIn</title>
+</head>
+<!--
+  Fixture (g) — the /in/mgoldberger reproducer.
+
+  ── PROVENANCE, STATED PLAINLY ─────────────────────────────────────────────
+
+  The SHAPE is taken from the two real recordings (`real-profile-sdui*.html`):
+  the same `componentkey="topcard-logo-image-referencekey"` photo anchor whose
+  href is the contact-info OVERLAY route, the same
+  `data-testid="expandable-text-box"` / `expandable-text-button` pair for About,
+  the same `data-testid="lazy-column"` with no Experience or Education section
+  mounted, the same `role="dialog" data-testid="popover-floating" popover="manual"
+  inert=""` popovers holding other people, and hashed class names in LinkedIn's
+  style so nothing can select by them.
+
+  The CONTENT is reconstructed from the reported diagnostics for
+  https://www.linkedin.com/in/mgoldberger, not captured. The extension's snapshot
+  tool could not supply it: its scrubber rewrites the identity to
+  "anonimizalt-odon-scrubbed" and rewrites the location, which destroys the two
+  things that reproduce this bug. (That is fixed separately — the scrubber now
+  preserves slug SHAPE and the location string.)
+
+  ── THE FIVE REPRODUCERS, DELIBERATELY PRESERVED ───────────────────────────
+
+  1. THE SLUG IS ABBREVIATED: `mgoldberger` — one token, first-initial +
+     surname. No token-subset rule can match it against ["mark","goldberger"].
+
+  2. THE TOP CARD HAS NO HEADLINE LINE. The real headline appears only in the
+     post bylines. This is what made the headline extractor take the NAME: with
+     the name rejected by (1), it was never excluded from the card's own lines,
+     so the first remaining line — "Mark Goldberger" — became the headline at
+     confidence "high". One bug feeding another.
+
+  3. THE LOCATION IS A US METRO REGION: "San Francisco Bay Area". Not a city,
+     not in a Hungarian gazetteer, so it resolved to `unknown_place` and the
+     field was dropped.
+
+  4. NO EXPERIENCE SECTION. Only About, Featured and Activity are mounted, with
+     a `lazy-column` where Experience belongs — so role and employer have to
+     come from the About text's opening clause ("As VP Sales at Metaview, …")
+     or the post byline ("VP Sales @ Metaview").
+
+  5. THE PHOTO is a 400x400 signed licdn URL, as the diagnostics reported.
+
+  Plus: every word of prose here is ENGLISH, and the profile is in the United
+  States, so a lead created from it must not come out Hungarian.
+-->
+<body class="_9f2b13ac">
+  <nav class="_71ea08a5" aria-label="Primary">
+    <a href="/feed/">Home</a>
+    <a href="/mynetwork/">My Network</a>
+    <a href="/jobs/">Jobs</a>
+    <a href="/messaging/">Messaging</a>
+    <a href="/notifications/">Notifications</a>
+  </nav>
+
+  <main class="_02fba451">
+    <!-- The sticky header card. Present in the real recording too, and the
+         reason the card walk must start from the componentkey'd anchor rather
+         than from the first owner anchor in document order: this one also holds
+         an image and also passes the boundary test. -->
+    <div class="_5238c03f _8bd0db04">
+      <a class="cc7e5383" href="/in/mgoldberger/"><img
+        src="https://media.licdn.com/dms/image/v2/D5603AQFmgoldberger/profile-displayphoto/shrink_100_100/0/1700000000001?e=1&amp;v=beta&amp;t=s" alt=""></a>
+      <a class="_66191723" href="/in/mgoldberger/">Mark Goldberger</a>
+      <button class="_76eca0d1">Message</button>
+      <button class="_75a1beed">More</button>
+    </div>
+
+    <!-- THE REAL TOP CARD. Note what is absent: a headline line. -->
+    <div class="e0b0a254 _6838b189" componentkey="topcard">
+      <a tabindex="0" class="_3a4835f6 _2188a1ad"
+         href="https://www.linkedin.com/in/mgoldberger/overlay/contact-info/"
+         componentkey="topcard-logo-image-referencekey">
+        <img
+          src="https://media.licdn.com/dms/image/v2/D5603AQFmgoldberger/profile-displayphoto/shrink_100_100/0/1700000000001?e=1&amp;v=beta&amp;t=s"
+          srcset="https://media.licdn.com/dms/image/v2/D5603AQFmgoldberger/profile-displayphoto/shrink_200_200/0/1700000000001?e=1&amp;v=beta&amp;t=a 200w, https://media.licdn.com/dms/image/v2/D5603AQFmgoldberger/profile-displayphoto/shrink_400_400/0/1700000000001?e=1&amp;v=beta&amp;t=b 400w"
+          alt="">
+      </a>
+      <div class="_967b38ff">
+        <p class="d17d4ef9">Mark Goldberger</p>
+        <span class="_62642ee1">· 1st</span>
+        <p class="_88bab28e">San Francisco Bay Area</p>
+        <span class="_3fcfc89d">·</span>
+        <a class="d3021637" href="https://www.linkedin.com/in/mgoldberger/overlay/contact-info/">Contact info</a>
+        <span class="c19e9800">500+ connections</span>
+        <div class="_7e0b5bf9">
+          <span>Metaview</span>
+          <span>Stanford University</span>
+        </div>
+      </div>
+    </div>
+
+    <section class="_55d77ff0">
+      <h2 class="_7fd273d9">About</h2>
+      <div data-testid="expandable-text-box" class="_02fba451">
+        <span>As VP Sales at Metaview, I'm focused on helping revenue teams understand
+        what actually happens in their customer conversations. Before Metaview I led
+        enterprise sales motions at Ramp and Navan, where I learned that the fastest
+        way to lose a deal is to skip the discovery work. I also advise a small number
+        of early-stage founders on their first sales hires and their first pricing
+        model, and I invest occasionally in seed-stage software.</span>
+        <button data-testid="expandable-text-button" class="_71ea08a5">…see more</button>
+      </div>
+    </section>
+
+    <section class="_675cc33a">
+      <h2 class="_7fd273d9">Featured</h2>
+      <div data-testid="expandable-text-box">
+        <span>Why discovery calls fail, and the three questions that fix them.</span>
+      </div>
+    </section>
+
+    <section class="_5238c03f">
+      <h2 class="_7fd273d9">Activity</h2>
+      <ul class="_8bd0db04">
+        <!-- The byline is where the REAL headline lives on this page. -->
+        <li class="_88bab28e">
+          <a href="/in/mgoldberger/" class="_62642ee1">Mark Goldberger</a>
+          <span class="_3fcfc89d">• 1st</span>
+          <span class="d3021637">VP Sales @ Metaview | Startup Advisor and Investor | Ramp and Navan Alum</span>
+          <span class="c19e9800">2w •</span>
+          <div data-testid="expandable-text-box">
+            <span>Most sales teams think their discovery process is fine because deals
+            still close. Then you listen to twenty recorded calls in a row and realise
+            the same three questions never get asked. We shipped something this week
+            that makes that pattern impossible to miss, and the early feedback from
+            revenue leaders has been genuinely useful.</span>
+          </div>
+        </li>
+        <li class="_88bab28e">
+          <a href="/in/mgoldberger/" class="_62642ee1">Mark Goldberger</a>
+          <span class="_3fcfc89d">• 1st</span>
+          <span class="d3021637">VP Sales @ Metaview | Startup Advisor and Investor | Ramp and Navan Alum</span>
+          <span class="c19e9800">1mo •</span>
+          <div data-testid="expandable-text-box">
+            <span>Hiring your first account executive is not a scaling decision, it is a
+            learning decision. If the founder cannot explain why the last five deals
+            closed, the first rep will not be able to either. Happy to compare notes
+            with anyone working through this right now.</span>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Where Experience and Education belong. Nothing is mounted: they render
+         only once this column scrolls into view. -->
+    <div data-testid="lazy-column" class="_7fd273d9"></div>
+
+    <aside class="_71ea08a5">
+      <h2>More profiles for you</h2>
+      <ul>
+        <li><a href="/in/person-1-fixture/">Dana Whitfield</a><span>Head of Revenue at Northbeam</span></li>
+        <li><a href="/in/person-2-fixture/">Priya Raghunathan</a><span>Bay Area · Sales Leader</span></li>
+      </ul>
+    </aside>
+  </main>
+
+  <!-- A closed manual popover holding other people: the search typeahead's
+       recent-history list, exactly as the real recording carries it. The boundary
+       walk must not count these as identities on the card. -->
+  <div class="_02fba451" role="dialog" data-testid="popover-floating" tabindex="-1"
+       id="«r3»" popover="manual" inert="" type="proto.sdui.components.core.Popover">
+    <div data-testid="dialog-content">
+      <span>Recent</span>
+      <a href="/in/mgoldberger/">Mark Goldberger • 1st • VP Sales @ Metaview</a>
+      <a href="/in/person-4-fixture/">Tomas Lindqvist • 2nd</a>
+      <a href="/in/person-5-fixture/">Aisha Bakare • 3rd</a>
+    </div>
+  </div>
+</body>
+</html>

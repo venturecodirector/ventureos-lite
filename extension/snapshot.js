@@ -63,6 +63,58 @@
     return m ? decodeURIComponent(m[1]) : null;
   })();
 
+  const fold = (s) =>
+    String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  /**
+   * A placeholder slug that MIRRORS THE SHAPE of the real one.
+   *
+   * A flat `anonimizalt-odon-scrubbed` for every profile made a whole class of bug
+   * unreproducible, and this is not hypothetical: /in/mgoldberger — one token,
+   * first-initial plus surname — broke the name validator, and a snapshot of that
+   * page came back with a three-token hyphenated slug that the validator handles
+   * perfectly. The reproducer was scrubbed away along with the identity.
+   *
+   * The IDENTITY is still fully replaced. What survives is only structure: how
+   * many tokens, whether the first is an initial, whether there is a trailing
+   * disambiguator and how long it is. None of that is personal data, and all of it
+   * is what the validator is tested against.
+   */
+  const shapedSlug = (real) => {
+    const first = fold(OWNER.first);
+    const last = fold(OWNER.last);
+    if (!real) return OWNER.slug;
+
+    const parts = String(real).toLowerCase().split("-").filter(Boolean);
+    // A trailing ID-shaped token is LinkedIn's disambiguator; keep its length.
+    const tail = parts.length > 1 ? parts[parts.length - 1] : null;
+    const hasId = !!tail && /^[a-z0-9]{4,12}$/.test(tail) && /\d/.test(tail);
+    const body = hasId ? parts.slice(0, -1) : parts;
+    const idFor = (len) => "1a2b3c4d5e6f".slice(0, Math.max(4, Math.min(12, len)));
+
+    let base;
+    if (body.length === 1) {
+      const one = body[0];
+      // Initial + surname, e.g. "mgoldberger" — the shape that broke the
+      // validator. Detected as "one token whose tail is much longer than its head".
+      if (one.length >= 5 && one.length <= 24) {
+        base = `${first.slice(0, 1)}${last}`;
+      } else {
+        base = `${first}${last}`;
+      }
+    } else if (body.length === 2) {
+      base = `${first}-${last}`;
+    } else {
+      // Three or more: keep the count with a stable middle filler.
+      const middle = Array.from({ length: body.length - 2 }, (_, i) => `kozepso${i > 0 ? i + 1 : ""}`);
+      base = [first, ...middle, last].join("-");
+    }
+    return hasId ? `${base}-${idFor(tail.length)}` : base;
+  };
+
+  /** The slug this snapshot will use — same shape as the real one, no identity. */
+  const placeholderSlug = shapedSlug(ownerSlug);
+
   // ---- who is on this page ------------------------------------------------
   // Every /in/ anchor is a person. The owner's own slug identifies them; every
   // other slug is somebody else, and the anchor's text is their name.
@@ -146,7 +198,7 @@
       if (p.length >= 4) html = html.replace(new RegExp(`\\b${rx(p)}\\b`, "g"), OWNER.first);
     }
   }
-  if (ownerSlug) html = html.replace(new RegExp(rx(ownerSlug), "g"), OWNER.slug);
+  if (ownerSlug) html = html.replace(new RegExp(rx(ownerSlug), "g"), placeholderSlug);
 
   // 4. Signed URLs and opaque tokens. The licdn query string is the signature
   //    that expires; the path shape is what the photo picker is tested against.
@@ -163,7 +215,9 @@
   return {
     snapshotVersion: 1,
     // Deliberately the scrubbed slug: the fixture's URL must match its content.
-    url: `https://www.linkedin.com/in/${OWNER.slug}/`,
+    url: `https://www.linkedin.com/in/${placeholderSlug}/`,
+    // Reported so a committed fixture records what shape it is reproducing.
+    slugShape: { real: ownerSlug ? ownerSlug.split("-").length : 0, placeholder: placeholderSlug },
     scrubbed: {
       otherPeople: others.size,
       otherSlugs: otherSlugs.size,

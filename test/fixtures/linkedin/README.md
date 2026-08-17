@@ -161,3 +161,31 @@ It carries the two properties that broke the capture:
 
 Labels are mixed English/Hungarian and out of order, with the birthday before the
 phone, because the parser must map by LABEL and never by position.
+
+## (g) `g-abbreviated-slug-us-metro.html` — the /in/mgoldberger reproducer
+
+**Shape** taken from the two real recordings: the componentkey'd top-card anchor
+whose href is the contact-info overlay route, the `expandable-text-box` /
+`expandable-text-button` pair, a `lazy-column` with no Experience or Education
+mounted, and a closed `popover="manual"` dialog holding other people.
+
+**Content** reconstructed from the reported diagnostics, not captured — the
+snapshot tool could not supply it, because its scrubber rewrote the slug to a
+three-token placeholder and destroyed the very thing that reproduces the bug.
+(Fixed: the scrubber now mirrors slug SHAPE while still replacing the identity.)
+
+Five reproducers, deliberately preserved:
+
+1. **Abbreviated slug** `mgoldberger` — one token, first-initial + surname. No
+   token-subset rule can match it against `["mark","goldberger"]`.
+2. **No headline line in the top card.** The real headline lives only in the post
+   bylines. With the name rejected by (1) it was never excluded from the card's
+   own lines, so "Mark Goldberger" became the headline at confidence "high".
+3. **A US metro region** as the location: "San Francisco Bay Area".
+4. **No Experience section** — role and employer must come from the About text's
+   opening clause or the post byline.
+5. **A 400×400 signed licdn photo URL**, as the diagnostics reported.
+
+Every word of prose is English and the profile is in the United States, so a lead
+created from it must not come out Hungarian.
+
