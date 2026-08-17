@@ -241,7 +241,17 @@ function parseAddress(block: string): NavAddress {
 export async function navQueryTaxpayer(
   taxNumberRaw: string,
   creds: NavCredentials | null,
-  deps: { fetch?: typeof fetch; now?: () => Date } = {},
+  deps: {
+    fetch?: typeof fetch;
+    now?: () => Date;
+    /**
+     * Where call volume is recorded. NAV publishes no numeric rate limit, so the
+     * only way to know we are approaching one is to count — and the count has to
+     * survive a restart, which is why it is a sink rather than a counter here.
+     * Injected so the provider needs no database.
+     */
+    logUsage?: (row: { operation: string; outcome: string }) => Promise<void> | void;
+  } = {},
 ): Promise<NavLookup> {
   if (!creds?.login || !creds.signKey || !creds.password || !creds.taxNumber) {
     return {
@@ -280,13 +290,34 @@ export async function navQueryTaxpayer(
     });
   } catch (e) {
     const name = (e as { name?: string })?.name;
-    return name === "TimeoutError" || name === "AbortError"
-      ? { status: "error", error: "timeout", code: null, message: "A NAV nem válaszolt időben." }
-      : { status: "error", error: "network", code: null, message: "A NAV nem elérhető." };
+    const lookup: NavLookup =
+      name === "TimeoutError" || name === "AbortError"
+        ? { status: "error", error: "timeout", code: null, message: "A NAV nem válaszolt időben." }
+        : { status: "error", error: "network", code: null, message: "A NAV nem elérhető." };
+    await record(deps.logUsage, lookup);
+    return lookup;
   }
 
   const body = await res.text();
-  return parseTaxpayerResponse(body, res.status);
+  const lookup = parseTaxpayerResponse(body, res.status);
+  await record(deps.logUsage, lookup);
+  return lookup;
+}
+
+/** Never let a logging failure lose a lookup that already succeeded. */
+async function record(
+  sink: ((row: { operation: string; outcome: string }) => Promise<void> | void) | undefined,
+  lookup: NavLookup,
+): Promise<void> {
+  if (!sink) return;
+  try {
+    await sink({
+      operation: "queryTaxpayer",
+      outcome: lookup.status === "error" ? `error:${lookup.error}` : lookup.status,
+    });
+  } catch {
+    /* counting is not worth failing a lookup over */
+  }
 }
 
 /** Exported for the "Test connection" action, which shows the request shape. */

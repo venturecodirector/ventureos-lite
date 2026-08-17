@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { getWorkspaceClient } from "@/lib/db";
+import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { requireOwner } from "@/lib/authz";
 import { encryptSecret, maskSecret, CredentialCryptoError } from "@/lib/crypto";
@@ -14,7 +14,9 @@ import {
   validateField,
   validateResolved,
 } from "./registry";
-import { resolveIntegrations } from "./resolve";
+import { resolveIntegrations, resolveNavCredentials } from "./resolve";
+import { brandFrom } from "@/modules/workspaces/brand";
+import { navQueryTaxpayer } from "@/modules/registry/nav-taxpayer";
 
 /**
  * Settings → Integrations. Owner-only, audit-logged, and the values never
@@ -218,6 +220,8 @@ export async function testIntegration(raw: unknown): Promise<TestResult> {
         return await testMailgun(values["mailgun.tx.domain"], values["mailgun.tx.apiKey"], "transactional");
       case "mailgun_cold":
         return await testMailgun(values["mailgun.cold.domain"], values["mailgun.cold.apiKey"], "cold");
+      case "nav":
+        return await testNav(workspaceId);
       default:
         return { ok: false, message: "That integration has no connection test." };
     }
@@ -290,4 +294,60 @@ async function testMailgun(
   if (res.status === 401) return { ok: false, message: "Mailgun rejected that key." };
   if (res.status === 404) return { ok: false, message: `Mailgun does not know ${domain}.` };
   return { ok: false, message: `Mailgun returned ${res.status}.` };
+}
+
+/**
+ * Prove the NAV credentials by looking up the workspace's OWN tax number.
+ *
+ * queryTaxpayer is read-only and changes nothing, and querying yourself is the
+ * cheapest possible proof: a signature failure, a wrong technical user or a
+ * mismatched taxpayer relation all surface distinctly, and a success comes back
+ * with the operator's own legal name — which is a far more convincing "it
+ * works" than a bare OK.
+ */
+async function testNav(workspaceId: string): Promise<TestResult> {
+  const brand = brandFrom(
+    (await prismaUnsafe.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { brand: true },
+    }))?.brand,
+  );
+  const creds = await resolveNavCredentials(workspaceId, brand);
+  if (!creds) {
+    return {
+      ok: false,
+      message:
+        "Hiányzó adat. A lekérdezéshez kell: technikai felhasználó, jelszó, aláírókulcs, saját adószám és szoftver azonosító.",
+    };
+  }
+
+  const lookup = await navQueryTaxpayer(creds.taxNumber, creds, {
+    // Free, but counted: NAV publishes no numeric rate limit, so volume is the
+    // only early warning we get. Cost is exactly 0 and that is the honest value.
+    logUsage: async ({ operation, outcome }) => {
+      await getWorkspaceClient(workspaceId).apiUsage.create({
+        data: { workspaceId, provider: "nav", operation: `${operation}:${outcome}`, cost: 0 },
+      });
+    },
+  });
+  switch (lookup.status) {
+    case "valid":
+      return {
+        ok: true,
+        message: `Kapcsolat rendben (${creds.environment}). A NAV szerint: ${lookup.taxpayer.legalName}.`,
+      };
+    case "deregistered":
+      // The credentials work; the news is about the taxpayer, not the link.
+      return {
+        ok: true,
+        message: `Kapcsolat rendben, de a NAV szerint ez az adószám megszűnt: ${lookup.taxpayer.legalName}.`,
+      };
+    case "unknown":
+      return {
+        ok: false,
+        message: "A kapcsolat él, de a NAV nem ismeri a megadott saját adószámot.",
+      };
+    case "error":
+      return { ok: false, message: lookup.message };
+  }
 }

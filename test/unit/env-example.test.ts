@@ -61,6 +61,14 @@ function varsReadByCode(): Map<string, string> {
   for (const m of envSrc.matchAll(/^ {6}([A-Z][A-Z_0-9]+):/gm)) {
     if (!found.has(m[1])) found.set(m[1], "src/lib/env.ts (zod schema)");
   }
+  // The third indirection: every integration credential is read as
+  // `process.env[field.envVar]` in modules/integrations/resolve.ts, so the name
+  // only ever appears as a string in the registry. Without this, adding a
+  // provider to Settings makes its documented variables look dead.
+  const registrySrc = readFileSync(join(ROOT, "src/modules/integrations/registry.ts"), "utf8");
+  for (const m of registrySrc.matchAll(/envVar:\s*"([A-Z][A-Z_0-9]*)"/g)) {
+    if (!found.has(m[1])) found.set(m[1], "src/modules/integrations/registry.ts (envVar)");
+  }
   return found;
 }
 

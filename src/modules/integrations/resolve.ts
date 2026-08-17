@@ -1,6 +1,7 @@
 import { getWorkspaceClient } from "@/lib/db";
 import { decryptSecret, CredentialCryptoError } from "@/lib/crypto";
 import { ALL_FIELDS, fieldByKey, validateResolved } from "./registry";
+import type { WorkspaceBrand } from "@/modules/workspaces/brand";
 
 /**
  * Where every integration credential is resolved.
@@ -113,5 +114,59 @@ export async function resolveMailCredentials(workspaceId: string): Promise<MailC
       apiKey: values["mailgun.cold.apiKey"] ?? null,
     },
     webhookSigningKey: values["mailgun.webhookSigningKey"] ?? null,
+  };
+}
+
+/**
+ * The NAV credentials, shaped for the taxpayer lookup.
+ *
+ * Returns null unless everything the lookup actually needs is present, so a
+ * half-configured integration reads as "not configured" rather than failing at
+ * NAV with a signature error nobody can interpret. exchangeKey is deliberately
+ * NOT required: the taxpayer query does not use it.
+ *
+ * The software identity comes from the workspace brand, because those fields
+ * tell NAV who wrote the software making the call — on a white-labelled
+ * deployment that is the operator, not us.
+ */
+export interface NavCredentialSet {
+  login: string;
+  password: string;
+  signKey: string;
+  taxNumber: string;
+  environment: "test" | "production";
+  softwareId: string;
+  softwareName: string;
+  softwareDevName: string;
+  softwareDevContact: string;
+}
+
+export async function resolveNavCredentials(
+  workspaceId: string,
+  brand: Pick<WorkspaceBrand, "name" | "legalName" | "senderName" | "senderEmail">,
+): Promise<NavCredentialSet | null> {
+  const { values } = await resolveIntegrations(workspaceId);
+  const login = values["nav.login"];
+  const password = values["nav.password"];
+  const signKey = values["nav.signKey"];
+  const taxNumber = values["nav.taxNumber"];
+  const softwareId = values["nav.softwareId"];
+  if (!login || !password || !signKey || !taxNumber || !softwareId) return null;
+
+  const env = values["nav.environment"] === "test" ? "test" : "production";
+  return {
+    login,
+    password,
+    signKey,
+    taxNumber,
+    environment: env,
+    softwareId,
+    softwareName: brand.name,
+    // Who WROTE the software, legally. On a white-labelled deployment that is
+    // the operator's own legal entity.
+    softwareDevName: brand.legalName || brand.name,
+    // NAV requires a contact; the workspace's sender address is the one the
+    // operator already publishes, so there is nothing new to configure.
+    softwareDevContact: brand.senderEmail || `${brand.senderName}`,
   };
 }

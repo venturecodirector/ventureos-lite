@@ -163,6 +163,68 @@ export const INTEGRATION_GROUPS: IntegrationGroup[] = [
       },
     ],
   },
+  {
+    id: "nav",
+    title: "NAV Online Számla (cégadatok)",
+    description:
+      "Ingyenes és hivatalos: a cég jogi neve, székhelye és adózói státusza a NAV nyilvántartásából. Ez váltja ki a fizetős céginformációs előfizetést — enélkül a keresésből származó adat marad, ami nem hiteles.",
+    testable: true,
+    fields: [
+      {
+        key: "nav.login",
+        label: "Technikai felhasználó",
+        kind: "plain",
+        envVar: "NAV_LOGIN",
+        placeholder: "15 karakter",
+        help: "onlineszamla.nav.gov.hu → Felhasználók → technikai felhasználó létrehozása",
+      },
+      {
+        key: "nav.password",
+        label: "Jelszó",
+        kind: "secret",
+        envVar: "NAV_PASSWORD",
+        help: "A technikai felhasználóhoz te adtad meg. Csak a SHA-512 lenyomata megy ki, a jelszó soha.",
+      },
+      {
+        key: "nav.signKey",
+        label: "XML aláírókulcs (signKey)",
+        kind: "secret",
+        envVar: "NAV_SIGN_KEY",
+        help: "A technikai felhasználó létrehozásakor egyszer látható. Ez írja alá a kéréseket.",
+      },
+      {
+        key: "nav.exchangeKey",
+        label: "XML cserekulcs (exchangeKey) — opcionális",
+        kind: "secret",
+        envVar: "NAV_EXCHANGE_KEY",
+        help: "A cégadat-lekérdezéshez NEM kell. Csak a későbbi számlaadat-szolgáltatás használja.",
+      },
+      {
+        key: "nav.taxNumber",
+        label: "Saját adószám (első 8 jegy)",
+        kind: "plain",
+        envVar: "NAV_TAX_NUMBER",
+        placeholder: "12345678",
+        help: "Annak a cégnek az adószáma, amelyhez a technikai felhasználó tartozik.",
+      },
+      {
+        key: "nav.environment",
+        label: "Környezet",
+        kind: "plain",
+        envVar: "NAV_ENV",
+        placeholder: "production",
+        help: "production vagy test. A teszt rendszer külön regisztráció, külön technikai felhasználóval.",
+      },
+      {
+        key: "nav.softwareId",
+        label: "Szoftver azonosító (18 karakter)",
+        kind: "plain",
+        envVar: "NAV_SOFTWARE_ID",
+        placeholder: "18 karakter, saját választás",
+        help: "A NAV kötelezően kéri, de nem ő adja ki — te választod. Pontosan 18 karakter.",
+      },
+    ],
+  },
 ];
 
 export const ALL_FIELDS: IntegrationField[] = INTEGRATION_GROUPS.flatMap((g) => g.fields);
@@ -248,7 +310,39 @@ export function validateResolved(values: Record<string, string | null>): Integra
 }
 
 /** Shape check for a single field before it is saved. */
+/**
+ * NAV field shapes, checked before a value is stored.
+ *
+ * These are cheap and they matter: a login of the wrong length or a softwareId
+ * that is not exactly 18 characters is rejected by NAV with a generic error, and
+ * catching it at the point of entry is far kinder than discovering it on the
+ * first lookup.
+ */
+function validateNavField(key: string, value: string): string | null {
+  switch (key) {
+    case "nav.login":
+      return /^[a-zA-Z0-9]{15}$/.test(value)
+        ? null
+        : "A technikai felhasználó neve pontosan 15 betű/szám.";
+    case "nav.taxNumber":
+      return /^\d{8}$/.test(value) ? null : "Az adószám első 8 jegye kell ide, kötőjel nélkül.";
+    case "nav.environment":
+      return value === "production" || value === "test"
+        ? null
+        : 'Csak "production" vagy "test" lehet.';
+    case "nav.softwareId":
+      return value.length === 18
+        ? null
+        : `A szoftver azonosító pontosan 18 karakter (most ${value.length}).`;
+    default:
+      return null;
+  }
+}
+
 export function validateField(key: string, value: string): string | null {
+  const nav = key.startsWith("nav.") ? validateNavField(key, value) : null;
+  if (nav) return nav;
+
   const field = fieldByKey(key);
   if (!field) return "Unknown setting.";
   const v = value.trim();
