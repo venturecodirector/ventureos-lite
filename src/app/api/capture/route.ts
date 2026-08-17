@@ -12,6 +12,7 @@ import { resolveCaptureToken } from "@/modules/capture/tokens";
 import { storeAvatar } from "@/modules/capture/avatar";
 import { normalizeDomain } from "@/modules/leads/dedupe";
 import { captureBodySchema } from "@/modules/capture/body";
+import { composeCapturedNotes, mergeCapturedNotes } from "@/modules/capture/notes";
 
 /**
  * Browser-extension capture (P1/1e).
@@ -67,23 +68,59 @@ export async function POST(req: Request): Promise<Response> {
   // capture of the same person updates rather than duplicating.
   const existing = await db.lead.findFirst({
     where: { linkedinUrl: input.url },
-    select: { id: true, contactName: true, bio: true, personBrief: true, title: true, email: true, phone: true },
+    select: {
+      id: true, contactName: true, bio: true, personBrief: true, title: true,
+      email: true, phone: true, notes: true,
+    },
   });
 
   let companyId: string | null = null;
   if (input.companyName) {
-    const domain = normalizeDomain(input.companyName);
+    // The domain comes from a LINK the profile published, never from the
+    // company's name. `normalizeDomain("Danubia Fogászat Kft.")` used to be
+    // handed to a domain match, which is a name being asked to behave like a
+    // hostname: it can only ever miss, and it made every capture create a
+    // second copy of a company that was already on file.
+    const domain = input.websiteUrl ? normalizeDomain(input.websiteUrl) : null;
     const company =
       (await db.company.findFirst({
-        where: domain ? { OR: [{ name: input.companyName }, { domain }] } : { name: input.companyName },
-        select: { id: true },
+        where: {
+          OR: [
+            { name: { equals: input.companyName, mode: "insensitive" } },
+            ...(domain ? [{ domain }] : []),
+          ],
+        },
+        select: { id: true, domain: true, city: true },
       })) ??
       (await db.company.create({
-        data: { workspaceId: identity.workspaceId, name: input.companyName, city: input.location ?? null },
-        select: { id: true },
+        data: {
+          workspaceId: identity.workspaceId,
+          name: input.companyName,
+          domain,
+          city: input.location ?? null,
+        },
+        select: { id: true, domain: true, city: true },
       }));
     companyId = company.id;
+
+    // Fill blanks on a company we found, never overwrite what is already there.
+    if ((domain && !company.domain) || (input.location && !company.city)) {
+      await db.company.update({
+        where: { id: company.id },
+        data: {
+          domain: company.domain ?? domain ?? undefined,
+          city: company.city ?? input.location ?? undefined,
+        },
+      });
+    }
   }
+
+  // The capture as prose, so the research call has something to read. Delimited
+  // and merged rather than assigned: anything a person typed into notes stays.
+  // A capture that read nothing writes nothing — `undefined` leaves the column
+  // exactly as it was rather than blanking it.
+  const block = composeCapturedNotes(input);
+  const notes = block ? mergeCapturedNotes(existing?.notes, block) : undefined;
 
   const lead = existing
     ? await db.lead.update({
@@ -96,6 +133,7 @@ export async function POST(req: Request): Promise<Response> {
           email: existing.email ?? input.email ?? undefined,
           phone: existing.phone ?? input.phone ?? undefined,
           bio: input.bio ?? undefined,
+          notes,
           companyId: companyId ?? undefined,
         },
         select: { id: true, contactName: true, personBrief: true },
@@ -110,6 +148,7 @@ export async function POST(req: Request): Promise<Response> {
           phone: input.phone ?? null,
           linkedinUrl: input.url,
           bio: input.bio ?? null,
+          notes,
           source: "LINKEDIN",
           stage: "RESEARCHED",
           signals: [],

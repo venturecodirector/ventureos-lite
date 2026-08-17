@@ -33,7 +33,16 @@ function looseString(max: number) {
     });
 }
 
-/** A URL we would like but can live without: anything unusable becomes absent. */
+/**
+ * A URL we would like but can live without: anything unusable becomes absent.
+ *
+ * http(s) ONLY. A `data:` URL parses perfectly well, which is how LinkedIn's
+ * 1×1 lazy-load placeholder used to travel all the way to the avatar store
+ * before being refused there — the capture reported a photo it had not really
+ * read, and the app quietly showed initials instead. Rejecting the scheme here
+ * makes the absence honest at the point it becomes true, and keeps an older
+ * installed extension from re-introducing it.
+ */
 function looseUrl(max: number) {
   return z
     .string()
@@ -42,7 +51,8 @@ function looseUrl(max: number) {
       const raw = (v ?? "").trim();
       if (raw.length === 0 || raw.length > max) return undefined;
       try {
-        new URL(raw);
+        const parsed = new URL(raw);
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined;
         return raw;
       } catch {
         // A photo we cannot fetch is not a reason to lose the person.
@@ -65,6 +75,8 @@ export const captureBodySchema = z.object({
   /** Only ever what the person published in their own profile text. */
   email: looseString(320),
   phone: looseString(60),
+  /** A personal or company site the profile links to, if it links to one. */
+  websiteUrl: looseUrl(500),
   bio: looseString(8000),
   photoUrl: looseUrl(2000),
   posts: z

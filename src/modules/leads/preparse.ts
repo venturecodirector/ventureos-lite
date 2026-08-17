@@ -101,6 +101,36 @@ export function hasAnalyzableText(text: string): boolean {
   return stripped.length >= 40 && stripped.split(" ").filter((w) => w.length > 1).length >= 8;
 }
 
+/**
+ * Everything on a lead that a research call could actually read.
+ *
+ * `notes` used to be the only source, and that is why research was dead on
+ * every lead the browser extension captured: the capture endpoint wrote what it
+ * read into `bio`, `title` and the company row and left `notes` empty, so a
+ * lead with a full About section still answered "there is no profile text to
+ * analyse yet". The capture endpoint now writes notes as well — but gathering
+ * the structured fields here is what makes the leads captured BEFORE that fix
+ * work, with no migration and nobody having to re-capture anything.
+ */
+export function researchSource(lead: {
+  notes?: string | null;
+  bio?: string | null;
+  title?: string | null;
+  contactName?: string | null;
+  personBrief?: string | null;
+  company?: { name?: string | null } | null;
+}): string {
+  return [
+    lead.notes,
+    lead.bio,
+    lead.contactName && lead.title ? `${lead.contactName} — ${lead.title}` : lead.title,
+    lead.company?.name,
+    lead.personBrief,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export function preParse(text: string): PreParsed {
   const src = text ?? "";
 

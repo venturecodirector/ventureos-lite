@@ -15,7 +15,7 @@ import {
   type LeadCard,
 } from "@/lib/ai/prompts/lead-research";
 import { computeIcpScore, MAX_ICP_SCORE, gateThresholdFromConfig, assessIcp } from "./scoring";
-import { preParse, hasAnalyzableText } from "./preparse";
+import { preParse, hasAnalyzableText, researchSource } from "./preparse";
 import { enrichCompanySite } from "./enrichment";
 import { assertCanEnterStage, ScoreGateError, ResearchInputError } from "./gate";
 import {
@@ -200,10 +200,14 @@ export async function runResearch(
   });
   if (!lead) throw new Error("Lead not found");
 
+  // Everything on the lead a research call could read — not just `notes`, which
+  // is what made research impossible on extension-captured leads.
+  const analyzable = researchSource(lead);
+
   // P1/1b — deterministic extraction first. These are real fields, found with
   // regexes, and they cost nothing. Persisting them before the call means a
   // paste yields something even if the research is never run.
-  const parsed = preParse(lead.notes ?? "");
+  const parsed = preParse(analyzable);
   const companyId = lead.companyId;
   if (parsed.emails[0] || parsed.phones[0] || parsed.city || parsed.domain) {
     await db.lead.update({
@@ -225,7 +229,7 @@ export async function runResearch(
   }
 
   // P1/1a — refuse to spend a Sonnet call on a paste with nothing in it.
-  if (!hasAnalyzableText(lead.notes ?? "")) {
+  if (!hasAnalyzableText(analyzable)) {
     throw new ResearchInputError(
       "There is no profile text to analyse yet. Paste the profile text alongside the URL, or capture the page with the browser extension.",
     );
@@ -243,6 +247,9 @@ export async function runResearch(
     parsed.phones[0] && `Phone: ${parsed.phones[0]}`,
     parsed.city && `City: ${parsed.city}`,
     lead.notes && `Notes / pasted page:\n${lead.notes}`,
+    // Only when it is not already inside the notes, which is where a capture
+    // now puts it — the model should not be shown the About section twice.
+    !lead.notes && lead.bio && `Profile text:\n${lead.bio}`,
     site?.text && `Company website copy:\n${site.text}`,
   ]
     .filter(Boolean)

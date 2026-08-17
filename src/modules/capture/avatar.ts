@@ -46,8 +46,10 @@ export async function storeAvatar(leadId: string, url: string): Promise<AvatarRe
     return no("the photo address was not a URL");
   }
   // Same SSRF reasoning as the public audit: we fetch what we are handed.
-  // A `data:` placeholder lands here, which is the likeliest way a page that
-  // lazy-loads its images yields a photo URL that cannot be fetched.
+  // The `data:` lazy-load placeholder is now refused a layer earlier, by the
+  // capture body schema, so that a capture never claims a photo it does not
+  // have. This check stays as the backstop it always was: `storeAvatar` must be
+  // safe on its own terms, whatever hands it a URL.
   if (parsed.protocol !== "https:") {
     return no(`the photo was a ${parsed.protocol.replace(":", "")} address, not https`);
   }
