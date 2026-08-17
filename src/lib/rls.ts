@@ -61,6 +61,8 @@ const BUSINESS_TABLES = [
   "deals",
   "custom_field_defs",
   "merge_records",
+  "import_templates",
+  "import_batches",
 ];
 
 const CURRENT_WS = "current_setting('app.current_workspace', true)";

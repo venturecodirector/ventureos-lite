@@ -417,6 +417,8 @@ model Company {
   /// external system's stored id still resolves — to the survivor.
   mergedIntoId  String?          @map("merged_into_id")
   mergedAt      DateTime?        @map("merged_at")
+  /// The import that created or last touched this row (P5/3).
+  importBatchId String?          @map("import_batch_id")
 
   @@unique([workspaceId, taxId])
   @@index([workspaceId])
@@ -459,22 +461,22 @@ model Lead {
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
-  company      Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  referrer     Referrer?     @relation(fields: [referrerId], references: [id], onDelete: SetNull)
-  activities   Activity[]
-  messages     Message[]
-  calls        Call[]
-  meetings     Meeting[]
-  documents    Document[]
-  emailLogs    EmailLog[]
-  outcomes     DealOutcome[]
-  deals        Deal[]
+  company       Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  referrer      Referrer?     @relation(fields: [referrerId], references: [id], onDelete: SetNull)
+  activities    Activity[]
+  messages      Message[]
+  calls         Call[]
+  meetings      Meeting[]
+  documents     Document[]
+  emailLogs     EmailLog[]
+  outcomes      DealOutcome[]
+  deals         Deal[]
   /// Captured from the page the user was viewing (P1/1e). Personal data:
   /// all three join the erasure cascade and the anonymization job.
-  avatarPath   String?       @map("avatar_path")
-  bio          String?       @db.Text
-  personBrief  String?       @map("person_brief") @db.Text
-  briefAt      DateTime?     @map("brief_at")
+  avatarPath    String?       @map("avatar_path")
+  bio           String?       @db.Text
+  personBrief   String?       @map("person_brief") @db.Text
+  briefAt       DateTime?     @map("brief_at")
   /// Owner-defined field values (P5/1), keyed by CustomFieldDef.key. Json
   /// rather than columns because the shape is per workspace; validated
   /// server-side against the definitions with a zod schema built from them, so
@@ -482,10 +484,13 @@ model Lead {
   ///
   /// GDPR: a custom field can hold anything a person typed into it, so the
   /// whole object joins the erasure cascade and the anonymization job.
-  customFields Json?         @map("custom_fields")
+  customFields  Json?         @map("custom_fields")
   /// Set when this lead was merged INTO another (P5/2). See Company.mergedIntoId.
-  mergedIntoId String?       @map("merged_into_id")
-  mergedAt     DateTime?     @map("merged_at")
+  mergedIntoId  String?       @map("merged_into_id")
+  mergedAt      DateTime?     @map("merged_at")
+  /// The import that created or last touched this row (P5/3). What makes a
+  /// batch rollback able to find its own work without scanning timestamps.
+  importBatchId String?       @map("import_batch_id")
 
   @@index([workspaceId])
   @@index([companyId])
@@ -1778,6 +1783,65 @@ model PushSubscription {
 
   @@index([workspaceId, userId])
   @@map("push_subscriptions")
+}
+
+/// A reusable CSV column mapping (playbook-v2 P5/3).
+///
+/// Imports come from the same handful of sources over and over — the same
+/// export from the same directory, month after month — and re-mapping fourteen
+/// columns each time is where mistakes get made.
+model ImportTemplate {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  name        String
+  /// Where the file comes from, for the operator's own memory. Free text.
+  source      String?
+  /// { "contactName": 0, "cf:segment": 4, ... } — target -> column index.
+  mapping     Json
+  /// Per-target coercions, e.g. { "cf:renew_date": "date_hu" }. Empty is normal.
+  coercions   Json     @default("{}")
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  batches ImportBatch[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@map("import_templates")
+}
+
+/// One run of an import, and everything needed to undo it (playbook-v2 P5/3).
+///
+/// `records` is the whole reason this table exists: it holds, per touched row,
+/// what the import DID (created or updated), what the row looked like BEFORE
+/// (so an update can be reverted) and what it looked like AFTER (so a later
+/// manual edit is detectable). A rollback that cannot tell "the import wrote
+/// this" from "a person fixed it afterwards" is not a rollback, it is a second
+/// data loss.
+model ImportBatch {
+  id            String    @id @default(cuid())
+  workspaceId   String    @map("workspace_id")
+  filename      String?
+  templateId    String?   @map("template_id")
+  /// completed | rolled_back
+  status        String    @default("completed")
+  createdCount  Int       @default(0) @map("created_count")
+  updatedCount  Int       @default(0) @map("updated_count")
+  skippedCount  Int       @default(0) @map("skipped_count")
+  /// [{ entity, id, action, before, after }]
+  records       Json
+  /// After this the undo is gone; the playbook's window is 7 days.
+  rollbackUntil DateTime  @map("rollback_until")
+  rolledBackAt  DateTime? @map("rolled_back_at")
+  rolledBackBy  String?   @map("rolled_back_by")
+  createdBy     String?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  template ImportTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@map("import_batches")
 }
 
 /// One merge, and everything needed to undo it (playbook-v2 P5/2).

@@ -10,6 +10,8 @@ import {
 } from "@/modules/merge/actions";
 import type { MergePreview } from "@/modules/merge/store";
 import type { FieldChoice } from "@/modules/merge/detect";
+import { rollbackBatch } from "@/modules/import/actions";
+import type { RollbackConflict } from "@/modules/import/store";
 
 /**
  * Settings → Data quality (playbook-v2 P5/2 and P5/3).
@@ -38,6 +40,7 @@ export function SettingsDataQuality({ view }: { view: DataQualityView }) {
   const [choices, setChoices] = useState<Record<string, FieldChoice>>({});
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [conflicts, setConflicts] = useState<RollbackConflict[]>([]);
 
   function open(entity: "company" | "lead", survivorId: string, loserId: string) {
     setError(null);
@@ -88,6 +91,21 @@ export function SettingsDataQuality({ view }: { view: DataQualityView }) {
     });
   }
 
+  function rollback(batchId: string) {
+    setError(null);
+    setConflicts([]);
+    startTransition(async () => {
+      const res = await rollbackBatch(batchId);
+      if (!res.ok) {
+        setError(res.error);
+        setConflicts(res.conflicts ?? []);
+        return;
+      }
+      setNote(`Import rolled back — ${res.deleted} deleted, ${res.reverted} reverted.`);
+      router.refresh();
+    });
+  }
+
   const nothing = view.companies.length === 0 && view.leads.length === 0;
 
   return (
@@ -97,12 +115,25 @@ export function SettingsDataQuality({ view }: { view: DataQualityView }) {
     >
       <h2 className="mb-1 font-display text-[18px] lowercase tracking-display">data quality</h2>
       <p className="mb-4 max-w-[620px] text-[12.5px] text-muted">
-        Records that look like the same company or the same person. Merging moves every
-        activity, document and deal onto the survivor and leaves the other as a tombstone,
-        so old links still resolve. Undoable for 30 days.
+        Records that look like the same company or the same person, and every import that
+        has run. Merging moves every activity, document and deal onto the survivor and
+        leaves the other as a tombstone, so old links still resolve — undoable for 30 days.
+        An import is undoable for 7.
       </p>
 
       {error && <p className="mb-3 text-[12.5px] text-[#FFB3C2]">{error}</p>}
+      {conflicts.length > 0 && (
+        <ul
+          className="mb-3 grid gap-1 rounded-[10px] border border-[rgba(255,176,66,0.4)] bg-[rgba(255,176,66,0.08)] px-3 py-2"
+          data-testid="rollback-conflicts"
+        >
+          {conflicts.map((c) => (
+            <li key={c.id} className="text-[12px] text-[#FFD79A]">
+              <b>{c.label}</b> — {c.reason}
+            </li>
+          ))}
+        </ul>
+      )}
       {note && <p className="mb-3 text-[12.5px] text-pos">{note}</p>}
 
       {nothing ? (
@@ -177,6 +208,43 @@ export function SettingsDataQuality({ view }: { view: DataQualityView }) {
                       Undo
                     </button>
                   )
+                ) : (
+                  <span className="text-[11px] text-muted">window closed</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {view.batches.length > 0 && (
+        <div className="mt-4">
+          <p className={`${LABEL} mb-1.5`}>Imports</p>
+          <ul className="grid gap-1.5" data-testid="import-batches">
+            {view.batches.slice(0, 15).map((b) => (
+              <li
+                key={b.id}
+                className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line px-3 py-2 text-[12.5px]"
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  <b>{b.filename ?? "(unnamed file)"}</b>
+                  <span className="ml-2 text-[11px] text-muted tabular-nums">
+                    {b.created} created · {b.updated} updated · {b.skipped} skipped ·{" "}
+                    {b.at.slice(0, 10)}
+                  </span>
+                </span>
+                {b.rolledBackAt ? (
+                  <span className="text-[11px] text-muted">rolled back</span>
+                ) : b.canRollback ? (
+                  <button
+                    type="button"
+                    className={BTN}
+                    disabled={pending}
+                    data-testid="import-rollback"
+                    onClick={() => rollback(b.id)}
+                  >
+                    Roll back
+                  </button>
                 ) : (
                   <span className="text-[11px] text-muted">window closed</span>
                 )}

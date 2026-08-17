@@ -29,11 +29,9 @@ import { canQualify, type Qualification } from "../inbox/qualification";
 import { enqueueBriefForLead } from "../meetings/trigger";
 import {
   findDuplicate,
-  dedupePreview,
   normalizeDomain,
   type DedupeKeys,
   type ExistingLead,
-  type DedupeResult,
 } from "./dedupe";
 import { findByTaxId, normalizeTaxId } from "../registry/dedupe";
 import { autoWatchForStage } from "../audit/watch-actions";
@@ -67,16 +65,6 @@ const linkedinSchema = z.object({
   contactName: z.string().optional(),
   companyName: z.string().optional(),
 });
-
-const candidateSchema = z.object({
-  contactName: z.string().optional(),
-  title: z.string().optional(),
-  email: z.string().optional(),
-  linkedinUrl: z.string().optional(),
-  companyName: z.string().optional(),
-  companyDomain: z.string().optional(),
-});
-type Candidate = z.infer<typeof candidateSchema>;
 
 async function loadExistingLeadKeys(
   db: ReturnType<typeof getWorkspaceClient>,
@@ -189,51 +177,10 @@ export async function captureLinkedin(raw: unknown): Promise<{ leadId: string }>
   return { leadId: lead.id };
 }
 
-// ---- 4.2 CSV import: mapped rows in, dedupe preview / commit ---------------
-
-export async function previewCsvImport(
-  rawCandidates: unknown,
-): Promise<Array<DedupeResult<Candidate>>> {
-  const candidates = z.array(candidateSchema).parse(rawCandidates);
-  const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
-  const existing = await loadExistingLeadKeys(db);
-  return dedupePreview(candidates, existing);
-}
-
-export async function commitCsvImport(
-  rawCandidates: unknown,
-): Promise<{ created: number; skipped: number }> {
-  const candidates = z.array(candidateSchema).parse(rawCandidates);
-  const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
-  const preview = dedupePreview(candidates, await loadExistingLeadKeys(db));
-
-  let created = 0;
-  for (const row of preview) {
-    if (row.status !== "new") continue;
-    const c = candidates[row.index];
-    const company = await findOrCreateCompany(db, workspaceId, {
-      name: c.companyName || "Unknown company",
-      domain: c.companyDomain,
-    });
-    await db.lead.create({
-      data: {
-        workspaceId,
-        companyId: company.id,
-        contactName: c.contactName,
-        title: c.title,
-        email: c.email || undefined,
-        linkedinUrl: c.linkedinUrl,
-        source: "MANUAL",
-        stage: "RESEARCHED",
-      },
-    });
-    created += 1;
-  }
-  revalidatePath("/leads");
-  return { created, skipped: preview.length - created };
-}
+// CSV import moved to modules/import (playbook-v2 P5/3). The v1 pair that lived
+// here — previewCsvImport / commitCsvImport — could only create, could only say
+// "new" or "duplicate", and left no way back. `runImport` replaces both with a
+// tracked batch; the dedupe helpers below are still used by manual capture.
 
 // ---- 4.2 Claude research run (Sonnet, structured) -------------------------
 

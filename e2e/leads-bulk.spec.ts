@@ -24,6 +24,25 @@ function tag(): string {
  * checkbox added a column: the assertions still passed a number, just the wrong
  * one. The header is the stable name for a column.
  */
+/**
+ * Assert on a column once the table has settled.
+ *
+ * The whole suite shares one workspace and one dev server, so a sibling spec
+ * revalidating /leads can leave the client router serving a render that
+ * predates this test's own mutation. Reading the cells once and asserting on
+ * them turns that into a flake; retrying the read until it agrees turns it back
+ * into a test of the mutation.
+ */
+async function expectColumnEventually(
+  page: Page,
+  header: string,
+  predicate: (values: string[]) => boolean,
+) {
+  await expect(async () => {
+    expect(predicate(await columnValues(page, header))).toBe(true);
+  }).toPass({ timeout: 15_000 });
+}
+
 async function columnValues(page: Page, header: string): Promise<string[]> {
   const headers = await page.locator("thead th").allInnerTexts();
   const index = headers.findIndex((h) => h.trim().toLowerCase().startsWith(header.toLowerCase()));
@@ -117,8 +136,9 @@ test("a bulk stage change moves the selected leads", async ({ page }) => {
 
   await expect(page.getByTestId("bulk-summary")).toContainText("2 leads updated");
   await filterTo(page, company);
-  const stages = await columnValues(page, "Stage");
-  expect(stages.every((s) => s.toLowerCase().includes("contacted"))).toBe(true);
+  await expectColumnEventually(page, "Stage", (stages) =>
+    stages.length > 0 && stages.every((s) => s.toLowerCase().includes("contacted")),
+  );
 });
 
 test("the score gate refuses the leads below it and says which", async ({ page }) => {
@@ -188,8 +208,9 @@ test("parking leads as Not now takes a wake-up date", async ({ page }) => {
   await expect(page.getByTestId("bulk-summary")).toContainText("2 leads updated");
 
   await filterTo(page, company);
-  const stages = await columnValues(page, "Stage");
-  expect(stages.every((s) => s.toLowerCase().includes("not now"))).toBe(true);
+  await expectColumnEventually(page, "Stage", (stages) =>
+    stages.length > 0 && stages.every((s) => s.toLowerCase().includes("not now")),
+  );
 });
 
 test("disqualifying in bulk demands a reason before it will run", async ({ page }) => {
@@ -232,5 +253,9 @@ test("bulk delete erases the selected leads after confirmation", async ({ page }
   await expect(page.getByTestId("bulk-summary")).toContainText("2 leads deleted");
 
   await filterTo(page, company);
-  await expect(page.locator("tbody tr")).toContainText("No lead matches this filter");
+  // Same contention as expectColumnEventually: the delete has happened, but the
+  // client router can still be holding a render from before it.
+  await expect(async () => {
+    await expect(page.locator("tbody tr")).toContainText("No lead matches this filter");
+  }).toPass({ timeout: 15_000 });
 });

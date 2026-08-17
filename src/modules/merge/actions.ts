@@ -16,6 +16,7 @@ import {
   type MergePreview,
 } from "./store";
 import type { DuplicateCandidate } from "./detect";
+import { listImportBatches, type BatchRow } from "@/modules/import/store";
 
 /**
  * Merge, session-facing (playbook-v2 P5/2).
@@ -41,16 +42,19 @@ export interface DataQualityView {
   companies: DuplicateCandidate[];
   leads: DuplicateCandidate[];
   history: MergeHistoryRow[];
+  /** Import batches and their rollback windows (P5/3) — same screen, same job. */
+  batches: BatchRow[];
   canMerge: boolean;
 }
 
 export async function getDataQuality(): Promise<DataQualityView> {
   const { workspaceId } = await getActiveContext();
-  const [{ companies, leads }, history] = await Promise.all([
+  const [{ companies, leads }, history, batches] = await Promise.all([
     listDuplicateCandidates(workspaceId),
     listMergeHistory(workspaceId),
+    listImportBatches(workspaceId),
   ]);
-  return { companies, leads, history, canMerge: (await requireMergeGrant()) === null };
+  return { companies, leads, history, batches, canMerge: (await requireMergeGrant()) === null };
 }
 
 export async function getMergePreview(raw: unknown): Promise<
