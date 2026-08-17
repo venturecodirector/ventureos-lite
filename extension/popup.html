@@ -45,10 +45,13 @@
 <div class="msg" id="msg"></div>
 
 <button id="diagnose" class="secondary">Copy diagnostics</button>
+<button id="snapshot" class="secondary">Save DOM snapshot</button>
 <p class="muted">
-  Use this when a capture reads less than it should. It copies the page's
-  <b>shape</b> — never its text — so the reader can be fixed against the real
-  layout instead of a guess.
+  Use these when a capture reads less than it should. <b>Diagnostics</b> copies
+  the page's shape — never its text. <b>Snapshot</b> downloads a scrubbed copy
+  of the page to commit as a test fixture: other people's names are replaced,
+  hidden data blocks are emptied, signed URLs are stripped, and the layout is
+  left exactly as it is.
 </p>
 
 <details id="settings">

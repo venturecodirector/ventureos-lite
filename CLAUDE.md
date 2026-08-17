@@ -45,8 +45,8 @@ Single workspace for a BDR: find businesses (Google Places prospecting, LinkedIn
 - Money: store HUF as integer forints, VAT computed, never floats
 - Commit per task, conventional commits, migration per schema change
 
-## Environment (.env — never commit)
-DB_FLAVOR=postgres|mysql, DATABASE_URL, REDIS_URL, NEXTAUTH_SECRET, NEXTAUTH_URL, ANTHROPIC_API_KEY, GOOGLE_PLACES_API_KEY, PAGESPEED_API_KEY, MAILGUN_API_KEY, MAILGUN_DOMAIN, MAILGUN_EU=true, APP_URL, FILES_DIR=/data/files
+## Environment
+Never commit `.env`. The full variable list, with comments and expected values, is `.env.production.example`.
 
 ## Definition of done for any task
 Type-checks clean, lint clean, relevant tests pass, works at 390px width, no cross-workspace data access possible (guard + isolation test), no unbudgeted Claude call introduced, runs inside `docker compose up`.

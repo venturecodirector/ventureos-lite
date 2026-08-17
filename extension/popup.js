@@ -148,6 +148,53 @@ $("diagnose").addEventListener("click", async () => {
   }
 });
 
+/**
+ * Download a scrubbed copy of this page to commit as a test fixture.
+ *
+ * The point is to stop iterating against live LinkedIn. A committed fixture is
+ * checked in once and replayed in jsdom for ever after; a live profile has to be
+ * re-found, re-loaded and re-read for every attempt, and changes underneath you
+ * while you work. Scrubbing happens in the page (snapshot.js) so that nothing
+ * unscrubbed ever leaves the tab.
+ */
+$("snapshot").addEventListener("click", async () => {
+  $("snapshot").disabled = true;
+  msg("Serializing and scrubbing…");
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!PROFILE_URL.test(tab?.url ?? "")) {
+      msg("Open a LinkedIn profile or a Sales Navigator lead first.", "err");
+      return;
+    }
+
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["snapshot.js"],
+    });
+    if (!result?.html) {
+      msg("Could not serialize this page.", "err");
+      return;
+    }
+
+    // A data: URL rather than a blob: URL — the popup closes as soon as the
+    // download starts, and revoking a blob URL on unload cancels the download.
+    const url = `data:text/html;charset=utf-8,${encodeURIComponent(result.html)}`;
+    await chrome.downloads.download({
+      url,
+      filename: `linkedin-fixture-${Date.now()}.html`,
+      saveAs: true,
+    });
+    msg(
+      `Saved. ${result.scrubbed.otherPeople} other people and ${result.scrubbed.otherSlugs} profile links scrubbed; ${Math.round(result.bytes / 1024)} kB. Move it into test/fixtures/linkedin/.`,
+      "ok",
+    );
+  } catch (e) {
+    msg(`Snapshot failed (${String(e?.message ?? e).slice(0, 60)}).`, "err");
+  } finally {
+    $("snapshot").disabled = false;
+  }
+});
+
 $("capture").addEventListener("click", async () => {
   $("capture").disabled = true;
   msg("Reading the page…");
