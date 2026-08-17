@@ -444,6 +444,12 @@ model Lead {
   referrerId     String?    @map("referrer_id")
   contactName    String?    @map("contact_name")
   title          String?
+  /// The LinkedIn headline — free prose the person wrote about themselves, e.g.
+  /// "VP Sales @ Metaview | Startup Advisor and Investor". Its OWN column, not a
+  /// fallback for `title`: the capture used to collapse the two, so a profile with
+  /// no Experience section got its headline filed as its job title and the form
+  /// rendered it in the job-title input beside an empty Name field.
+  headline       String?    @db.Text
   email          String?
   phone          String?
   linkedinUrl    String?    @map("linkedin_url")

@@ -1,0 +1,14 @@
+-- The LinkedIn headline gets its OWN column.
+--
+-- It used to be a fallback for `title`: `title: input.jobTitle ?? input.headline`.
+-- So a profile whose Experience section never mounted — which is most of them,
+-- because the section is lazy-rendered — had its headline filed as its job title,
+-- and the lead form rendered it in the job-title input. On /in/mgoldberger that
+-- headline was itself wrong (it was the person's NAME), which is why the operator
+-- saw an empty Name field with "Mark Goldberger" sitting beside it.
+--
+-- Nullable and additive: every existing row keeps whatever is in `title`, and
+-- nothing is migrated between the two columns. Backfilling would mean guessing
+-- which existing titles were really headlines, and a wrong guess would empty a
+-- job title a human had typed.
+ALTER TABLE "leads" ADD COLUMN "headline" TEXT;

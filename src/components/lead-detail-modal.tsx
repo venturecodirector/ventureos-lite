@@ -115,6 +115,7 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
         leadId: form.id,
         contactName: form.contactName,
         title: form.title,
+        headline: form.headline,
         email: form.email,
         phone: form.phone,
         linkedinUrl: form.linkedinUrl,
@@ -256,9 +257,26 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
               />
               <input
                 className={INPUT}
-                placeholder="Title"
+                placeholder="Job title"
+                data-testid="lead-title"
                 value={form.title}
                 onChange={(e) => patch({ title: e.target.value })}
+              />
+              {/*
+                THE HEADLINE HAS ITS OWN INPUT.
+                It used to share the job-title one, because the capture wrote
+                `title: jobTitle ?? headline`. So a profile with no Experience
+                section — most of them, since the section is lazy-rendered — showed
+                its headline where its job title belongs. They are different facts:
+                a job title is "VP Sales", a headline is "VP Sales @ Metaview |
+                Startup Advisor and Investor | Ramp and Navan Alum".
+              */}
+              <input
+                className={`${INPUT} sm:col-span-2`}
+                placeholder="Headline"
+                data-testid="lead-headline"
+                value={form.headline}
+                onChange={(e) => patch({ headline: e.target.value })}
               />
               <input
                 className={INPUT}
@@ -314,6 +332,7 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
               <input
                 className={INPUT}
                 placeholder="City"
+                data-testid="lead-city"
                 value={form.companyCity}
                 onChange={(e) => patch({ companyCity: e.target.value })}
               />

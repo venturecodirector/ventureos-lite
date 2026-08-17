@@ -667,23 +667,11 @@
     ? card.lines.filter((l) => l !== fields.name?.value && !isChrome(l) && !isSomeoneElse(l))
     : [];
 
-  // ---- headline -----------------------------------------------------------
-  const LOCATION_SHAPE = /^[\p{L}\s.'’-]+(,\s*[\p{L}\s.'’-]+){1,2}$/u;
-
-  const validateHeadline = (value) => {
-    if (value.length < 3 || value.length > 220) return "headline_length_implausible";
-    if (isSomeoneElse(value)) return "headline_matches_another_person_on_page";
-    if (fields.name && norm(value) === norm(fields.name.value)) return "headline_is_the_name";
-    // A bare "City, Country" is a location that drifted into the wrong slot.
-    if (LOCATION_SHAPE.test(value) && value.split(",").length <= 3 && !/[@|·]/.test(value)) {
-      return "headline_reads_as_a_location";
-    }
-    if (isNegativeHeading(value)) return "headline_is_a_section_heading";
-    return null;
-  };
-
-  offer("headline", "topcard", "high", cardLines[0], validateHeadline);
-
+  // ---- location, validator first -----------------------------------------
+  // Declared ABOVE the headline because the headline validator CALLS it: a line
+  // with no headline signal that reads as a place is a place, and that is the
+  // check "San Francisco Bay Area" needed. As a `const` below, it sat in its own
+  // temporal dead zone at the moment the headline was offered.
   // ---- location -----------------------------------------------------------
   // Shape and page-context checks happen here; whether the place RESOLVES is
   // decided server-side against the one authoritative gazetteer, which would
@@ -716,6 +704,80 @@
     }
     return null;
   };
+
+
+  // ---- headline -----------------------------------------------------------
+  const LOCATION_SHAPE = /^[\p{L}\s.'’-]+(,\s*[\p{L}\s.'’-]+){1,2}$/u;
+
+  /**
+   * What makes a line read as a headline rather than as some other fact.
+   *
+   * A LinkedIn headline is nearly always either punctuated — "VP Sales @ Metaview
+   * | Startup Advisor" — or names a role. A line with neither is something else
+   * that happens to sit in the same card.
+   */
+  const HEADLINE_SEPARATOR = /[|@·•]|\s+at\s+|\s+@\s+/i;
+  const ROLE_VOCABULARY =
+    /\b(ceo|cto|coo|cfo|cmo|cro|vp|svp|evp|head|director|manager|lead|leader|founder|co-?founder|owner|partner|president|chief|principal|engineer|developer|designer|consultant|advisor|adviser|specialist|analyst|architect|scientist|recruiter|marketer|strategist|investor|ügyvezető|vezető|igazgató|tanácsadó|fejlesztő|mérnök|tervező|értékesítő|szakértő|elemző|alapító|tulajdonos)\b/i;
+  const hasHeadlineSignal = (v) => HEADLINE_SEPARATOR.test(v) || ROLE_VOCABULARY.test(v);
+
+  const validateHeadline = (value) => {
+    if (value.length < 3 || value.length > 220) return "headline_length_implausible";
+    if (isSomeoneElse(value)) return "headline_matches_another_person_on_page";
+
+    /**
+     * THE NAME MUST NEVER BECOME THE HEADLINE.
+     *
+     * On /in/mgoldberger it did, at confidence "high", and the form then rendered
+     * that headline in the job-title slot — so the screenshot showed an empty Name
+     * field with "Mark Goldberger" beside it. The mechanism was a cascade: the
+     * name was rejected (item 1), so it was never excluded from the card's own
+     * lines, so the first remaining line was the name.
+     *
+     * Checked three ways, because the name can reach here from three places: the
+     * resolved field, the page title's name portion, and a fragment of either.
+     */
+    const nameValue = fields.name?.value ?? null;
+    if (nameValue) {
+      const n = norm(nameValue);
+      const v = norm(value);
+      if (v === n) return "headline_is_the_name";
+      // A FRAGMENT of the name — "Mark" out of "Mark Goldberger" — is still the
+      // name, not a headline. The other direction is fine: a headline may well
+      // mention the person.
+      if (n.includes(v)) return "headline_is_part_of_the_name";
+    }
+    if (NM && titleName && norm(value) === norm(titleName)) return "headline_is_the_page_title_name";
+
+    // A bare "City, Country" is a location that drifted into the wrong slot.
+    if (LOCATION_SHAPE.test(value) && value.split(",").length <= 3 && !/[@|·]/.test(value)) {
+      return "headline_reads_as_a_location";
+    }
+    /**
+     * "San Francisco Bay Area" — four capitalised words, no comma, so the shape
+     * test above never fired and it was accepted as a headline. A line with no
+     * headline signal at all that reads as a PLACE is a place.
+     */
+    if (!hasHeadlineSignal(value) && !validateLocation(value)) {
+      return "headline_reads_as_a_location";
+    }
+    // "Metaview" on its own is a company, a school, or a word — not a headline.
+    if (!hasHeadlineSignal(value) && value.trim().split(/\s+/).length <= 3) {
+      return "headline_has_no_headline_signal";
+    }
+    if (isNegativeHeading(value)) return "headline_is_a_section_heading";
+    return null;
+  };
+
+  /**
+   * Offered in card order until one passes, rather than only the first line.
+   *
+   * The old code offered `cardLines[0]` alone, so a rejected first line left the
+   * headline permanently empty even when the real one was directly below it.
+   */
+  for (const line of cardLines.slice(0, 6)) {
+    if (offer("headline", "topcard", "high", line, validateHeadline)) break;
+  }
 
   const locationLine = cardLines.find(
     (l) => l !== fields.headline?.value && !validateLocation(l),
@@ -1067,6 +1129,34 @@
     }
     return false;
   });
+
+  /**
+   * THE CROSS-FIELD INVARIANT, ENFORCED RATHER THAN TESTED.
+   *
+   * No other field may be the person's name. This is a last line of defence and
+   * it is here because the failure it prevents is not hypothetical: the headline
+   * came back as "Mark Goldberger" at confidence "high", the form put the headline
+   * in the job-title slot, and the operator saw an empty Name field with the name
+   * sitting next to it. Each validator already refuses this, but they refuse it
+   * one field at a time and a new field added later would not inherit the rule.
+   *
+   * A violation is REMOVED and recorded, never corrected — a field that turned out
+   * to be the name has no other value to fall back to, and an empty field with a
+   * reason code is the honest outcome.
+   */
+  if (fields.name) {
+    const nameKey = norm(fields.name.value);
+    for (const field of ["headline", "jobTitle", "location", "companyName", "bio"]) {
+      const current = fields[field];
+      if (!current) continue;
+      const v = norm(current.value);
+      if (v === nameKey || nameKey.includes(v)) {
+        delete fields[field];
+        skipped[field] = `${field}_was_the_name`;
+        note(field, current.source, `rejected(${field}_was_the_name)`);
+      }
+    }
+  }
 
   const flat = (f) => fields[f]?.value ?? undefined;
 

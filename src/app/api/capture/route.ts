@@ -71,7 +71,7 @@ export async function POST(req: Request): Promise<Response> {
   const existing = await db.lead.findFirst({
     where: { linkedinUrl: input.url },
     select: {
-      id: true, contactName: true, bio: true, personBrief: true, title: true,
+      id: true, contactName: true, bio: true, personBrief: true, title: true, headline: true,
       email: true, phone: true, notes: true,
     },
   });
@@ -145,9 +145,24 @@ export async function POST(req: Request): Promise<Response> {
         where: { id: existing.id },
         data: {
           contactName: input.name ?? existing.contactName,
-          // A real role beats the headline, which is often a slogan. Never
-          // overwrite something a human already typed here.
-          title: existing.title ?? input.jobTitle ?? input.headline ?? undefined,
+          /**
+           * THE HEADLINE IS NOT A JOB TITLE, and this is where it used to become
+           * one: `title: … ?? input.jobTitle ?? input.headline`.
+           *
+           * The Experience section is lazy-rendered, so `jobTitle` is absent on
+           * most captures and the headline took its place. It is free prose the
+           * person wrote about themselves — "VP Sales @ Metaview | Startup Advisor
+           * and Investor" — and filing it as a job title makes every downstream
+           * use of `title` wrong: the form's job-title input, the letterhead, the
+           * merge field in an outreach draft. On /in/mgoldberger the headline was
+           * itself the person's NAME, so the form showed the name in the job-title
+           * slot next to an empty Name field.
+           *
+           * Each field now lands in its own column, and neither substitutes for
+           * the other. A human's typed value is still never overwritten.
+           */
+          title: existing.title ?? input.jobTitle ?? undefined,
+          headline: existing.headline ?? input.headline ?? undefined,
           email: existing.email ?? contact.email ?? undefined,
           phone: existing.phone ?? contact.phone ?? undefined,
           bio: input.bio ?? undefined,
@@ -161,7 +176,9 @@ export async function POST(req: Request): Promise<Response> {
           workspaceId: identity.workspaceId,
           companyId,
           contactName: input.name ?? null,
-          title: input.jobTitle ?? input.headline ?? null,
+          // Own column each; the headline is never a stand-in for the job title.
+          title: input.jobTitle ?? null,
+          headline: input.headline ?? null,
           email: contact.email ?? null,
           phone: contact.phone ?? null,
           linkedinUrl: input.url,

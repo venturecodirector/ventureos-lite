@@ -30,6 +30,8 @@ export interface LeadDetail {
   id: string;
   contactName: string;
   title: string;
+  /** The LinkedIn headline — its own field, never a stand-in for `title`. */
+  headline: string;
   email: string;
   phone: string;
   linkedinUrl: string;
@@ -118,6 +120,7 @@ export async function getLeadDetail(leadId: string): Promise<LeadDetail | null> 
     id: lead.id,
     contactName: lead.contactName ?? "",
     title: lead.title ?? "",
+    headline: lead.headline ?? "",
     email: lead.email ?? "",
     phone: lead.phone ?? "",
     linkedinUrl: lead.linkedinUrl ?? "",

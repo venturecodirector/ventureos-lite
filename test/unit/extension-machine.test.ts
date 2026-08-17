@@ -707,3 +707,81 @@ describe("the real fixtures now yield a whole profile", () => {
     }
   });
 });
+
+// ── item 2a: the name must never become another field ─────────────────────
+
+describe("the name never leaks into another field", () => {
+  const G = "g-abbreviated-slug-us-metro.html";
+  const MG = "https://www.linkedin.com/in/mgoldberger/";
+
+  it("resolves the name from an abbreviated slug and keeps it out of the headline", () => {
+    const { dom, g } = page(G, MG);
+    const out = extractFrom(dom, g);
+    expect(out.name).toBe("Mark Goldberger");
+    expect(out.provenance.name).toMatchObject({ source: "topcard", confidence: "high" });
+    // The reported value was exactly this, at confidence "high".
+    expect(out.headline).not.toBe("Mark Goldberger");
+  });
+
+  /**
+   * "San Francisco Bay Area" — four capitalised words, no comma — sailed past the
+   * comma-requiring location-shape test and became the headline once the name
+   * stopped being available to take that slot.
+   */
+  it("refuses a location as a headline, and files it as the location", () => {
+    const { dom, g } = page(G, MG);
+    const out = extractFrom(dom, g);
+    expect(out.location).toBe("San Francisco Bay Area");
+    expect(out.headline).not.toBe("San Francisco Bay Area");
+    if (!out.headline) expect(out.skipped.headline).toBe("headline_reads_as_a_location");
+  });
+
+  it("refuses a bare company or school name as a headline", () => {
+    const { dom, g } = page(G, MG);
+    const out = extractFrom(dom, g);
+    for (const notAHeadline of ["Metaview", "Stanford University"]) {
+      expect(out.headline).not.toBe(notAHeadline);
+    }
+  });
+
+  /** THE INVARIANT, enforced in code rather than only asserted here. */
+  it("holds the cross-field invariant on every fixture", () => {
+    const cases: [string, string][] = [
+      [G, MG],
+      ["real-profile-sdui.html", PROFILE_URL],
+      ["real-profile-sdui-2.html", PROFILE_URL],
+      ["a-authenticated-with-right-rail.html", "https://www.linkedin.com/in/anna-kovacs-fixture/"],
+      ["d-accented-name-hungarian-location.html", "https://www.linkedin.com/in/toth-szucs-ors-abel-fixture/"],
+    ];
+    for (const [fixture, url] of cases) {
+      const { dom, g } = page(fixture, url);
+      const out = extractFrom(dom, g);
+      if (!out.name) continue;
+      for (const field of ["headline", "jobTitle", "location", "companyName"] as const) {
+        expect(out[field], `${fixture}: ${field} is the name`).not.toBe(out.name);
+      }
+    }
+  });
+
+  it("strips a field that turns out to be the name, and says so", () => {
+    // A page whose only card line after the name IS the name again, doubled by a
+    // nickname element — the shape that produced the original leak.
+    const html = `<!doctype html><html><head><title>Mark Goldberger | LinkedIn</title></head>
+      <body><main><div class="card">
+        <a href="/in/mgoldberger/"><img src="https://media.licdn.com/x.jpg" srcset="https://media.licdn.com/profile-displayphoto/x.jpg 400w"></a>
+        <p>Mark Goldberger</p>
+        <span>Mark</span>
+        <span>Goldberger</span>
+      </div></main></body></html>`;
+    const { dom, g } = page("", MG, html);
+    const out = extractFrom(dom, g);
+    expect(out.name).toBe("Mark Goldberger");
+    // "Mark" and "Goldberger" are fragments of the name, not headlines. Either a
+    // reason is recorded or the line was never offered — what must not happen is
+    // a headline that is the name.
+    expect(out.headline).toBeUndefined();
+    const explained =
+      !!out.skipped.headline || (out._attempts.headline ?? []).length > 0 || !out.boundary.ok;
+    expect(explained, "the headline is empty with no record of why").toBe(true);
+  });
+});
