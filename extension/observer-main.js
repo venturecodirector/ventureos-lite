@@ -45,6 +45,20 @@
  * ║    start asking LinkedIn directly.                                        ║
  * ╚══════════════════════════════════════════════════════════════════════════╝
  *
+ * ── THE HOST PERMISSIONS, AND WHY THEY ARE WHAT THEY ARE ────────────────────
+ *
+ * `*://*.linkedin.com/*` so this file can be DECLARED at document_start — a
+ * dynamically registered script cannot reliably beat the page's own scripts, and
+ * the patch has to be in place before the first request. `media.licdn.com` so the
+ * SERVICE WORKER can retrieve avatar bytes: those URLs are signed and refuse both
+ * an unauthenticated server fetch and a cross-origin page fetch. No cookies, no
+ * webRequest, no declarativeNetRequest — this extension never issues a request to
+ * LinkedIn and never reads a credential.
+ *
+ * (This note lived in manifest.json as a `_comment_` key, which Chrome flags as an
+ * unrecognised manifest key. A warning on an extension whose content scripts are
+ * not appearing is a variable nobody needs, so it moved here.)
+ *
  * ── WHY THE MAIN WORLD ──────────────────────────────────────────────────────
  *
  * A content script's `window.fetch` is the ISOLATED world's copy. The page has

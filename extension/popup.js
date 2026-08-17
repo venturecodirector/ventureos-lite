@@ -689,9 +689,28 @@ async function observerStatus(tabId) {
   try {
     return await chrome.tabs.sendMessage(tabId, { type: "observerStatus" });
   } catch (e) {
-    // The bridge is not there: the page loaded before the extension was installed
-    // or updated, or this is not a LinkedIn page.
-    return { ok: false, installed: false, error: String(e?.message ?? e).slice(0, 80) };
+    /**
+     * "Could not establish connection. Receiving end does not exist."
+     *
+     * Chrome's way of saying there is no content script in that tab at all —
+     * which is a different problem from "the observer ran and saw nothing", and
+     * needs a different action. Reported as such, because the raw string tells a
+     * user nothing and sent me looking in the wrong place first.
+     *
+     * It has one overwhelmingly common cause: content scripts are injected on
+     * NAVIGATION, and reloading the extension does not reach tabs that are
+     * already open. The LinkedIn tab has to be reloaded after the extension is.
+     */
+    const raw = String(e?.message ?? e);
+    const noReceiver = /Receiving end does not exist|Could not establish connection/i.test(raw);
+    return {
+      ok: false,
+      installed: false,
+      noContentScript: noReceiver,
+      error: noReceiver
+        ? "no content script in this tab — reload the LinkedIn page (the extension only injects on navigation)"
+        : raw.slice(0, 80),
+    };
   }
 }
 
@@ -790,13 +809,18 @@ $("api-inventory").addEventListener("click", async () => {
       slug: status?.slug ?? null,
       recordCount: status?.recordCount ?? 0,
       inventory: status?.inventory ?? [],
+      // Distinguishes "no content script here" from "ran and saw nothing".
+      noContentScript: status?.noContentScript ?? false,
       error: status?.error ?? null,
+      extensionVersion: chrome.runtime.getManifest().version,
     };
     await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
     msg(
       report.observerInstalled
         ? `Copied. ${report.recordCount} response(s) observed on this page.`
-        : "Copied. The observer is NOT installed here — reload the profile.",
+        : status?.noContentScript
+          ? "Copied. No content script in this tab — RELOAD the LinkedIn page and try again."
+          : "Copied. The observer is installed but saw nothing — reload the profile.",
       report.observerInstalled && report.recordCount > 0 ? "ok" : "err",
     );
   } catch (e) {

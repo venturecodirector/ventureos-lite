@@ -11,7 +11,6 @@
     "clipboardWrite",
     "downloads"
   ],
-  "_comment_host_permissions": "linkedin.com so the passive observer can be DECLARED at document_start — a dynamically registered script cannot reliably beat the page's own scripts, and the interceptor must patch fetch before the first request. media.licdn.com so the SERVICE WORKER can retrieve avatar bytes: those URLs are signed and refuse both an unauthenticated server fetch and a cross-origin page fetch. NO cookies, NO webRequest, NO declarativeNetRequest — the extension never issues a request to LinkedIn and never reads a credential.",
   "host_permissions": [
     "*://*.linkedin.com/*",
     "https://media.licdn.com/*"
