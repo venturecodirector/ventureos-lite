@@ -1,54 +1,51 @@
 /**
- * Venture OS capture — content script (P1/1e).
+ * Venture OS capture — content script.
  *
  * READS the page the user is already viewing and returns what it finds. It is
- * injected on demand by the popup, not persistently, and it does exactly one
- * thing: read. There is no clicking, no scrolling, no pagination, no network
- * call, and nothing runs unless the user pressed the button.
+ * injected on demand, never persistently, and it does one thing: read. No
+ * network call, no scrolling, no pagination, and nothing runs unless a human
+ * pressed a button.
  *
- * That boundary is deliberate. CLAUDE.md forbids LinkedIn scraping and
- * automation; an assistive reader over the page a human already opened is a
- * different thing from a crawler, and this file is where that distinction is
- * either kept or lost. Keep it.
+ * On clicking: THIS FILE never clicks. Opening the contact-info overlay is a
+ * separate, separately-injected script (contact.js) that runs only on an
+ * explicit capture, one profile at a time. Keeping the two apart is what makes
+ * "this file cannot act" a structural fact rather than a promise in a comment.
  *
- * EXTRACTION IS LAYERED, hardest-to-break first. The first version read only CSS
- * classes, and once LinkedIn reshuffled them a capture returned nothing but the
- * URL — which is exactly what happened in practice. Class names are cosmetic and
- * change without notice; the sources below are load-bearing for LinkedIn's own
- * search results, accessibility and link previews, so they change far more
- * slowly:
+ * ── WHY THIS IS SHAPED THE WAY IT IS ────────────────────────────────────────
  *
- *   1. JSON-LD   — the Person graph LinkedIn embeds for search engines
- *   2. meta tags — og:title / og:description / og:image, for link previews
- *   3. <title>   — "Name - Headline | LinkedIn"
- *   4. aria      — the accessibility contract: aria-label on the top card's
- *                  company and school buttons, mailto:/tel: hrefs. LinkedIn
- *                  cannot drop these without breaking screen readers, which
- *                  makes them steadier than any class name.
- *   5. structure — the SHAPE of the page: the <h1>, and sections named by their
- *                  own heading. A signed-in profile is React-rendered and
- *                  carries neither a Person graph nor a useful og:description,
- *                  so on the page that actually matters this is the layer that
- *                  does the work.
- *   6. CSS       — best-effort, last resort
+ * The page it has to read has no <h1>, no id anchors (#about, #experience), and
+ * hashed class names that change without notice. So there is nothing to select
+ * BY. Everything below follows from that:
  *
- * It also reports WHICH layer supplied each field, so the next layout change
- * reports itself in the popup instead of looking like a silent success.
+ *   IDENTITY, NOT POSITION. The one reliable fact on a profile is the owner's
+ *   own slug in the URL. Their name, their photo and their card are all reachable
+ *   from the anchors that point at it, and — the important half — every anchor
+ *   pointing at a DIFFERENT slug is a different human.
  *
- * EVERY LAYER IS FENCED. A layer that throws must cost its own fields and
- * nothing else — the whole point of having six of them is that no single one is
- * load-bearing, and an unguarded exception would throw that away by returning
- * an empty capture from a page the other five could read.
+ *   A BOUNDED CARD, ASSERTED. The reader used to pick the top card by walking up
+ *   until an ancestor "looked big enough", and on the real page that ancestor had
+ *   swallowed the right-hand rail: 36 list items, 11 nested sections, thirty
+ *   strangers. It captured a connection's name as the lead's headline and another
+ *   stranger — "Keletso Thophego, CFP" — as the lead's city. The card is now
+ *   chosen by a test it must PASS: after negative space is pruned, the container
+ *   may contain exactly one profile identity, the owner's. If no container
+ *   passes, extraction returns the name and nothing else. It never widens.
+ *
+ *   EMPTY BEATS WRONG. Every field is validated before it is offered, every
+ *   field carries where it came from, and every rejection carries a reason the
+ *   UI shows. A blank headline costs five seconds of typing; a stranger's name in
+ *   the headline looks like data, gets filtered on, reaches a quote, and nobody
+ *   re-checks a field that is already filled in.
  */
 (() => {
+  // ---- small helpers ------------------------------------------------------
   const clean = (v) => {
     if (typeof v !== "string") return null;
     const t = v.replace(/\s+/g, " ").trim();
     return t.length === 0 ? null : t;
   };
-  const text = (el) => (el ? clean(el.textContent) : null);
 
-  /** Run a layer; a broken one yields its fallback instead of the whole read. */
+  /** Run a step; a broken one costs its own fields and nothing else. */
   const attempt = (fallback, fn) => {
     try {
       const v = fn();
@@ -57,706 +54,622 @@
       return fallback;
     }
   };
-
   const $ = (sel, root) => attempt(null, () => (root ?? document).querySelector(sel));
   const $$ = (sel, root) => attempt([], () => [...(root ?? document).querySelectorAll(sel)]);
 
-  /** Which layer each field came from, for the popup's diagnostic line. */
-  const from = {};
-  const take = (field, layer, value) => {
-    const v = clean(value);
-    if (v && !from[field]) {
-      from[field] = layer;
-      return v;
-    }
-    return null;
+  /** Accent- and case-insensitive comparison key. */
+  const norm = (s) =>
+    (s ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+
+  /** Significant word tokens, for order-insensitive name comparison. */
+  const tokens = (s) =>
+    new Set(
+      norm(s)
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((t) => t.length >= 3),
+    );
+
+  /**
+   * A label said once. LinkedIn renders most text twice — once for sight, once
+   * for screen readers — so raw textContent gives "AboutAbout".
+   */
+  const once = (raw) => {
+    const t = clean(raw);
+    if (!t) return null;
+    const half = t.slice(0, t.length / 2);
+    return half.length > 0 && half + half === t ? half : t;
+  };
+  const label = (el) => once(el ? el.textContent : null);
+
+  // ---- negative space -----------------------------------------------------
+  /**
+   * Subtrees that are never about the person whose profile this is.
+   *
+   * LinkedIn fills the margins with other people — suggestions, "also viewed",
+   * promoted content — and renders them in the SAME container as the profile,
+   * often BEFORE it in source order because the column is positioned with CSS.
+   * That is the entire mechanism behind the reported bug: read in DOM order
+   * without excluding these, and the first thing you find is a stranger.
+   *
+   * Matched on the heading text because that is what LinkedIn cannot obfuscate:
+   * a hashed class name is invisible to a screen reader, so the human-readable
+   * heading has to stay.
+   */
+  const NEGATIVE_SPACE_HEADINGS = [
+    "people you may know",
+    "more profiles for you",
+    "suggested for you",
+    "who your viewers also viewed",
+    "people also viewed",
+    "you might like",
+    "more suggestions for you",
+    "analytics",
+    "promoted",
+    "ad",
+    "advertisement",
+    // Hungarian interface
+    "akiket ismerhetsz",
+    "további profilok",
+    "hirdetés",
+    "elemzések",
+  ];
+
+  const isNegativeHeading = (t) => {
+    const k = norm(t);
+    return !!k && NEGATIVE_SPACE_HEADINGS.some((h) => k === h || k.startsWith(`${h} `));
   };
 
-  // ---- layer 1: JSON-LD ---------------------------------------------------
-  // LinkedIn ships a schema.org graph for search engines. It is the most stable
-  // thing on the page precisely because it is not styling.
-  const ld = attempt(
-    { name: null, headline: null, company: null, location: null, bio: null, photo: null },
-    () => {
-      const out = { name: null, headline: null, company: null, location: null, bio: null, photo: null };
-      for (const tag of $$('script[type="application/ld+json"]')) {
-        let parsed;
+  // ---- who this page is about --------------------------------------------
+  const slugFromUrl = attempt(null, () => {
+    const m = /^\/in\/([^/]+)/.exec(window.location.pathname);
+    return m ? decodeURIComponent(m[1]).toLowerCase() : null;
+  });
+
+  /** Every /in/ anchor on the page, with the slug it points at. */
+  const profileAnchors = attempt([], () =>
+    $$('a[href*="/in/"]')
+      .map((a) => {
+        let slug = null;
         try {
-          parsed = JSON.parse(tag.textContent || "");
+          const u = new URL(a.getAttribute("href"), window.location.href);
+          if (!/(^|\.)linkedin\.com$/i.test(u.hostname)) return null;
+          const m = /^\/in\/([^/]+)/.exec(u.pathname);
+          slug = m ? decodeURIComponent(m[1]).toLowerCase() : null;
         } catch {
-          continue; // a malformed block is not a reason to stop reading
+          return null;
         }
-
-        // The graph may be an object, an array, or wrapped in @graph.
-        const nodes = [];
-        const walk = (n) => {
-          if (!n || typeof n !== "object") return;
-          if (Array.isArray(n)) {
-            n.forEach(walk);
-            return;
-          }
-          nodes.push(n);
-          if (n["@graph"]) walk(n["@graph"]);
-        };
-        walk(parsed);
-
-        const person = nodes.find((n) => {
-          const t = n["@type"];
-          return t === "Person" || (Array.isArray(t) && t.includes("Person"));
-        });
-        if (!person) continue;
-
-        out.name = out.name || clean(person.name);
-        out.bio = out.bio || clean(person.description);
-        // jobTitle is a string on some profiles and an array on others.
-        const title = Array.isArray(person.jobTitle) ? person.jobTitle[0] : person.jobTitle;
-        out.headline = out.headline || clean(title);
-
-        const worksFor = Array.isArray(person.worksFor) ? person.worksFor[0] : person.worksFor;
-        out.company = out.company || clean(worksFor && worksFor.name);
-
-        const addr = person.address;
-        out.location =
-          out.location ||
-          clean(
-            addr &&
-              (addr.addressLocality
-                ? [addr.addressLocality, addr.addressRegion, addr.addressCountry]
-                    .filter(Boolean)
-                    .join(", ")
-                : addr.name),
-          );
-
-        const image = Array.isArray(person.image) ? person.image[0] : person.image;
-        out.photo = out.photo || clean(typeof image === "string" ? image : image && image.contentUrl);
-        break;
-      }
-      return out;
-    },
+        return slug ? { el: a, slug } : null;
+      })
+      .filter(Boolean),
   );
 
-  // ---- layer 2: meta tags -------------------------------------------------
-  const meta = (prop) =>
-    attempt(null, () => {
-      const el =
-        document.querySelector(`meta[property="${prop}"]`) ||
-        document.querySelector(`meta[name="${prop}"]`);
-      return el ? clean(el.getAttribute("content")) : null;
-    });
+  /**
+   * Whose profile this is.
+   *
+   * Normally the URL says so. A Sales Navigator lead page does not — its path is
+   * /sales/lead/<opaque-id> — and without an owner slug the entire bounded-card
+   * algorithm has nothing to anchor on, so extraction would degrade to name-only
+   * on every Sales Navigator page.
+   *
+   * The fallback is the same single-identity principle used everywhere else: if
+   * every /in/ anchor on the page points at ONE slug, that is unambiguously
+   * whose page this is. Two or more distinct slugs and we decline to guess,
+   * because guessing which of several people a page is about is exactly the
+   * class of mistake that put a stranger's name in a lead's city.
+   */
+  const distinctSlugs = [...new Set(profileAnchors.map((a) => a.slug))];
+  const ownerSlug = slugFromUrl ?? (distinctSlugs.length === 1 ? distinctSlugs[0] : null);
 
-  // og:title is usually "Nagy Anna - Ügyvezető - Danubia Kft | LinkedIn".
-  const splitTitle = (s) =>
-    clean(s)
-      ? s.replace(/\s*\|\s*LinkedIn\s*$/i, "").split(/\s+[-–—|]\s+/).map(clean).filter(Boolean)
-      : [];
-  const ogParts = attempt([], () => splitTitle(meta("og:title")));
-  const titleParts = attempt([], () => splitTitle(document.title));
-
-  // ---- shared vocabulary --------------------------------------------------
-  // Chrome, not content. Everything here is a line LinkedIn puts on every
-  // profile, so it says nothing about the person.
-  const NOISE =
-    /^(contact info|kapcsolatfelvétel|kapcsolati adatok|message|üzenet|connect|kapcsolódás|follow|követés|following|more|továbbiak|show all|see all|összes|open to|nyitott|add profile section|enhance profile|premium|linkedin|talks about|mutual connection)/i;
-  const isNoise = (l) =>
-    NOISE.test(l) ||
-    /\b\d+[\d\s,.]*\+?\s*(connections?|followers?|követő|kapcsolat|ismerős)\b/i.test(l) ||
-    /^·?\s*\d+(st|nd|rd|th)\b/i.test(l) ||
-    /^·+$/.test(l) ||
-    l.length <= 1;
-
-  /** Reads like a place: "Budapest, Hungary". Conservative on purpose. */
-  const isPlace = (l) => l.length <= 100 && l.includes(",") && !/[\d@]/.test(l);
+  const ownerAnchors = profileAnchors.filter((a) => a.slug === ownerSlug);
 
   /**
-   * A heading's text, said once.
+   * Every other person's name on the page — the cross-contamination blocklist.
    *
-   * LinkedIn renders section headings twice — one copy for sight, one for
-   * screen readers — so `textContent` on the <h2> gives "AboutAbout" and
-   * "TapasztalatTapasztalat". Sections are found by what their heading SAYS,
-   * which makes this the difference between finding the Experience block and
-   * silently not having one. The anchored patterns happen to survive a doubled
-   * string; nothing should depend on that.
+   * No field may equal or contain one of these. It is the check that would have
+   * caught both halves of the reported bug on its own, before any reasoning
+   * about layout.
    */
-  const headingText = (el) => {
-    const raw = text(el);
-    if (!raw) return null;
-    const half = raw.slice(0, raw.length / 2);
-    return half.length > 0 && half + half === raw ? half : raw;
+  const otherPeople = attempt([], () => {
+    const names = new Set();
+    for (const { el, slug } of profileAnchors) {
+      if (slug === ownerSlug) continue;
+      for (const node of [el, ...$$("span, div, p", el)]) {
+        const t = once(node.textContent);
+        if (!t || t.length < 4 || t.length > 80) continue;
+        if (!/\s/.test(t)) continue; // a single word is not a full name
+        names.add(t);
+      }
+    }
+    return [...names];
+  });
+
+  const otherPeopleKeys = otherPeople.map(norm).filter((k) => k.length >= 4);
+
+  /** Does this value contain, or sit inside, somebody else's name? */
+  const isSomeoneElse = (value) => {
+    const k = norm(value);
+    if (!k) return false;
+    return otherPeopleKeys.some((other) => k === other || k.includes(other) || other.includes(k));
   };
 
-  /**
-   * Each visible line of a container, once, in document order.
-   *
-   * The doubled screen-reader copy is what makes this awkward: LinkedIn renders
-   * many lines twice, once as `span[aria-hidden="true"]` for sight and once as
-   * `.visually-hidden` for readers, so naive textContent yields
-   * "BudapestBudapest".
-   *
-   * An earlier version handled that by reading ONLY the aria-hidden copies, and
-   * falling back to ordinary nodes when there were none. That is the bug that
-   * made this whole file look broken: LinkedIn doubles SOME lines in the top
-   * card (the current-company and school buttons) while leaving the headline a
-   * plain <div> and the location a plain <span>. One doubled line anywhere in
-   * the card was enough to switch the reader into aria-hidden-only mode and
-   * silently skip every line we actually wanted — the headline came back as the
-   * company name and the location came back empty.
-   *
-   * So: read BOTH kinds and let de-duplication do the work it was always going
-   * to have to do. Two copies of a line have identical text, so the `seen` set
-   * collapses them, and no line can be missed for being the wrong kind of node.
-   */
-  const textLines = (el) => {
-    if (!el || !el.querySelectorAll) return [];
-    const nodes = $$("p, span, div, li, h1, h2, h3, a", el);
+  // ---- the bounded top card ----------------------------------------------
+  /** Should this subtree be pruned before reading? */
+  const isNegativeSpace = (el, keep) => {
+    if (!el || !el.tagName) return false;
+    // Never prune a subtree containing the owner's own anchor.
+    if (keep && el.contains(keep)) return false;
+    if (el.tagName === "ASIDE") return true;
+    for (const h of $$("h1, h2, h3", el)) {
+      if (isNegativeHeading(label(h))) return true;
+    }
+    return false;
+  };
 
+  /** Walk a container, skipping negative space; report what was skipped. */
+  const walkPruned = (root, keep) => {
+    const out = { elements: [], excluded: 0 };
+    if (!root) return out;
+    const visit = (el) => {
+      if (isNegativeSpace(el, keep)) {
+        out.excluded += 1;
+        return;
+      }
+      out.elements.push(el);
+      for (const child of el.children) visit(child);
+    };
+    visit(root);
+    return out;
+  };
+
+  /** Distinct visible lines of a pruned container, in document order. */
+  const prunedLines = (root, keep) => {
+    const { elements, excluded } = walkPruned(root, keep);
     const seen = new Set();
     const lines = [];
-    for (const n of nodes) {
-      const t = text(n);
+    for (const el of elements) {
+      if (!/^(P|SPAN|DIV|LI|H1|H2|H3|A|BUTTON)$/.test(el.tagName)) continue;
+      const t = once(el.textContent);
       if (!t || seen.has(t)) continue;
       seen.add(t);
       lines.push(t);
     }
-    // A container's text is the concatenation of its children's, so drop any
-    // line that merely contains another — otherwise the whole card reads as one
-    // enormous "line" and wins every "first line" test.
-    return lines.filter((l) => !lines.some((o) => o !== l && l.includes(o)));
+    // A container's text is its children's concatenated, so drop any line that
+    // merely contains another — otherwise the whole card reads as one line.
+    //
+    // Punctuation goes FIRST, and only substantial lines can eliminate another.
+    // LinkedIn renders the separator between the location and the Contact-info
+    // link as its own element, so "·" is a line — and "·" is a substring of
+    // "Gyártásvezető · Kecskemét", which is how the containment pass silently
+    // deleted a perfectly good headline. A one-character line cannot be evidence
+    // that a longer line is an aggregate of its children.
+    const meaningful = lines.filter((l) => l.length > 1 && !/^[·•|,;:\-–—\s]+$/.test(l));
+    return {
+      lines: meaningful.filter(
+        (l) => !meaningful.some((o) => o !== l && o.length >= 4 && l.includes(o)),
+      ),
+      excluded,
+    };
   };
 
-  // ---- layer 4: aria ------------------------------------------------------
-  // The top card's company and school pills carry their value in an aria-label
-  // ("Current company: Danubia Kft. Click to skip to experience card"). That
-  // label exists for screen readers, which means LinkedIn cannot quietly drop
-  // it the way it drops class names — and it names the employer outright rather
-  // than making us infer it from a position in a list.
-  const ariaValue = (patterns) =>
-    attempt(null, () => {
-      for (const el of $$("[aria-label]")) {
-        const label = clean(el.getAttribute("aria-label"));
-        if (!label) continue;
-        for (const re of patterns) {
-          const m = re.exec(label);
-          if (m && clean(m[1])) {
-            // Labels are sentences: "Current company: X. Click to skip …".
-            // Trim the instruction, not the name — "Kft." keeps its full stop,
-            // which matters because that is how the company is spelled in the
-            // records this will be matched against.
-            return clean(m[1].replace(/\s+(?:click|kattint)\b.*$/i, ""));
+  /** Identities reachable inside a pruned container. */
+  const prunedIdentities = (root, keep) => {
+    const { elements } = walkPruned(root, keep);
+    const set = new Set(elements);
+    const ids = new Set();
+    for (const { el, slug } of profileAnchors) if (set.has(el)) ids.add(slug);
+    return ids;
+  };
+
+  /**
+   * Find the container that is the person's own card, or fail.
+   *
+   * Starts from an anchor pointing at the owner's slug that also holds an <img>
+   * — the profile photo, the most reliable landmark on the page — and walks up
+   * to the first ancestor that, after pruning, holds enough lines to be a card.
+   * That ancestor then has to PASS the boundary test: exactly one identity, the
+   * owner's. Walking further up can only add identities, so a failure is final.
+   */
+  const card = attempt({ el: null, ok: false, reason: "extraction_threw" }, () => {
+    if (!ownerSlug) return { el: null, ok: false, reason: "no_profile_slug_in_url" };
+    if (ownerAnchors.length === 0) return { el: null, ok: false, reason: "no_anchor_to_this_profile" };
+
+    const scope = $("main") || $('[role="main"]') || document.body;
+    const withImg = ownerAnchors.filter((a) => $("img", a.el));
+    const starts = [...withImg, ...ownerAnchors];
+
+    for (const start of starts) {
+      let node = start.el.parentElement;
+      for (let depth = 0; node && depth < 10; depth += 1) {
+        if (node === scope || node === document.body || node === document.documentElement) break;
+        const { lines, excluded } = prunedLines(node, start.el);
+        // A card is a name, a headline and at least one more line.
+        if (lines.length >= 3) {
+          const ids = prunedIdentities(node, start.el);
+          if (ids.size === 1 && ids.has(ownerSlug)) {
+            return { el: node, ok: true, reason: null, lines, excluded, anchor: start.el, depth };
           }
+          return {
+            el: null,
+            ok: false,
+            reason: "card_contains_more_than_one_identity",
+            identities: ids.size,
+            excluded,
+          };
         }
+        node = node.parentElement;
       }
-      return null;
-    });
+    }
+    return { el: null, ok: false, reason: "no_container_passed_the_boundary_test" };
+  });
 
-  const ariaCompany = ariaValue([
-    /^current company:\s*(.+)$/i,
-    /^jelenlegi (?:munkahely|vállalat):\s*(.+)$/i,
-  ]);
+  // ---- provenance ---------------------------------------------------------
+  /** field -> {value, source, confidence}; rejections -> field -> reason. */
+  const fields = {};
+  const skipped = {};
+  const attempts = {};
 
-  // mailto:/tel: are the same kind of contract: a link that says what it is.
-  // Only ones the page ALREADY rendered are visible here — LinkedIn keeps the
-  // contact overlay behind a click, and clicking is automation this file does
-  // not do. If the user opened that overlay themselves before pressing Capture,
-  // its links are in the DOM and we read them like any other published detail.
-  const hrefValue = (scheme) =>
-    attempt(null, () => {
-      for (const a of $$(`a[href^="${scheme}:"]`)) {
-        const raw = clean(a.getAttribute("href"));
-        if (!raw) continue;
-        const value = clean(decodeURIComponent(raw.slice(scheme.length + 1).split("?")[0]));
-        if (value) return value;
-      }
-      return null;
-    });
+  const note = (field, strategy, outcome) => {
+    (attempts[field] ??= []).push(`${strategy}:${outcome}`);
+  };
 
-  /** A personal site the profile links to — never a LinkedIn or CDN address. */
-  const ariaWebsite = attempt(null, () => {
-    for (const a of $$('a[href^="http"]')) {
-      const href = clean(a.getAttribute("href"));
-      if (!href) continue;
-      let host;
-      try {
-        host = new URL(href, window.location.href).hostname.toLowerCase();
-      } catch {
-        continue;
-      }
-      if (/(^|\.)(linkedin\.com|licdn\.com|lnkd\.in)$/.test(host)) continue;
-      // LinkedIn wraps outbound links in its own redirector; the destination is
-      // in the query string and is not worth unwrapping blind.
-      if (host === "lnkd.in") continue;
-      return `https://${host.replace(/^www\./, "")}`;
+  /**
+   * Offer a value for a field. `validate` returns null to accept or a reason
+   * code to reject. Nothing reaches `fields` without passing.
+   */
+  const offer = (field, source, confidence, raw, validate) => {
+    if (fields[field]) return false;
+    const value = clean(raw);
+    if (!value) {
+      note(field, source, "absent");
+      return false;
+    }
+    const reason = validate ? validate(value) : null;
+    if (reason) {
+      note(field, source, `rejected(${reason})`);
+      skipped[field] = reason;
+      return false;
+    }
+    note(field, source, "accepted");
+    fields[field] = { value, source, confidence };
+    delete skipped[field];
+    return true;
+  };
+
+  // ---- name ---------------------------------------------------------------
+  // No <h1> exists, so the name comes from the page title, cross-checked against
+  // the URL slug and the card. The slug is the only part of a profile page that
+  // cannot be wrong about whose profile it is.
+  const titleName = attempt(null, () =>
+    clean(
+      (document.title ?? "")
+        .replace(/\s*\|\s*LinkedIn\s*$/i, "")
+        .replace(/\s*\(\d+\)\s*/, " ")
+        .split(/\s+[|]\s+/)[0],
+    ),
+  );
+  const slugTokens = attempt(new Set(), () => tokens((ownerSlug ?? "").replace(/-/g, " ")));
+
+  /**
+   * A name must agree with the title AND the slug.
+   *
+   * Compared as token SETS, not strings: Hungarian puts the family name first,
+   * so a card reading "Tóth-Szűcs Örs Ábel" against a title of "Örs Ábel
+   * Tóth-Szűcs" is the same person and a string comparison would reject it.
+   */
+  const validateName = (value) => {
+    if (value.length < 2 || value.length > 120) return "name_length_implausible";
+    if (isSomeoneElse(value)) return "name_matches_another_person_on_page";
+    const v = tokens(value);
+    if (v.size === 0) return "name_has_no_comparable_tokens";
+    const t = tokens(titleName ?? "");
+    if (t.size > 0) {
+      const shared = [...v].filter((x) => t.has(x)).length;
+      if (shared === 0) return "name_disagrees_with_page_title";
+    }
+    if (slugTokens.size > 0) {
+      const shared = [...v].filter((x) => slugTokens.has(x)).length;
+      // A slug can be "anna-kovacs-8a72b1"; one shared token is agreement.
+      if (shared === 0) return "name_disagrees_with_profile_url";
     }
     return null;
-  });
+  };
 
-  // ---- layer 5: page structure -------------------------------------------
-  // Class names are cosmetic and rot; the shape of the page does not. A profile
-  // is a heading holding the person's name, a subtitle under it, and sections
-  // titled by their own heading. Where an element must be identified, this uses
-  // SEMANTIC attributes — headings, list items, aria — never a class.
-
-  /**
-   * The element that states the person's name.
-   *
-   * Everything about the top card hangs off this, so it must not depend on one
-   * tag. It used to be `main h1` alone, and on a real profile that returned
-   * nothing: the name arrived from the page <title> instead, and with no anchor
-   * there was no card, so the headline and the location came back empty while
-   * the About section — which is found a different way — read perfectly. A
-   * whole card missing because of one selector is the failure this list exists
-   * to prevent.
-   *
-   * The last resort is the interesting one. The page <title> already tells us
-   * the NAME ("Nagy Anna | LinkedIn"), so the smallest element whose text is
-   * exactly that name is the heading, whatever LinkedIn chose to build it out
-   * of. Content, not markup — it cannot be broken by renaming a class or
-   * swapping a tag.
-   */
-  const nameAnchor = attempt(null, () => {
-    const scope = $("main") || $('[role="main"]') || document.body;
-    const semantic =
-      $("h1", scope) ||
-      $("h1") ||
-      $('[role="heading"][aria-level="1"]', scope) ||
-      $(".text-heading-xlarge", scope);
-    if (semantic) return semantic;
-
-    const fromTitle = clean(titleParts[0]);
-    if (!fromTitle || fromTitle.length < 3) return null;
-    // Smallest match wins: the name appears again in ancestors, whose text is
-    // the concatenation of their children's.
-    let best = null;
-    for (const el of $$("h1, h2, h3, span, div, a, p", scope)) {
-      if (clean(el.textContent) !== fromTitle) continue;
-      if (!best || (el.textContent ?? "").length <= (best.textContent ?? "").length) best = el;
+  const cardNameEl = card.ok ? card.anchor : null;
+  offer("name", "topcard", "high", cardNameEl ? label(cardNameEl) : null, validateName);
+  // The anchor holding the photo has no text; the sibling anchor to the same
+  // slug does.
+  if (!fields.name && card.ok) {
+    for (const a of ownerAnchors) {
+      if (!card.el.contains(a.el)) continue;
+      if (offer("name", "topcard", "high", label(a.el), validateName)) break;
     }
-    return best;
-  });
+  }
+  offer("name", "title", "medium", titleName, validateName);
 
-  /**
-   * The card holding the person's name.
-   *
-   * Walks up from the name to the nearest ancestor that reads like a card
-   * rather than trusting any one tag. LinkedIn has shipped the top card as a
-   * <section>, as a <div class="artdeco-card">, and as neither; anchoring on
-   * "the ancestor with enough distinct lines in it" survives all three, and
-   * stops one level below <main> so the card never swallows the whole page.
-   */
-  const topCard = attempt(null, () => {
-    const main = $("main") || $('[role="main"]') || document.body;
-    const h1 = nameAnchor;
-    if (!h1) return null;
-    let node = h1.parentElement;
-    let best = h1.parentElement;
-    for (let depth = 0; node && depth < 8; depth += 1) {
-      if (node === main || node === document.body) break;
-      best = node;
-      // Three distinct lines is a card: the name, the headline, and one more.
-      if (textLines(node).length >= 3) return node;
-      node = node.parentElement;
+  // ---- the card's own lines ----------------------------------------------
+  // Read by DOM ORDER inside the bounded card: the name, then the headline,
+  // then the location, then the connection count. Chrome is dropped by role
+  // rather than by class.
+  const CHROME =
+    /^(contact info|kapcsolati adatok|kapcsolatfelvétel|message|üzenet|connect|kapcsolódás|follow|követés|following|more|továbbiak|show all|see all|összes|pending|invitation sent|open to|nyitott|add profile section|enhance profile|premium|talks about|mutual connection|see contact info)/i;
+  const isChrome = (l) =>
+    CHROME.test(l) ||
+    /\b[\d\s,.]+\+?\s*(connections?|followers?|követő|kapcsolat|ismerős)\b/i.test(l) ||
+    /^·?\s*\d+(st|nd|rd|th)\b/i.test(l) ||
+    /^[·•|,\s]+$/.test(l) ||
+    l.length <= 1;
+
+  const cardLines = card.ok
+    ? card.lines.filter((l) => l !== fields.name?.value && !isChrome(l) && !isSomeoneElse(l))
+    : [];
+
+  // ---- headline -----------------------------------------------------------
+  const LOCATION_SHAPE = /^[\p{L}\s.'’-]+(,\s*[\p{L}\s.'’-]+){1,2}$/u;
+
+  const validateHeadline = (value) => {
+    if (value.length < 3 || value.length > 220) return "headline_length_implausible";
+    if (isSomeoneElse(value)) return "headline_matches_another_person_on_page";
+    if (fields.name && norm(value) === norm(fields.name.value)) return "headline_is_the_name";
+    // A bare "City, Country" is a location that drifted into the wrong slot.
+    if (LOCATION_SHAPE.test(value) && value.split(",").length <= 3 && !/[@|·]/.test(value)) {
+      return "headline_reads_as_a_location";
     }
-    return best;
+    if (isNegativeHeading(value)) return "headline_is_a_section_heading";
+    return null;
+  };
+
+  offer("headline", "topcard", "high", cardLines[0], validateHeadline);
+
+  // ---- location -----------------------------------------------------------
+  // Shape and page-context checks happen here; whether the place RESOLVES is
+  // decided server-side against the one authoritative gazetteer, which would
+  // drift if it were copied into an injected script.
+  const anchorTexts = attempt(new Set(), () => {
+    const s = new Set();
+    for (const { el } of profileAnchors) {
+      const t = once(el.textContent);
+      if (t) s.add(norm(t));
+    }
+    return s;
   });
 
-  /**
-   * Profile sections, paired with their heading.
-   *
-   * A section is found by what its heading SAYS, but not every rollout wraps a
-   * card in <section> — recent ones use <div id="about"> anchors followed by an
-   * <article>-ish card. So candidates come from several tag shapes and from the
-   * id anchors LinkedIn's own in-page navigation relies on.
-   */
+  const validateLocation = (value) => {
+    if (value.length < 2 || value.length > 120) return "location_length_implausible";
+    if (isSomeoneElse(value)) return "location_matches_another_person_on_page";
+    if (anchorTexts.has(norm(value))) return "location_is_a_profile_link_text";
+    if (/[@]/.test(value)) return "location_contains_an_at_sign";
+    if (!LOCATION_SHAPE.test(value) && !/^[\p{L}\s.'’-]{2,60}$/u.test(value)) {
+      return "location_does_not_read_as_a_place";
+    }
+    // "Keletso Thophego, CFP": a short capitalised tail is a credential, not a
+    // country. This is the check whose absence put a stranger in the city field.
+    const parts = value.split(",").map((p) => p.trim());
+    if (parts.length >= 2) {
+      const tail = parts[parts.length - 1];
+      if (tail.length <= 6 && /^[\p{Lu}][\p{L}.]*$/u.test(tail) && tail === tail.toUpperCase()) {
+        return "location_tail_reads_as_a_credential";
+      }
+    }
+    return null;
+  };
+
+  const locationLine = cardLines.find(
+    (l) => l !== fields.headline?.value && !validateLocation(l),
+  );
+  offer("location", "topcard", "high", locationLine, validateLocation);
+
+  // ---- the sections below the card ---------------------------------------
+  // Located by what their heading SAYS — the only stable handle left once ids
+  // and classes are gone. Negative space is excluded here too: "People you may
+  // know" is a section with a heading like any other.
   const sections = attempt([], () => {
-    const main = $("main") || $('[role="main"]') || document.body;
+    const scope = $("main") || $('[role="main"]') || document.body;
     const out = [];
-    const seen = new Set();
-
-    const add = (el, heading) => {
-      const h = clean(heading);
-      if (!el || !h || seen.has(el)) return;
-      seen.add(el);
-      out.push({ el, heading: h.toLowerCase() });
-    };
-
-    for (const el of $$("section, article", main)) {
-      add(el, headingText($("h2, h3", el)));
-    }
-    // The id anchors: <div id="about"> sits immediately before its card.
-    for (const id of ["about", "experience", "education", "skills", "content_collections"]) {
-      const anchor = $(`#${id}`, main);
-      if (!anchor) continue;
-      const card = anchor.closest("section") || anchor.nextElementSibling || anchor.parentElement;
-      add(card, id.replace(/_/g, " "));
+    for (const el of $$("section, article", scope)) {
+      if (el.tagName === "ASIDE") continue;
+      const heading = label($("h1, h2, h3", el));
+      if (!heading || isNegativeHeading(heading)) continue;
+      if (card.el && (el.contains(card.el) || card.el.contains(el))) continue;
+      out.push({ el, heading: norm(heading) });
     }
     return out;
   });
-
   const sectionMatching = (re) => sections.find((s) => re.test(s.heading))?.el ?? null;
 
-  const structure = attempt(
-    { name: null, headline: null, location: null, company: null, jobTitle: null, bio: null, posts: [] },
-    () => {
-      const out = {
-        name: null, headline: null, location: null,
-        company: null, jobTitle: null, bio: null, posts: [],
+  const aboutEl = sectionMatching(/^(about|nevjegy|info)/);
+  if (aboutEl) {
+    const { lines } = prunedLines(aboutEl, null);
+    const longest = lines
+      .filter((l) => !/^(about|nevjegy|info)\b/i.test(norm(l)))
+      .sort((a, b) => b.length - a.length)[0];
+    offer("bio", "topcard", "medium", longest, (v) =>
+      isSomeoneElse(v) ? "bio_matches_another_person_on_page" : v.length < 20 ? "bio_too_short" : null,
+    );
+  } else {
+    note("bio", "section:about", "absent");
+  }
+
+  // Recent posts, from whatever the profile already rendered — no scrolling and
+  // no "show more". They feed the person brief, so losing them quietly would
+  // degrade every brief without anything reporting it.
+  const posts = attempt([], () => {
+    const activity = sectionMatching(/(activity|aktivitas|posts|bejegyzes)/);
+    if (!activity) return [];
+    return $$("li", activity)
+      .map((li) => label(li))
+      .filter((t) => t && t.length > 20 && !isChrome(t) && !isSomeoneElse(t))
+      .slice(0, 3);
+  });
+
+  const expEl = sectionMatching(/(experience|tapasztalat)/);
+  if (expEl) {
+    const first = $("li", expEl) ?? expEl;
+    const { lines } = prunedLines(first, null);
+    const usable = lines.filter((l) => !isChrome(l) && !isSomeoneElse(l));
+    offer("jobTitle", "topcard", "medium", usable[0], (v) =>
+      v.length > 200 ? "job_title_too_long" : null,
+    );
+    offer("companyName", "topcard", "medium", usable[1]?.split(" · ")[0], (v) =>
+      v.length > 200 ? "company_name_too_long" : null,
+    );
+  } else {
+    note("jobTitle", "section:experience", "absent");
+    note("companyName", "section:experience", "absent");
+  }
+
+  // ---- the logged-out view still ships a Person graph --------------------
+  // Kept because it is strictly better than anything scraped when present, and
+  // it costs nothing when absent. It feeds the same validators.
+  const ld = attempt(null, () => {
+    for (const tag of $$('script[type="application/ld+json"]')) {
+      let parsed;
+      try {
+        parsed = JSON.parse(tag.textContent || "");
+      } catch {
+        continue;
+      }
+      const nodes = [];
+      const walk = (n) => {
+        if (!n || typeof n !== "object") return;
+        if (Array.isArray(n)) return n.forEach(walk);
+        nodes.push(n);
+        if (n["@graph"]) walk(n["@graph"]);
       };
-
-      // -- the top card: name, then the subtitle under it
-      out.name = text(nameAnchor);
-      if (topCard) {
-        const lines = textLines(topCard).filter(
-          (l) =>
-            l !== out.name &&
-            !isNoise(l) &&
-            // The company and school pills live in this same card and are read
-            // properly by the aria layer; letting them compete here is what
-            // used to make the headline come back as the employer's name.
-            l !== ariaCompany,
-        );
-        // The line under the name is the headline — LinkedIn has put it there
-        // for as long as the profile has existed. Length-capped so a stray
-        // paragraph cannot pose as one, and never a bare place name.
-        out.headline = lines.find((l) => l.length <= 250 && !isPlace(l)) || null;
-        out.location = lines.find((l) => l !== out.headline && isPlace(l)) || null;
-      }
-
-      // -- sections, found by what their heading SAYS rather than how it looks
-      const about = sectionMatching(/^(about|névjegy|info)/);
-      if (about) {
-        // The About text is the longest thing in its section by a wide margin.
-        const lines = textLines(about).filter((l) => !/^(about|névjegy|info)\b/i.test(l));
-        out.bio = lines.slice().sort((a, b) => b.length - a.length)[0] || null;
-      }
-
-      const experience = sectionMatching(/(experience|tapasztalat)/);
-      if (experience) {
-        // First entry = current role. Its first line is the title, the next is
-        // the employer, often suffixed "· Full-time".
-        const first = $("li", experience) || experience;
-        const lines = textLines(first).filter(
-          (l) => !isNoise(l) && !/^(experience|tapasztalat)/i.test(l),
-        );
-        out.jobTitle = lines[0] || null;
-        out.company = lines[1] ? clean(lines[1].split(" · ")[0]) : null;
-      }
-
-      const activity = sectionMatching(/(activity|aktivitás)/);
-      if (activity) {
-        out.posts = $$("li", activity)
-          .map((li) => text(li))
-          .filter((t) => t && !isNoise(t))
-          .slice(0, 3);
-      }
-      return out;
-    },
-  );
-
-  // Recent posts the person published or shared. Read from whatever the profile
-  // already rendered — no scrolling and no "show more", so this is the first few
-  // visible items or nothing.
-  const posts = structure.posts.length
-    ? structure.posts
-    : $$(
-        ".feed-shared-update-v2 .update-components-text, .profile-creator-shared-feed-update__container .update-components-text",
-      )
-        .slice(0, 3)
-        .map((el) => text(el))
-        .filter(Boolean);
-
-  // ---- layer 6: CSS (last resort) ----------------------------------------
-  const pick = (selectors) => {
-    for (const sel of selectors) {
-      const v = text($(sel));
-      if (v) return v;
-    }
-    return null;
-  };
-
-  const name =
-    take("name", "json-ld", ld.name) ||
-    take("name", "og:title", ogParts[0]) ||
-    take("name", "title", titleParts[0]) ||
-    take("name", "structure", structure.name) ||
-    take("name", "css", pick(["h1.text-heading-xlarge", "main h1", "h1"]));
-
-  const headline =
-    take("headline", "json-ld", ld.headline) ||
-    take("headline", "og:title", ogParts[1]) ||
-    take("headline", "title", titleParts[1]) ||
-    take("headline", "structure", structure.headline) ||
-    take(
-      "headline",
-      "css",
-      pick([".text-body-medium.break-words", "main .text-body-medium"]),
-    );
-
-  const companyName =
-    take("companyName", "json-ld", ld.company) ||
-    take("companyName", "aria", ariaCompany) ||
-    take("companyName", "og:title", ogParts[2]) ||
-    take("companyName", "title", titleParts[2]) ||
-    take("companyName", "structure", structure.company) ||
-    take(
-      "companyName",
-      "css",
-      pick([
-        "button[aria-label^='Current company'] span",
-        "[aria-label^='Current company']",
-        ".pv-text-details__right-panel-item-text",
-      ]),
-    );
-
-  const location =
-    take("location", "json-ld", ld.location) ||
-    take("location", "structure", structure.location) ||
-    take(
-      "location",
-      "css",
-      pick([
-        ".text-body-small.inline.t-black--light",
-        "main .pv-text-details__left-panel .text-body-small",
-      ]),
-    );
-
-  // og:description carries the About text on most profiles, and the About text
-  // is most of what makes a capture worth anything to the research call.
-  let bio =
-    take("bio", "json-ld", ld.bio) ||
-    take("bio", "og:description", meta("og:description")) ||
-    take("bio", "structure", structure.bio);
-  if (!bio) {
-    const about = sectionMatching(/^(about|névjegy|info)/);
-    const found = about
-      ? text(
-          $(
-            ".display-flex.ph5 span[aria-hidden='true'], .inline-show-more-text, span[aria-hidden='true']",
-            about,
-          ),
-        )
-      : null;
-    if (found) bio = take("bio", "css", found);
-  }
-
-  // ---- job title ---------------------------------------------------------
-  // Distinct from the headline on purpose. A headline is free text and is very
-  // often a slogan ("helping brands grow ↗"), while the experience block states
-  // an actual role. JSON-LD's jobTitle is the same idea, so it is reused as the
-  // first layer.
-  let jobTitle =
-    take("jobTitle", "json-ld", ld.headline) ||
-    take("jobTitle", "structure", structure.jobTitle);
-  if (!jobTitle) {
-    const experience = sectionMatching(/^(experience|tapasztalat|munkatapasztalat)/);
-    const first = experience ? $("li", experience) || experience : null;
-    const found = first
-      ? text($(".t-bold span[aria-hidden='true'], .mr1.t-bold span, .t-bold", first))
-      : null;
-    if (found) jobTitle = take("jobTitle", "css", found);
-  }
-
-  // ---- contact details ---------------------------------------------------
-  // Two sources, both of them things the person published on the page we were
-  // already looking at:
-  //
-  //   - mailto:/tel: links the page has ALREADY rendered. LinkedIn keeps the
-  //     contact overlay behind a click, and clicking is automation this file
-  //     does not do (see the boundary note at the top) — but if the user opened
-  //     it themselves before pressing Capture, the links are simply there.
-  //   - prose: an address written into the About section, headline or a post.
-  //
-  // Either way it appears here exactly when its owner chose to publish it.
-  const published = [headline, bio, ...posts].filter(Boolean).join("\n");
-
-  const isOwnAddress = (e) => /@(linkedin|licdn)\.com$/i.test(e);
-  const linkedEmail = hrefValue("mailto");
-  const emailMatch = published.match(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/);
-  const email =
-    (linkedEmail && !isOwnAddress(linkedEmail) ? take("email", "contact-link", linkedEmail) : null) ||
-    (emailMatch && !isOwnAddress(emailMatch[0])
-      ? take("email", "published-text", emailMatch[0])
-      : null);
-
-  // Hungarian and international forms: +36 1 234 5678, 06-1-234-5678,
-  // +44 20 1234 5678. Requires a leading + or 0 so years and figures quoted in
-  // a post are not read as phone numbers.
-  const linkedPhone = hrefValue("tel");
-  const phoneMatch = published.match(/(?:\+|\b0)[\d][\d\s\-().]{7,17}\d/);
-  const phone =
-    (linkedPhone ? take("phone", "contact-link", linkedPhone) : null) ||
-    (phoneMatch ? take("phone", "published-text", phoneMatch[0]) : null);
-
-  const websiteUrl = take("websiteUrl", "contact-link", ariaWebsite);
-
-  // ---- photo --------------------------------------------------------------
-  // The profile picture LAZY-LOADS. Until it swaps in, `src` is a 1×1
-  // transparent GIF as a data: URL and the real address sits in
-  // `data-delayed-url` (and, once loaded, in `srcset`). Reading `src` alone is
-  // why the app showed initials for every captured lead: a data: URL is not
-  // something the server can fetch, so it was refused on arrival and the photo
-  // silently became a fallback avatar.
-  //
-  // So: consider every plausible source per <img>, take the first that is an
-  // actual https address, and prefer the largest srcset entry when there is
-  // one.
-  const imageUrlOf = (img) =>
-    attempt(null, () => {
-      if (!img) return null;
-      const candidates = [];
-      const delayed = img.getAttribute("data-delayed-url");
-      if (delayed) candidates.push(delayed);
-
-      const srcset = img.getAttribute("srcset");
-      if (srcset) {
-        // "url 100w, url 200w" — widest wins, since the avatar is stored once
-        // and a bigger source costs nothing at capture time.
-        const entries = srcset
-          .split(",")
-          .map((part) => {
-            const [url, size] = part.trim().split(/\s+/);
-            return { url, width: Number.parseInt(size ?? "0", 10) || 0 };
-          })
-          .filter((e) => e.url)
-          .sort((a, b) => b.width - a.width);
-        for (const e of entries) candidates.push(e.url);
-      }
-
-      const src = img.getAttribute("src");
-      if (src) candidates.push(src);
-
-      for (const candidate of candidates) {
-        const c = clean(candidate);
-        // data: and blob: are placeholders, not photographs.
-        if (!c || !/^https?:\/\//i.test(c)) continue;
-        return c;
-      }
-      return null;
-    });
-
-  const photoFromDom = attempt(null, () => {
-    // Named selectors first, then a CONTENT-based sweep: LinkedIn serves every
-    // avatar from media.licdn.com under a "profile-displayphoto" path, and that
-    // path has outlived several rounds of class renaming.
-    const named = [
-      "img.pv-top-card-profile-picture__image--show",
-      "img.pv-top-card-profile-picture__image",
-      ".pv-top-card__photo img",
-      "main img.presence-entity__image",
-      "main img[width='200']",
-      'img[alt*="profile" i]',
-    ];
-    for (const sel of named) {
-      const url = imageUrlOf($(sel));
-      if (url) return url;
-    }
-    if (name) {
-      // The avatar's alt text is the person's own name.
-      const url = imageUrlOf($(`img[alt="${name.replace(/"/g, '\\"')}"]`));
-      if (url) return url;
-    }
-    for (const img of $$("img")) {
-      const url = imageUrlOf(img);
-      if (url && /profile-displayphoto|profile-framedphoto/i.test(url)) return url;
+      walk(parsed);
+      const person = nodes.find((n) => {
+        const t = n["@type"];
+        return t === "Person" || (Array.isArray(t) && t.includes("Person"));
+      });
+      if (person) return person;
     }
     return null;
   });
 
-  const photoUrl =
-    take("photoUrl", "json-ld", ld.photo) ||
-    take("photoUrl", "og:image", meta("og:image")) ||
-    take("photoUrl", "img", photoFromDom);
+  if (ld) {
+    offer("name", "derived", "high", ld.name, validateName);
+    offer("headline", "derived", "high", Array.isArray(ld.jobTitle) ? ld.jobTitle[0] : ld.jobTitle, validateHeadline);
+    offer("bio", "derived", "high", ld.description, () => null);
+    const worksFor = Array.isArray(ld.worksFor) ? ld.worksFor[0] : ld.worksFor;
+    offer("companyName", "derived", "high", worksFor && worksFor.name, () => null);
+    const addr = ld.address;
+    offer(
+      "location",
+      "derived",
+      "high",
+      addr &&
+        (addr.addressLocality
+          ? [addr.addressLocality, addr.addressRegion, addr.addressCountry].filter(Boolean).join(", ")
+          : addr.name),
+      validateLocation,
+    );
+  }
 
-  // undefined, not null, for anything not found. JSON.stringify drops undefined
-  // keys entirely, which is what "absent" should look like on the wire — and
-  // null is what silently failed server validation for every profile whose DOM
-  // had moved, surfacing to the user as a bare "Capture failed."
-  const absent = (v) => (v === null || v === "" ? undefined : v);
+  // ---- the photo ----------------------------------------------------------
+  // The <img> inside the bounded card's own profile anchor, largest srcset
+  // candidate. The BYTES are fetched separately (photo.js) in page context,
+  // because these URLs are signed and time-limited and refuse an
+  // unauthenticated server-side fetch — which is why every captured avatar
+  // failed with "the photo could not be fetched".
+  const photo = attempt({ url: null, reason: "photo_lookup_threw" }, () => {
+    if (!card.ok) return { url: null, reason: "no_bounded_card" };
+    const anchor = ownerAnchors.map((a) => a.el).find((el) => card.el.contains(el) && $("img", el));
+    const img = anchor ? $("img", anchor) : $("img", card.el);
+    if (!img) return { url: null, reason: "no_image_in_card" };
+
+    const candidates = [];
+    const srcset = img.getAttribute("srcset");
+    if (srcset) {
+      for (const part of srcset.split(",")) {
+        const [url, size] = part.trim().split(/\s+/);
+        if (url) candidates.push({ url, width: Number.parseInt(size ?? "0", 10) || 0 });
+      }
+      candidates.sort((a, b) => b.width - a.width);
+    }
+    const delayed = img.getAttribute("data-delayed-url");
+    if (delayed) candidates.push({ url: delayed, width: 0 });
+    const src = img.getAttribute("src");
+    if (src) candidates.push({ url: src, width: 0 });
+
+    for (const c of candidates) {
+      const u = clean(c.url);
+      // data: and blob: are lazy-load placeholders, not photographs.
+      if (u && /^https?:\/\//i.test(u)) return { url: u, reason: null };
+    }
+    return { url: null, reason: "only_placeholder_sources" };
+  });
+  if (photo.url) {
+    fields.photoUrl = { value: photo.url, source: "topcard", confidence: "high" };
+    note("photoUrl", "topcard", "accepted");
+  } else {
+    skipped.photoUrl = photo.reason;
+    note("photoUrl", "topcard", `rejected(${photo.reason})`);
+  }
+
+  // ---- the contact-info trigger ------------------------------------------
+  // Located but NOT pressed. Contact details are not on the profile page at all
+  // (the diagnostics measured mailto: 0, tel: 0, no outbound hosts) — they exist
+  // only behind this overlay, which contact.js opens on an explicit capture.
+  const contactTrigger = attempt(null, () => {
+    const scope = card.el ?? $("main") ?? document.body;
+    for (const a of $$("a, button", scope)) {
+      const href = a.getAttribute("href") ?? "";
+      if (/\/overlay\/contact-info/i.test(href)) return true;
+      const t = norm(label(a));
+      if (t === "contact info" || t === "kapcsolati adatok" || t === "see contact info") return true;
+    }
+    return false;
+  });
+
+  const flat = (f) => fields[f]?.value ?? undefined;
 
   return {
     url: profileUrl(),
-    name: absent(name),
-    headline: absent(headline),
-    companyName: absent(companyName),
-    location: absent(location),
-    jobTitle: absent(jobTitle),
-    email: absent(email),
-    phone: absent(phone),
-    websiteUrl: absent(websiteUrl),
-    bio: absent(bio),
-    photoUrl: absent(photoUrl),
+    // Flat values, so an older server keeps working unchanged.
+    name: flat("name"),
+    headline: flat("headline"),
+    companyName: flat("companyName"),
+    location: flat("location"),
+    jobTitle: flat("jobTitle"),
+    bio: flat("bio"),
+    photoUrl: flat("photoUrl"),
+    // Email, phone and website are NOT on this page. contact.js supplies them.
     posts,
-    // Never sent to the server. The popup reads it to say what it managed to
-    // read, so a layout change announces itself.
-    _from: from,
+
+    // {value, source, confidence} per field, and why each rejection happened.
+    provenance: Object.fromEntries(
+      Object.entries(fields).map(([k, v]) => [k, { source: v.source, confidence: v.confidence }]),
+    ),
+    skipped,
+    boundary: {
+      ok: card.ok,
+      reason: card.reason,
+      identitiesInCard: card.ok ? 1 : (card.identities ?? null),
+      excludedNegativeSpaceNodes: card.excluded ?? 0,
+      otherPeopleOnPage: otherPeople.length,
+      contactTriggerPresent: !!contactTrigger,
+    },
+    _from: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v.source])),
+    _attempts: attempts,
   };
 
   function profileUrl() {
-    // Strip tracking parameters so the same profile dedupes to one lead.
     try {
       const u = new URL(window.location.href);
       if (!/^\/sales\//i.test(u.pathname)) {
         return `${u.origin}${u.pathname}`.replace(/\/$/, "");
       }
-
-      // Sales Navigator. The lead is keyed on its LinkedIn URL, and a Sales
-      // Navigator address is a different string for the same human — capture
-      // someone from both views and you get two leads for one person. So when
-      // the page names the public profile, that is the address we key on.
-      const canonical = publicProfileLink();
-      if (canonical) return canonical;
-
-      // Otherwise the sales URL, minus the search context after the first
-      // comma ("…/lead/ACwAAB1234,NAME_SEARCH,abcd"), which changes with how
-      // you arrived and would otherwise make every visit a new lead.
-      const stable = u.pathname.split(",")[0].replace(/\/$/, "");
-      return `${u.origin}${stable}`;
+      // Sales Navigator: key on the public profile when the page names it
+      // unambiguously, so one human is not two leads. Otherwise the sales URL
+      // minus its search context, which changes with how you arrived.
+      if (ownerSlug) return `https://www.linkedin.com/in/${ownerSlug}`;
+      return `${u.origin}${u.pathname.split(",")[0]}`.replace(/\/$/, "");
     } catch {
       return String(window.location.href ?? "").split("?")[0];
     }
-  }
-
-  /**
-   * The public /in/ profile this page is about.
-   *
-   * Deliberately not "the first /in/ link on the page": a lead page also links
-   * to similar leads and to colleagues, and picking one of those would file the
-   * capture under the wrong person — a quiet, expensive mistake. Only two
-   * things are trusted. A link that SAYS it is this person's LinkedIn profile,
-   * and a link whose slug carries a piece of the name in the heading. Anything
-   * less certain than that gets nothing, and the sales URL is used instead.
-   */
-  function publicProfileLink() {
-    const candidates = [];
-    for (const a of $$('a[href*="/in/"]')) {
-      const href = a.getAttribute("href");
-      if (!href) continue;
-      let u;
-      try {
-        u = new URL(href, window.location.href);
-      } catch {
-        continue;
-      }
-      if (!/(^|\.)linkedin\.com$/i.test(u.hostname)) continue;
-      if (!/^\/in\/[^/]+/.test(u.pathname)) continue;
-
-      const says = `${a.getAttribute("aria-label") ?? ""} ${text(a) ?? ""}`;
-      const url = `${u.origin}${u.pathname}`.replace(/\/$/, "");
-      if (/linkedin profile|view.*linkedin|full profile|teljes profil/i.test(says)) return url;
-      candidates.push({ url, slug: decodeURIComponent(u.pathname.slice(4).toLowerCase()) });
-    }
-
-    // Fall back to matching the slug against the name in the heading. A single
-    // shared token is not enough — "anna" appears in plenty of slugs — so this
-    // wants a token of real length.
-    const tokens = (name ?? "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .split(/[^a-z0-9]+/)
-      .filter((t) => t.length >= 4);
-    if (tokens.length === 0) return null;
-
-    const matched = candidates.filter((c) => tokens.some((t) => c.slug.includes(t)));
-    // Exactly one, or we do not know which person this page is about.
-    return matched.length === 1 ? matched[0].url : null;
   }
 })();

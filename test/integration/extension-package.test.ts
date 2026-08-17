@@ -33,6 +33,7 @@ describe("extension package", () => {
       "popup.html",
       "popup.js",
       "diagnose.js",
+      "snapshot.js",
       "icons/icon-16.png",
       "icons/icon-128.png",
     ]) {
@@ -56,13 +57,15 @@ describe("extension package", () => {
     expect(manifest.manifest_version).toBe(3);
     expect(manifest.version).toBe(pkg.version);
     // The permission model this build deliberately settled on. clipboardWrite
-    // is for the diagnostics button and is the only one Chrome shows no warning
-    // for; the absent ones are the point — no "tabs", no host access up front.
+    // serves the diagnostics button and downloads serves the DOM-snapshot
+    // button; neither raises a Chrome install warning. The absent ones are the
+    // point — no "tabs", no host access up front.
     expect(manifest.permissions).toEqual([
       "activeTab",
       "scripting",
       "storage",
       "clipboardWrite",
+      "downloads",
     ]);
     expect(manifest.permissions).not.toContain("tabs");
     expect(manifest.optional_host_permissions).toEqual(["https://*/*"]);

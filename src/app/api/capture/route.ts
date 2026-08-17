@@ -12,6 +12,7 @@ import { resolveCaptureToken } from "@/modules/capture/tokens";
 import { storeAvatar } from "@/modules/capture/avatar";
 import { normalizeDomain } from "@/modules/leads/dedupe";
 import { captureBodySchema } from "@/modules/capture/body";
+import { parseLocation } from "@/modules/capture/location";
 import { composeCapturedNotes, mergeCapturedNotes } from "@/modules/capture/notes";
 
 /**
@@ -74,6 +75,15 @@ export async function POST(req: Request): Promise<Response> {
     },
   });
 
+  // The location line, resolved. `input.location` is a whole line — "Budapest,
+  // Budapest, Hungary" — and storing it in `city` verbatim is how a lead ended
+  // up living in "Keletso Thophego, CFP". The extension does the checks that
+  // need the page (is this string also some other person's link text, is it
+  // inside the bounded card); the gazetteer lives here, on one authoritative
+  // copy, and decides whether the place actually resolves.
+  const place = parseLocation(input.location);
+  const city = place.ok ? place.city : null;
+
   let companyId: string | null = null;
   if (input.companyName) {
     // The domain comes from a LINK the profile published, never from the
@@ -97,19 +107,19 @@ export async function POST(req: Request): Promise<Response> {
           workspaceId: identity.workspaceId,
           name: input.companyName,
           domain,
-          city: input.location ?? null,
+          city,
         },
         select: { id: true, domain: true, city: true },
       }));
     companyId = company.id;
 
     // Fill blanks on a company we found, never overwrite what is already there.
-    if ((domain && !company.domain) || (input.location && !company.city)) {
+    if ((domain && !company.domain) || (city && !company.city)) {
       await db.company.update({
         where: { id: company.id },
         data: {
           domain: company.domain ?? domain ?? undefined,
-          city: company.city ?? input.location ?? undefined,
+          city: company.city ?? city ?? undefined,
         },
       });
     }
