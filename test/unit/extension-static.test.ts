@@ -111,6 +111,8 @@ const AMBIENT = new Set([
   "KeyboardEvent", "CustomEvent", "Event", "MutationObserver", "requestAnimationFrame",
   "encodeURIComponent", "decodeURIComponent", "encodeURI", "decodeURI",
   "parseInt", "parseFloat", "isNaN", "isFinite", "Intl", "console", "Symbol",
+  // Window methods the popup uses directly.
+  "prompt", "confirm", "alert",
   "Reflect", "Proxy", "BigInt", "crypto",
 ]);
 

@@ -46,8 +46,12 @@ describe("extension package", () => {
       "names.js",
       "machine.js",
       "run.js",
-      // Diagnostics v3, out of popup.js so it can be tested outside a popup.
+      // Diagnostics, out of popup.js so it can be tested outside a popup.
       "diagnostics.js",
+      // The passive observer: one half per world, plus the snapshot scrubber.
+      "observer-main.js",
+      "observer-bridge.js",
+      "api-scrub.js",
       "permission.html",
       "permission.js",
       "panel.js",

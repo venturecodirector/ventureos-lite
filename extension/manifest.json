@@ -1,17 +1,24 @@
 {
   "manifest_version": 3,
   "name": "Venture OS — Capture",
-  "version": "4.2.0",
-  "description": "Capture the LinkedIn profile you are viewing into Venture OS. Reads a page when you ask it to \u2014 from the popup, or when Venture OS requests one. Never posts, messages or acts for you.",
+  "version": "5.0.0",
+  "description": "Capture the LinkedIn profile you are viewing into Venture OS. Reads a page when you ask it to — from the popup, or when Venture OS requests one. Never posts, messages or acts for you.",
   "minimum_chrome_version": "116",
-
-  "permissions": ["activeTab", "scripting", "storage", "clipboardWrite", "downloads"],
-
-  "_comment_host_permissions": "media.licdn.com only, and only so the SERVICE WORKER can fetch avatar image bytes. A profile photo URL is signed and time-limited and refuses an unauthenticated server-side fetch, and an in-page fetch is blocked by CORS — the diagnostics recorded 'fetch:Failed to fetch' on every capture. A service-worker request carries no page origin, so it is the one context that can retrieve the bytes. Images only; nothing is read from any page here.",
-  "host_permissions": ["https://media.licdn.com/*"],
-
-  "optional_host_permissions": ["https://*/*"],
-
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "clipboardWrite",
+    "downloads"
+  ],
+  "_comment_host_permissions": "linkedin.com so the passive observer can be DECLARED at document_start — a dynamically registered script cannot reliably beat the page's own scripts, and the interceptor must patch fetch before the first request. media.licdn.com so the SERVICE WORKER can retrieve avatar bytes: those URLs are signed and refuse both an unauthenticated server fetch and a cross-origin page fetch. NO cookies, NO webRequest, NO declarativeNetRequest — the extension never issues a request to LinkedIn and never reads a credential.",
+  "host_permissions": [
+    "*://*.linkedin.com/*",
+    "https://media.licdn.com/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Capture into Venture OS",
@@ -22,17 +29,40 @@
       "128": "icons/icon-128.png"
     }
   },
-
-  "background": { "service_worker": "background.js" },
-
+  "background": {
+    "service_worker": "background.js"
+  },
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.linkedin.com/*"
+      ],
+      "js": [
+        "observer-main.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://*.linkedin.com/*"
+      ],
+      "js": [
+        "observer-bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": false
+    }
+  ]
 }

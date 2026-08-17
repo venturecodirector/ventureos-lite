@@ -653,3 +653,139 @@ $("capture").addEventListener("click", async () => {
     $("capture").disabled = false;
   }
 });
+
+/**
+ * ── THE RECORDER ───────────────────────────────────────────────────────────
+ *
+ * The fixture step, and it comes before any mapping is written.
+ *
+ * Six rounds of DOM fixes hit diminishing returns because the DOM is a rendering
+ * of the data, not the data. The page's own frontend receives clean structured
+ * JSON for exactly the fields we want — so the plan is to read that. But the
+ * SHAPE of those responses is not something to assume: LinkedIn's schema is
+ * theirs, undocumented, and the whole point of this step is to find out what it
+ * actually is rather than to guess and be wrong in a new way.
+ *
+ * So: record real responses, scrub them, commit them, and derive the mapping FROM
+ * the committed files. Nothing is mapped that has not been seen.
+ */
+async function observerStatus(tabId) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: "observerStatus" });
+  } catch (e) {
+    // The bridge is not there: the page loaded before the extension was installed
+    // or updated, or this is not a LinkedIn page.
+    return { ok: false, installed: false, error: String(e?.message ?? e).slice(0, 80) };
+  }
+}
+
+async function observerTake(tabId, slug) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: "observerTake", slug });
+  } catch (e) {
+    return { ok: false, installed: false, records: [], error: String(e?.message ?? e).slice(0, 80) };
+  }
+}
+
+/**
+ * Save a scrubbed snapshot of everything observed on this page.
+ *
+ * Downloads a JSON file to be committed under test/fixtures/linkedin-api/. The
+ * scrubbing is referential — the same urn maps to the same placeholder throughout
+ * — so the file still teaches how the response cross-references itself, which is
+ * most of what there is to learn from an `included` array.
+ */
+$("api-snapshot").addEventListener("click", async () => {
+  $("api-snapshot").disabled = true;
+  msg("Collecting observed responses…");
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!PROFILE_URL.test(tab?.url ?? "")) {
+      msg("Open a LinkedIn profile first.", "err");
+      return;
+    }
+    const status = await observerStatus(tab.id);
+    if (!status?.installed) {
+      msg(
+        "The observer is not installed on this page. Reload the profile and try again — " +
+          "it has to be in place before the page starts fetching.",
+        "err",
+      );
+      return;
+    }
+    const taken = await observerTake(tab.id);
+    if (!taken?.records?.length) {
+      msg("Nothing observed yet on this page. Reload the profile, then try again.", "err");
+      return;
+    }
+
+    const label = prompt(
+      "Label for this snapshot (e.g. hungarian-name, abbreviated-slug, no-experience, " +
+        "first-degree, third-degree, company-page, contact-overlay):",
+      "",
+    );
+    if (label === null) {
+      msg("Cancelled.");
+      return;
+    }
+
+    const snapshot = globalThis.VentureApiScrub.scrubSnapshot({
+      slug: taken.slug,
+      records: taken.records,
+      label: label.trim() || "unlabelled",
+      note: null,
+    });
+
+    const safe = (label.trim() || "unlabelled").replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
+    const json = JSON.stringify(snapshot, null, 2);
+    const url = `data:application/json;charset=utf-8,${encodeURIComponent(json)}`;
+    await chrome.downloads.download({
+      url,
+      filename: `linkedin-api/${safe}.json`,
+      saveAs: true,
+    });
+    msg(
+      `Saved ${snapshot.recordCount} response(s), ${Math.round(json.length / 1024)} kB. ` +
+        "Commit it under test/fixtures/linkedin-api/.",
+      "ok",
+    );
+  } catch (e) {
+    msg(`Could not save the snapshot (${String(e?.message ?? e).slice(0, 60)}).`, "err");
+  } finally {
+    $("api-snapshot").disabled = false;
+  }
+});
+
+/**
+ * The inventory, without bodies — what was observed, and how big.
+ *
+ * Copied rather than saved, because the first question when observation comes back
+ * empty is "did anything arrive at all", and that is answerable in one glance.
+ */
+$("api-inventory").addEventListener("click", async () => {
+  $("api-inventory").disabled = true;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const status = await observerStatus(tab?.id);
+    const report = {
+      observerInstalled: !!status?.installed,
+      world: status?.world ?? null,
+      timing: status?.timing ?? null,
+      slug: status?.slug ?? null,
+      recordCount: status?.recordCount ?? 0,
+      inventory: status?.inventory ?? [],
+      error: status?.error ?? null,
+    };
+    await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+    msg(
+      report.observerInstalled
+        ? `Copied. ${report.recordCount} response(s) observed on this page.`
+        : "Copied. The observer is NOT installed here — reload the profile.",
+      report.observerInstalled && report.recordCount > 0 ? "ok" : "err",
+    );
+  } catch (e) {
+    msg(`Could not read the inventory (${String(e?.message ?? e).slice(0, 60)}).`, "err");
+  } finally {
+    $("api-inventory").disabled = false;
+  }
+});

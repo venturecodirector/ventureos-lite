@@ -148,13 +148,35 @@ describe("the grant flow's mechanics", () => {
     expect(code("background.js")).not.toMatch(/permissions\.request\(/);
   });
 
-  it("keeps LinkedIn access optional, so installing prompts for nothing", () => {
-    expect(manifest.optional_host_permissions).toBeTruthy();
-    // No declared host permission for linkedin.com, and no manifest content
-    // script on it — both would force an install-time prompt on people who only
-    // ever paste a profile.
-    expect(JSON.stringify(manifest.host_permissions ?? [])).not.toContain("linkedin");
-    expect(JSON.stringify(manifest.content_scripts ?? [])).not.toContain("linkedin");
+  /**
+   * A DELIBERATE REVERSAL, recorded rather than deleted.
+   *
+   * This used to assert the opposite: LinkedIn access was OPTIONAL so that
+   * installing the extension prompted for nothing, and a paste-only user was never
+   * asked for anything. That was the right trade while the extension only read the
+   * DOM on demand.
+   *
+   * The passive observer cannot work that way. It has to patch the page's `fetch`
+   * BEFORE the page issues its first request, which means a content script
+   * declared in the manifest at `document_start` — and a declared content script
+   * requires a declared host permission. A dynamically registered script cannot
+   * reliably win that race, and losing it means observing nothing.
+   *
+   * So the install now asks for linkedin.com. The cost is one permission prompt at
+   * install; what it buys is the whole re-architecture. The permission remains
+   * narrow — one host, no cookies, no webRequest — and the grant flow is kept
+   * because it still answers "is this working" for a user whose install predates
+   * the change.
+   */
+  it("declares LinkedIn access, which document_start observation requires", () => {
+    expect(JSON.stringify(manifest.host_permissions ?? [])).toContain("linkedin");
+    const scripts = manifest.content_scripts ?? [];
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const cs of scripts) {
+      expect(cs.matches).toEqual(["*://*.linkedin.com/*"]);
+      // The whole reason the permission had to be declared.
+      expect(cs.run_at).toBe("document_start");
+    }
   });
 
   it("registers the profile content script dynamically, after the grant", () => {
