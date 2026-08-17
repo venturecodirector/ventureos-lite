@@ -38,7 +38,20 @@
  * rail are all left exactly as they are. Those ARE the test.
  */
 (() => {
-  const OWNER = { first: "Anna", last: "Kovács", slug: "anna-kovacs-fixture" };
+  /**
+   * The owner's replacement name.
+   *
+   * Deliberately NOT a plausible real name. An earlier version used "Kovács
+   * Anna", and the first person to read a fixture reasonably concluded the
+   * capture had grabbed the wrong profile — a recommended contact instead of the
+   * subject. A placeholder has to be self-evidently a placeholder. Accents are
+   * kept so the accent-normalization tests still mean something.
+   */
+  const OWNER = {
+    first: "Ödön",
+    last: "Anonimizált",
+    slug: "anonimizalt-odon-scrubbed",
+  };
 
   const clean = (s) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim() : "");
 

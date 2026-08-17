@@ -85,10 +85,25 @@ What they establish, all verified rather than assumed:
 | Contact info is a ROUTE | `<a href=".../in/<slug>/overlay/contact-info/">` |
 | The photo needs no popup | `<img>` inside `a[componentkey="topcard-logo-image-referencekey"]` |
 
+### Whose profile is this?
+
+A real signed-in profile: **the CEO of Seyu**. The owner's name shows as
+`Anonimizált Ödön` because the scrubber replaces it consistently across the
+title, the `<h2>` and the URL slug — the headline (`CEO at Seyu`), the company
+(`'Seyu - Together for victory!'`) and the education line are NOT names and are
+left as captured, which is what identifies whose card it is.
+
+An earlier version of the scrubber used `Kovács Anna` as the placeholder, and the
+first person to read the fixture reasonably concluded the capture had grabbed a
+*recommended contact* instead of the subject. A placeholder has to be
+self-evidently a placeholder; `Anonimizált` ("anonymized") cannot be mistaken for
+anyone. Every other person on the page is `Person 1`…`Person 28`, and none of
+them appears inside the top card.
+
 The real top card, with the chrome stripped:
 
 ```html
-<h2>Kovács Anna</h2>
+<h2>Anonimizált Ödön</h2>
 <p>· 1st</p> <p>· 2nd</p>
 <p>CEO at Seyu</p>
 <p>'Seyu - Together for victory!'​ · Eötvös Loránd University</p>
