@@ -16,6 +16,12 @@ export interface ExtensionPresence {
 
 interface BridgeResponse {
   ok?: boolean;
+  installed?: boolean;
+  configured?: boolean;
+  linkedInPermission?: boolean;
+  canRequest?: boolean;
+  opened?: boolean;
+  alreadyGranted?: boolean;
   error?: string;
   status?: number;
   data?: { created?: boolean; leadId?: string; avatarProblem?: string | null };
@@ -104,8 +110,10 @@ const MESSAGES: Record<string, string> = {
   not_installed: "The capture extension is not installed in this browser.",
   not_configured: "Connect the extension first — Settings → Extension.",
   no_permission: "The extension needs permission for this server. Open its popup and press Save.",
+  // Actionable: the UI turns this into a button that opens the extension's own
+  // permission page, because only a click inside the extension can grant it.
   no_linkedin_permission:
-    "The extension needs permission to read LinkedIn pages. Open its popup and allow it.",
+    "The extension has not been allowed to read LinkedIn pages yet.",
   not_a_profile: "That is not a LinkedIn profile URL.",
   unreadable: "The profile could not be read — you may need to be signed in to LinkedIn.",
   timeout: "The extension did not answer in time.",
@@ -142,4 +150,46 @@ export async function captureProfileViaExtension(url: string): Promise<CaptureOu
       MESSAGES[key] ??
       (res.status ? `The server refused the capture (${res.status}).` : "The capture failed."),
   };
+}
+
+/**
+ * The four states the app has to tell apart.
+ *
+ * They need different buttons, and collapsing them into one "it did not work" is
+ * what made the LinkedIn permission unfixable from the user's side: the message
+ * said "open its popup", the popup had no such control, and nothing anywhere ever
+ * called chrome.permissions.request() for linkedin.com.
+ */
+export type ExtensionReadiness =
+  | { state: "not_installed" }
+  | { state: "not_configured"; version: string }
+  | { state: "needs_linkedin_permission"; version: string }
+  | { state: "ready"; version: string };
+
+export async function extensionReadiness(): Promise<ExtensionReadiness> {
+  const res = await ask({ type: "status" }, 1500);
+  // Silence is the "not installed" signal — a missing extension never answers.
+  if (!res?.ok) return { state: "not_installed" };
+  const version = res.version ?? "?";
+  if (!res.configured) return { state: "not_configured", version };
+  if (!res.linkedInPermission) return { state: "needs_linkedin_permission", version };
+  return { state: "ready", version };
+}
+
+/**
+ * Ask the extension to open its own permission page.
+ *
+ * It cannot grant anything from here. `chrome.permissions.request()` is only
+ * honoured from a gesture inside an extension context, and a click on a web page
+ * is a gesture in the page — it does not carry across, whatever the wiring. So
+ * this opens a tab and the granting click happens there. One extra step, and the
+ * only shape that actually works.
+ */
+export async function requestLinkedInPermission(): Promise<
+  { ok: true; alreadyGranted: boolean } | { ok: false; message: string }
+> {
+  const res = await ask({ type: "requestLinkedInPermission" }, 5_000);
+  if (!res) return { ok: false, message: MESSAGES.not_installed! };
+  if (!res.ok) return { ok: false, message: "The extension could not open its permission page." };
+  return { ok: true, alreadyGranted: !!res.alreadyGranted };
 }

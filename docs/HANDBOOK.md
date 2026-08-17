@@ -654,3 +654,47 @@ These are permanently recorded with actor and timestamp:
 - changing the forecast's commit threshold
 
 The audit log cannot be edited from the UI.
+
+## The capture extension's four states
+
+"Read it with the extension" used to fail with *"The extension needs permission to
+read LinkedIn pages. Open its popup and allow it"* — and the popup had no such
+control. The cause was simpler than the message suggested: LinkedIn access is an
+**optional** host permission, so installing grants nothing, and nothing in the
+extension ever asked for it. A permission with no request path can only be missing.
+
+There are four distinct states and each needs a different action. The app now
+detects them and shows the right one.
+
+| State | What you see | What to do |
+|---|---|---|
+| **Not installed** | "Install the capture extension" | Settings → Extension → download, then load it in Chrome |
+| **Installed, not connected** | "Connect the extension" + version | Settings → Extension → paste a capture token |
+| **Installed, no LinkedIn access** | "Allow LinkedIn access" | Press it — a tab opens; allow it there, come back |
+| **Ready** | "Read it with the extension" | Press it |
+
+### Why granting needs its own tab
+
+`chrome.permissions.request()` is only honoured from a click **inside the
+extension**. A click on a button in this web app is a gesture in the *page*, and it
+does not carry across — so the app can only ever open the extension's own page and
+let the granting click happen there. One extra step, and the only version that
+works. The same control also lives in the extension popup, where a click already
+counts.
+
+### Why LinkedIn access is not requested at install
+
+Anyone who only pastes profile text never needs it, and a host permission in the
+manifest shows a alarming install-time prompt to everybody. The cost of that choice
+is the request path above. The profile content script is registered dynamically
+once permission exists, for the same reason.
+
+To revoke: **chrome://extensions** → the extension → Site access.
+
+### Checking the states by hand
+
+1. **Not installed** — open /leads in a browser without the extension.
+2. **Not connected** — load the extension, do not paste a token.
+3. **No LinkedIn access** — connect it, then remove LinkedIn from Site access in
+   chrome://extensions.
+4. **Ready** — allow LinkedIn access, paste a profile URL.

@@ -575,39 +575,95 @@
   // because these URLs are signed and time-limited and refuse an
   // unauthenticated server-side fetch — which is why every captured avatar
   // failed with "the photo could not be fetched".
-  const photo = attempt({ url: null, reason: "photo_lookup_threw" }, () => {
-    if (!card.ok) return { url: null, reason: "no_bounded_card" };
-    const anchor = ownerAnchors.map((a) => a.el).find((el) => card.el.contains(el) && $("img", el));
-    const img = anchor ? $("img", anchor) : $("img", card.el);
-    if (!img) return { url: null, reason: "no_image_in_card" };
-
-    const candidates = [];
-    const srcset = img.getAttribute("srcset");
-    if (srcset) {
-      for (const part of srcset.split(",")) {
-        const [url, size] = part.trim().split(/\s+/);
-        if (url) candidates.push({ url, width: Number.parseInt(size ?? "0", 10) || 0 });
+  // ---- the photo ----------------------------------------------------------
+  // NO POPUP. The image is already in the DOM: the top-card anchor identified by
+  // componentkey="topcard-logo-image-referencekey" contains an <img> whose srcset
+  // lists the candidates, and the largest is 800w.
+  //
+  // Two traps the real fixtures exposed. The 1400w candidate on the page belongs
+  // to the COVER photo — a landscape banner in the same top card — so "largest
+  // srcset in the card" picks a banner as somebody's avatar. And that same anchor's
+  // href is the CONTACT-INFO route, so "click the photo to open it" navigates to
+  // contact info and then waits for a photo viewer that does not exist. There is
+  // no /overlay/photo/ route on the page at all.
+  //
+  // Selection goes through the shared selector layer, so the tier that answered is
+  // recorded. The BYTES are fetched separately by photo.js in page context, because
+  // licdn URLs are signed and refuse an unauthenticated server-side fetch.
+  const S = globalThis.VentureSelectors ?? null;
+  const photo = attempt({ url: null, reason: "photo_lookup_threw", tier: null }, () => {
+    if (S) {
+      const anchor = S.topcardPhotoAnchor(document);
+      if (anchor) {
+        const url = S.largestSrcsetCandidate($("img", anchor));
+        if (url) return { url, reason: null, tier: "componentkey" };
+        return { url: null, reason: "no_usable_image_in_topcard_anchor", tier: "componentkey" };
       }
-      candidates.sort((a, b) => b.width - a.width);
     }
-    const delayed = img.getAttribute("data-delayed-url");
-    if (delayed) candidates.push({ url: delayed, width: 0 });
-    const src = img.getAttribute("src");
-    if (src) candidates.push({ url: src, width: 0 });
-
-    for (const c of candidates) {
-      const u = clean(c.url);
+    // STRUCTURE FALLBACK — only reached if selectors.js failed to inject, which
+    // every call site now prevents by loading it first.
+    //
+    // Known limitation, measured rather than assumed: on the real page this
+    // returns the correct person's avatar at 100w rather than 800w. Of the
+    // owner's 74 anchors, 16 hold an avatar image and only the componentkey'd
+    // top-card anchor carries the full srcset; the bounded card is a text subtree
+    // that does not contain it. A smaller image of the right face is a fair
+    // degradation for a path that should never run, and chasing it further would
+    // buy nothing the primary tier does not already give.
+    if (!card.ok) return { url: null, reason: "no_bounded_card", tier: null };
+    const anchor = ownerAnchors.map((a) => a.el).find((el) => card.el.contains(el) && $("img", el));
+    // Content-based preference, because the cover photo is ALSO inside the top
+    // card and offers a bigger srcset (1400w) than the avatar (800w). LinkedIn
+    // serves avatars from a "profile-displayphoto" path, which is what tells the
+    // two apart without a class name.
+    const looksLikeAvatar = (el) =>
+      /profile-displayphoto|profile-framedphoto/i.test(
+        `${el.getAttribute("srcset") ?? ""} ${el.getAttribute("src") ?? ""}`,
+      );
+    // Prefer a candidate that carries a srcset. Measured on the real page: 16 of
+    // the owner's 74 anchors hold an avatar image, and only ONE — the
+    // componentkey'd top-card anchor — offers the full srcset; the rest give a
+    // bare 100w src. Taking the first avatar found yields a thumbnail, which is
+    // the right person at the wrong size.
+    // Scoped to the bounded CARD, not to the first owner anchor that happens to
+    // hold an image — that anchor is one image wide, and on the real page it is
+    // the wrong one. The boundary test guarantees a single identity inside the
+    // card, so every avatar in here is this person's.
+    const inScope = $$("img", card.el).filter(looksLikeAvatar);
+    const img =
+      inScope.find((el) => (el.getAttribute("srcset") ?? "").includes("w")) ??
+      inScope[0] ??
+      (anchor ? $("img", anchor) : null);
+    if (!img) return { url: null, reason: "no_avatar_image_in_card", tier: "structure" };
+    const srcset = img.getAttribute("srcset");
+    let best = null;
+    if (srcset) {
+      best = srcset
+        .split(",")
+        .map((part) => {
+          const [u, size] = part.trim().split(/\s+/);
+          return { u, w: Number.parseInt(size ?? "0", 10) || 0 };
+        })
+        .filter((c) => c.u && /^https?:\/\//i.test(c.u))
+        .sort((a, b) => b.w - a.w)[0]?.u ?? null;
+    }
+    for (const attr of ["data-delayed-url", "src"]) {
+      if (best) break;
+      const v = clean(img.getAttribute(attr));
       // data: and blob: are lazy-load placeholders, not photographs.
-      if (u && /^https?:\/\//i.test(u)) return { url: u, reason: null };
+      if (v && /^https?:\/\//i.test(v)) best = v;
     }
-    return { url: null, reason: "only_placeholder_sources" };
+    return best
+      ? { url: best, reason: null, tier: "structure" }
+      : { url: null, reason: "only_placeholder_sources", tier: "structure" };
   });
+
   if (photo.url) {
     fields.photoUrl = { value: photo.url, source: "topcard", confidence: "high" };
-    note("photoUrl", "topcard", "accepted");
+    note("photoUrl", photo.tier ?? "topcard", "accepted");
   } else {
     skipped.photoUrl = photo.reason;
-    note("photoUrl", "topcard", `rejected(${photo.reason})`);
+    note("photoUrl", photo.tier ?? "topcard", `rejected(${photo.reason})`);
   }
 
   // ---- the contact-info trigger ------------------------------------------

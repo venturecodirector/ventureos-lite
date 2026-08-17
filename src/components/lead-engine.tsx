@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { extensionPresence, captureProfileViaExtension } from "@/lib/extension-bridge";
+import {
+  captureProfileViaExtension,
+  extensionReadiness,
+  requestLinkedInPermission,
+  type ExtensionReadiness,
+} from "@/lib/extension-bridge";
 import type { LeadCard } from "@/lib/ai/prompts/lead-research";
 import {
   captureLinkedin,
@@ -230,7 +235,11 @@ export function LeadEngine({
   const [error, setError] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
   // The extension is optional, so its actions only appear when it answers.
-  const [hasExtension, setHasExtension] = useState(false);
+  // Four distinct states, because each needs a different button (see
+  // ExtensionReadiness). One boolean is what made a missing LinkedIn
+  // permission indistinguishable from a missing extension.
+  const [readiness, setReadiness] = useState<ExtensionReadiness | null>(null);
+  const [permMsg, setPermMsg] = useState<string | null>(null);
   const [extBusy, setExtBusy] = useState(false);
   const [extNote, setExtNote] = useState<string | null>(null);
 
@@ -238,8 +247,8 @@ export function LeadEngine({
     // Optional tool: ask once, show its actions only if it answers. A missing
     // extension simply never replies, so this resolves to false on its own.
     let active = true;
-    extensionPresence().then((p) => {
-      if (active) setHasExtension(p.present);
+    extensionReadiness().then((r) => {
+      if (active) setReadiness(r);
     });
     return () => {
       active = false;
@@ -262,7 +271,10 @@ export function LeadEngine({
   // disabled in exactly that case, so the only way to research anything was to
   // paste the profile text by hand, and the extension's own captures could not
   // be researched at all.
-  const canReadWithExtension = hasExtension && !!linkedInUrl;
+  const hasExtension = readiness !== null && readiness.state !== "not_installed";
+  // Only a READY extension can actually read a page. The other states are
+  // reachable problems, each with its own action below.
+  const canReadWithExtension = readiness?.state === "ready" && !!linkedInUrl;
   const canResearch = hasText || canReadWithExtension;
 
   const urlOnly = paste.trim().length > 0 && !hasText;
@@ -397,17 +409,83 @@ export function LeadEngine({
                     extension read the page — there is nothing to analyse yet.
                   </>
                 )}
-                {hasExtension && linkedInUrl && (
-                  <div className="mt-2">
-                    <button
-                      onClick={captureWithExtension}
-                      disabled={extBusy}
-                      data-testid="capture-with-extension"
-                      className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12.5px] font-semibold text-ink hover:bg-panel-2 disabled:opacity-60"
-                    >
-                      {extBusy ? "Reading the profile…" : "Read it with the extension"}
-                    </button>
-                    {extNote && <span className="ml-2 text-[12px]">{extNote}</span>}
+                {linkedInUrl && readiness && (
+                  <div className="mt-2" data-testid="extension-action">
+                    {/* One button per state. The point of the four states is that
+                        "it did not work" is never the whole answer — each of these
+                        has a different next action, and the LinkedIn permission
+                        one used to have none at all. */}
+                    {readiness.state === "not_installed" && (
+                      <>
+                        <a
+                          href="/settings#extension"
+                          data-testid="extension-install"
+                          className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12.5px] font-semibold text-ink hover:bg-panel-2"
+                        >
+                          Install the capture extension
+                        </a>
+                        <span className="ml-2 text-[12px] text-muted">
+                          Not installed in this browser.
+                        </span>
+                      </>
+                    )}
+
+                    {readiness.state === "not_configured" && (
+                      <>
+                        <a
+                          href="/settings#extension"
+                          data-testid="extension-configure"
+                          className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12.5px] font-semibold text-ink hover:bg-panel-2"
+                        >
+                          Connect the extension
+                        </a>
+                        <span className="ml-2 text-[12px] text-muted">
+                          Installed (v{readiness.version}), but it has no address or token yet.
+                        </span>
+                      </>
+                    )}
+
+                    {readiness.state === "needs_linkedin_permission" && (
+                      <>
+                        <button
+                          onClick={async () => {
+                            // Cannot grant it here: Chrome only honours
+                            // permissions.request() from a click INSIDE the
+                            // extension, so this opens the extension's own page.
+                            const r = await requestLinkedInPermission();
+                            setPermMsg(
+                              r.ok
+                                ? r.alreadyGranted
+                                  ? "Already allowed — press Research again."
+                                  : "Opened the extension's permission tab. Allow it there, then come back."
+                                : r.message,
+                            );
+                            setReadiness(await extensionReadiness());
+                          }}
+                          data-testid="extension-grant-linkedin"
+                          className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12.5px] font-semibold text-ink hover:bg-panel-2"
+                        >
+                          Allow LinkedIn access
+                        </button>
+                        <span className="ml-2 text-[12px] text-muted">
+                          {permMsg ?? "Installed, but not yet allowed to read LinkedIn pages."}
+                        </span>
+                      </>
+                    )}
+
+                    {readiness.state === "ready" && (
+                      <>
+                        <button
+                          onClick={captureWithExtension}
+                          disabled={extBusy}
+                          data-testid="capture-with-extension"
+                          className="rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12.5px] font-semibold text-ink hover:bg-panel-2 disabled:opacity-60"
+                        >
+                          {extBusy ? "Reading the profile…" : "Read it with the extension"}
+                        </button>
+                        {extNote && <span className="ml-2 text-[12px]">{extNote}</span>}
+                      </>
+                    )}
                   </div>
                 )}
                 {parsed.websites[0] && (

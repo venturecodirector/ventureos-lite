@@ -38,6 +38,8 @@ describe("extension package", () => {
       "contact.js",
       "selectors.js",
       "cleanup.js",
+      "permission.html",
+      "permission.js",
       "icons/icon-16.png",
       "icons/icon-128.png",
     ]) {

@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Venture OS — LinkedIn access</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: #00051D; color: #EFF1F8; padding: 32px;
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  .card {
+    max-width: 520px; padding: 28px; border-radius: 14px;
+    border: 1px solid rgba(239,241,248,.09); background: rgba(239,241,248,.04);
+  }
+  .brand { font-size: 16px; margin-bottom: 18px; }
+  .brand b { font-weight: 800; }
+  .brand span { font-weight: 300; color: #858CAE; }
+  h1 { font-size: 19px; margin: 0 0 12px; font-weight: 700; }
+  p { color: #C9CEE3; margin: 0 0 12px; }
+  ul { color: #C9CEE3; margin: 0 0 16px; padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  button {
+    padding: 11px 18px; border-radius: 10px; cursor: pointer; font: inherit;
+    font-weight: 600; border: 1.5px solid transparent; color: #EFF1F8;
+    background:
+      linear-gradient(#00051D, #00051D) padding-box,
+      linear-gradient(135deg, #310B59, #7427C6) border-box;
+  }
+  button:disabled { opacity: .6; cursor: default; }
+  .msg { margin-top: 14px; font-size: 13px; }
+  .ok { color: #3DDC97; }
+  .err { color: #FFB3C2; }
+  .muted { color: #858CAE; font-size: 12.5px; margin-top: 16px; }
+</style>
+<div class="card">
+  <div class="brand"><b>venture</b> <span>capture</span></div>
+  <h1>Allow reading LinkedIn profiles</h1>
+  <p>
+    The extension asks for site access only when you need it, so installing it
+    grants nothing. To read a profile it needs permission for
+    <b>www.linkedin.com</b>.
+  </p>
+  <ul>
+    <li>It reads a profile page when you press Capture — nothing in the background.</li>
+    <li>It never posts, messages, connects or acts as you.</li>
+    <li>You can revoke this at any time from <b>chrome://extensions</b>.</li>
+  </ul>
+  <button id="grant">Allow LinkedIn access</button>
+  <div class="msg" id="msg"></div>
+  <p class="muted">
+    This page exists because Chrome only accepts a permission request from a
+    click inside the extension itself — a button on a website cannot grant it.
+  </p>
+</div>
+<script src="permission.js"></script>

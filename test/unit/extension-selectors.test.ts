@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { JSDOM } from "jsdom";
+import { stripComments } from "../helpers/strip-comments";
 
 /**
  * The selector layer, against the REAL recorded LinkedIn DOM.
@@ -179,13 +180,12 @@ describe("the tier record", () => {
  */
 describe("no CSS class may be used to select anything", () => {
   /**
-   * Comments are stripped before scanning. Documenting the banned thing is not
-   * doing it — these files explain WHY hashed classes like the ones LinkedIn
-   * emits are unusable, and a lint that punished the explanation would push the
-   * reasoning out of the code.
+   * Comments are stripped before scanning — documenting the banned thing is not
+   * doing it. The stripper is line-based and shared, because the obvious regex
+   * version reads the `\/\/` inside a regex literal as a line comment and
+   * silently deletes the rest of the file, which made this very lint scan a
+   * truncated content.js and pass for the wrong reason.
    */
-  const stripComments = (src: string) =>
-    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 
   const EXTRACTION_SOURCES: Array<[string, string]> = [
     ["extension/selectors.js", stripComments(SELECTORS)],

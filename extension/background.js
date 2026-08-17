@@ -8,6 +8,84 @@
  */
 const TIMEOUT_MS = 15000;
 
+/**
+ * LinkedIn host access.
+ *
+ * Optional, not declared — so installing the extension grants nothing and a
+ * paste-only user is never prompted. The cost of that choice is that something
+ * must actually REQUEST it, and for a long time nothing did: the popup asked only
+ * for the Venture OS origin, so "needs permission to read LinkedIn pages" was a
+ * permanent state with no way out of it from inside the product.
+ */
+const LINKEDIN_ORIGINS = ["https://www.linkedin.com/*", "https://linkedin.com/*"];
+
+const hasLinkedInPermission = () =>
+  chrome.permissions.contains({ origins: LINKEDIN_ORIGINS });
+
+/**
+ * What the web app needs to know to offer the right next action.
+ *
+ * Four states, and they need different buttons: not installed (install it),
+ * installed without permission (grant it), permitted but no profile tab (open
+ * one), ready. Collapsing them into one "it did not work" is what made this
+ * unfixable from the user's side.
+ */
+async function status() {
+  const { baseUrl, token } = await chrome.storage.local.get(["baseUrl", "token"]);
+  return {
+    ok: true,
+    installed: true,
+    version: chrome.runtime.getManifest().version,
+    configured: !!(baseUrl && token),
+    linkedInPermission: await hasLinkedInPermission(),
+  };
+}
+
+/**
+ * Open the grant page.
+ *
+ * chrome.permissions.request() is only honoured from a gesture inside an
+ * extension context, and a click in the web app is a gesture in the PAGE. It
+ * cannot carry across, whatever the wiring — so the only working shape is to open
+ * an extension page and let the user click there.
+ */
+async function openPermissionPage() {
+  if (await hasLinkedInPermission()) return { ok: true, alreadyGranted: true };
+  await chrome.tabs.create({ url: chrome.runtime.getURL("permission.html"), active: true });
+  return { ok: true, opened: true };
+}
+
+/**
+ * Register the profile content script, once we are allowed on linkedin.com.
+ *
+ * Dynamic rather than manifest-declared, for the same reason the permission is
+ * optional: a declared content script forces the install-time host prompt on
+ * everybody. Idempotent — re-registering the same id throws, and that is not an
+ * error worth surfacing.
+ */
+async function registerProfileScript() {
+  if (!(await hasLinkedInPermission())) return { ok: false, error: "no_linkedin_permission" };
+  try {
+    const existing = await chrome.scripting.getRegisteredContentScripts({ ids: ["venture-profile-panel"] });
+    if (existing.length > 0) return { ok: true, alreadyRegistered: true };
+  } catch {
+    /* getRegisteredContentScripts is unavailable on older builds; try anyway */
+  }
+  try {
+    await chrome.scripting.registerContentScripts([
+      {
+        id: "venture-profile-panel",
+        matches: ["https://www.linkedin.com/in/*"],
+        js: ["selectors.js", "panel.js"],
+        runAt: "document_idle",
+      },
+    ]);
+    return { ok: true, registered: true };
+  } catch (e) {
+    return { ok: false, error: String(e?.message ?? e).slice(0, 120) };
+  }
+}
+
 async function postCapture(payload) {
   const { baseUrl, token } = await chrome.storage.local.get(["baseUrl", "token"]);
   if (!baseUrl || !token) return { ok: false, error: "not_configured" };
@@ -101,6 +179,12 @@ function handle(msg) {
       return postAvatar(msg);
     case "ping":
       return Promise.resolve({ ok: true, version: chrome.runtime.getManifest().version });
+    case "status":
+      return status();
+    case "requestLinkedInPermission":
+      return openPermissionPage();
+    case "registerProfileScript":
+      return registerProfileScript();
     case "configure":
       return configure(msg);
     case "captureProfile":
@@ -157,10 +241,11 @@ async function captureProfileInTab(profileUrl) {
   // only when a human clicks the extension. So this path needs LinkedIn host
   // permission, which the popup asks for explicitly and which manual capture
   // does not require. Refused clearly rather than failing obscurely.
-  const allowed = await chrome.permissions.contains({
-    origins: ["https://www.linkedin.com/*"],
-  });
-  if (!allowed) return { ok: false, error: "no_linkedin_permission" };
+  if (!(await hasLinkedInPermission())) {
+    // Actionable, not a dead end: the app turns this into a button that opens the
+    // grant page, because only a click inside the extension can grant it.
+    return { ok: false, error: "no_linkedin_permission", canRequest: true };
+  }
 
   // A fresh background tab every time, closed afterwards. Deliberately NOT
   // chrome.tabs.query to find an already-open one: filtering tabs by URL needs
@@ -187,7 +272,7 @@ async function captureProfileInTab(profileUrl) {
 
     const [{ result: payload }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["content.js"],
+      files: ["selectors.js", "content.js"],
     });
     if (!payload?.url) return { ok: false, error: "unreadable" };
 

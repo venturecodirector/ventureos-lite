@@ -39,6 +39,54 @@ function originOf(value) {
   }
 })();
 
+
+/**
+ * Show the LinkedIn-access control only when it is actually missing.
+ *
+ * The permission is optional, so a paste-only user is never prompted at install
+ * — but that means something has to ask, and for a long time nothing did. The
+ * popup asked only for the Venture OS origin, so "needs permission to read
+ * LinkedIn pages" was a permanent state with no control anywhere that could
+ * change it. This is that control.
+ */
+async function refreshLinkedInPermission() {
+  const origins = ["https://www.linkedin.com/*", "https://linkedin.com/*"];
+  let granted = false;
+  try {
+    granted = await chrome.permissions.contains({ origins });
+  } catch {
+    granted = false;
+  }
+  $("allow-linkedin").hidden = granted;
+  return granted;
+}
+
+$("allow-linkedin").addEventListener("click", async () => {
+  $("allow-linkedin").disabled = true;
+  msg("Waiting for Chrome…");
+  try {
+    // A click in the popup IS a gesture inside the extension, so the request can
+    // be made directly here — unlike from the web app, which needs the separate
+    // permission page.
+    const granted = await chrome.permissions.request({
+      origins: ["https://www.linkedin.com/*", "https://linkedin.com/*"],
+    });
+    if (!granted) {
+      msg("Not granted. Capture cannot read a profile without it.", "err");
+      return;
+    }
+    await chrome.runtime.sendMessage({ type: "registerProfileScript" });
+    msg("LinkedIn access granted.", "ok");
+    await refreshLinkedInPermission();
+  } catch (e) {
+    msg(`Chrome refused the request (${String(e?.message ?? e).slice(0, 50)}).`, "err");
+  } finally {
+    $("allow-linkedin").disabled = false;
+  }
+});
+
+refreshLinkedInPermission();
+
 $("save").addEventListener("click", async () => {
   const raw = $("baseUrl").value.trim();
   const token = $("token").value.trim();
@@ -110,7 +158,7 @@ $("diagnose").addEventListener("click", async () => {
     });
     const [{ result: payload }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["content.js"],
+      files: ["selectors.js", "content.js"],
     });
 
     // The reader's verdict plus the probes behind it — never the values. Which
@@ -281,7 +329,7 @@ $("capture").addEventListener("click", async () => {
     // IIFE returning what it read.
     const [{ result: payload }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["content.js"],
+      files: ["selectors.js", "content.js"],
     });
 
     if (!payload?.url) {

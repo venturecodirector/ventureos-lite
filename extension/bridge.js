@@ -15,7 +15,16 @@
  * this one.
  */
 (() => {
-  const ALLOWED = new Set(["ping", "configure", "captureProfile"]);
+  const ALLOWED = new Set([
+    "ping",
+    "configure",
+    "captureProfile",
+    // Read-only, and the two the app needs to offer the right next action.
+    "status",
+    // Opens an extension page the user then clicks in. It cannot grant anything
+    // by itself, which is exactly why it is safe to expose here.
+    "requestLinkedInPermission",
+  ]);
   // Deliberately NOT "avatar" or "capture": the app has no reason to push bytes
   // through the extension, and every name added here widens what a page can
   // reach if that page is ever compromised.
