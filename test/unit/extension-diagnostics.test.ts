@@ -132,7 +132,7 @@ describe("a capture's diagnostics are never structurally empty", () => {
     describe(fixture, () => {
       it("fills machine, cleanup, contact and photo — the four that were null", async () => {
         const { report } = await fullCapture(fixture);
-        expect(report.diagnoseVersion).toBe(3);
+        expect(report.diagnoseVersion).toBe(4);
         expect(report.machine, "machine is null").not.toBeNull();
         expect(report.cleanup, "cleanup is null").not.toBeNull();
         expect(report.contact, "contact is null").not.toBeNull();
@@ -206,7 +206,7 @@ describe("a capture's diagnostics are never structurally empty", () => {
     // The degenerate case: the reader returned only a URL. The report must still
     // be shaped correctly rather than throwing or coming back half-built.
     const report = loadDiagnostics()({ url: "https://www.linkedin.com/in/x/" });
-    expect(report.diagnoseVersion).toBe(3);
+    expect(report.diagnoseVersion).toBe(4);
     expect(Object.keys(report.fields).length).toBeGreaterThanOrEqual(10);
     // These ARE null here, legitimately: no machine ran.
     expect(report.machine).toBeNull();

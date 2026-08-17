@@ -45,6 +45,10 @@
   const STATES = [
     "IDLE",
     "ENSURE_ROUTE",
+    // The new primary path: what the page already fetched, before the DOM is
+    // consulted at all.
+    "COLLECT_OBSERVED",
+    "NORMALIZE",
     "READ_TOPCARD",
     "OPEN_CONTACT",
     "READ_CONTACT",
@@ -81,6 +85,8 @@
      */
     loadSectionsMs: 12_000,
     readPostsMs: 1_000,
+    collectObservedMs: 1_500,
+    normalizeMs: 1_000,
     /** LOAD_SECTIONS scrolling. */
     scrollStepPx: 800,
     scrollMaxSteps: 24,
@@ -306,7 +312,18 @@
     };
 
     const session = CU ? CU.createSession(win) : null;
-    const gathered = { contact: null, contactTrail: [], bio: null, sections: null };
+    const gathered = {
+      contact: null,
+      contactTrail: [],
+      bio: null,
+      sections: null,
+      /** The observer's own state, for diagnostics v4. */
+      observer: null,
+      /** Raw observed records for this profile. */
+      observed: [],
+      /** What the API mapping produced, once there is a mapping. */
+      api: null,
+    };
 
     try {
       // ---- ENSURE_ROUTE ---------------------------------------------------
@@ -363,6 +380,78 @@
       // Everything past here is pointless off-route, and dangerous: it is how a
       // dialog's contents became a lead's fields.
       const onRoute = isCanonical(win);
+
+      // ---- COLLECT_OBSERVED -----------------------------------------------
+      /**
+       * What did the page already fetch for this profile?
+       *
+       * Usually everything we need, and usually before the user pressed anything:
+       * LinkedIn's own frontend requests the profile's data on load, and the
+       * observer copied it. No request of ours is involved at any point.
+       *
+       * The one case that needs a human decision is an EMPTY buffer, which means
+       * the page loaded before the observer was installed — a fresh install, an
+       * extension update, or a tab that has been open since before either. That is
+       * a soft reload away from working, and saying so is much better than
+       * silently dropping to the DOM path and leaving the operator wondering why
+       * the capture is thin.
+       */
+      await step("COLLECT_OBSERVED", opts.collectObservedMs, async () => {
+        const O = globalThis.VentureObserved ?? null;
+        if (!O) {
+          return { ok: false, reason: "observer_bridge_not_present" };
+        }
+        const status = O.status();
+        gathered.observer = status;
+        if (!status.installed) {
+          return { ok: false, reason: "observer_not_installed_reload_the_page" };
+        }
+        const records = O.take();
+        gathered.observed = records;
+        return records.length > 0
+          ? { ok: true, detail: { records: records.length, inventory: status.inventory } }
+          : {
+              ok: false,
+              reason: "buffer_empty_page_loaded_before_observer",
+              detail: { inventory: status.inventory },
+            };
+      });
+
+      // ---- NORMALIZE --------------------------------------------------------
+      /**
+       * Turn observed responses into fields.
+       *
+       * NOT YET IMPLEMENTED, and reported as such rather than silently skipped.
+       * The mapping from LinkedIn's JSON to our fields is derived from RECORDED
+       * snapshots, and there are none — see test/fixtures/linkedin-api/README.md.
+       * Writing it from the shape one would expect is the exact mistake this
+       * re-architecture exists to stop making.
+       *
+       * Until then this step always reports `mapping_not_yet_derived`, and the DOM
+       * steps below carry the capture exactly as they do today. That is the
+       * fallback working as designed: the feature keeps running while the primary
+       * path is built.
+       */
+      await step("NORMALIZE", opts.normalizeMs, async () => {
+        const records = gathered.observed ?? [];
+        if (records.length === 0) {
+          return { ok: false, reason: "nothing_observed_to_normalize" };
+        }
+        const N = globalThis.VentureNormalizeApi ?? null;
+        if (!N || typeof N.normalize !== "function") {
+          return {
+            ok: false,
+            reason: "mapping_not_yet_derived",
+            detail: { observedRecords: records.length },
+          };
+        }
+        const result = N.normalize(records);
+        gathered.api = result;
+        const count = Object.keys(result?.fields ?? {}).length;
+        return count > 0
+          ? { ok: true, detail: { fields: count } }
+          : { ok: false, reason: "mapping_matched_nothing", detail: { observedRecords: records.length } };
+      });
 
       // ---- READ_TOPCARD ---------------------------------------------------
       await step("READ_TOPCARD", opts.topcardMs, async () => {
@@ -711,6 +800,9 @@
     function finish() {
       return {
         machine: record,
+        observer: gathered.observer,
+        observedCount: (gathered.observed ?? []).length,
+        api: gathered.api,
         contact: gathered.contact,
         contactTrail: gathered.contactTrail,
         bio: gathered.bio,

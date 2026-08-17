@@ -1,5 +1,5 @@
 /**
- * Diagnostics v3 — the report a capture leaves behind.
+ * Diagnostics v4 — the report a capture leaves behind.
  *
  * Its own file so it can be tested. It used to live in popup.js, which registers
  * DOM listeners at the top level and therefore cannot be loaded outside a popup —
@@ -13,11 +13,17 @@
  */
 (() => {
 /**
- * The capture's account of itself, version 3.
+ * The capture's account of itself, version 4.
  *
- * Per field: whether it has a value, WHICH SELECTOR TIER answered, which
- * provenance source it came from, every strategy attempted with how each ended,
- * and the reason if it was declined.
+ * Per field: whether it has a value, WHICH PATH answered (api or dom), the JSON
+ * pointer or selector tier behind it, every strategy attempted with how each
+ * ended, and the reason if it was declined.
+ *
+ * v4 adds the two sections the re-architecture needs: what the passive observer
+ * saw on this page, and which of those responses the mapping recognised. An
+ * observed response that carries typed entities and matched nothing is the early
+ * warning that LinkedIn's schema moved — the data is still arriving, we simply no
+ * longer know how to read it.
  *
  * Tier and source are different questions and both matter. `source` says where a
  * value came from conceptually — the card, the page title, the overlay. `tier`
@@ -81,6 +87,17 @@ function buildDiagnostics(payload, extras) {
       present,
       tier: tierOf(f),
       source: provenance[f]?.source ?? null,
+      /**
+       * WHICH PATH ANSWERED: "api" or "dom".
+       *
+       * The single most useful column in the report now. A field read out of the
+       * response the page was rendered from is a stronger fact than the same field
+       * scraped off the rendering, and when observation stops working this is where
+       * it shows: fields quietly sliding from api to dom, one release at a time.
+       */
+      via: provenance[f]?.via ?? (present ? "dom" : null),
+      /** JSON pointer when it came from the API; null when it came from the DOM. */
+      path: provenance[f]?.path ?? null,
       confidence: provenance[f]?.confidence ?? null,
       attempted: attempts[f] ?? [],
       skippedBecause:
@@ -89,7 +106,7 @@ function buildDiagnostics(payload, extras) {
   }
 
   return {
-    diagnoseVersion: 3,
+    diagnoseVersion: 4,
     extension: (() => {
       try {
         return chrome.runtime.getManifest().version;
@@ -114,6 +131,33 @@ function buildDiagnostics(payload, extras) {
     cleanup: extras?.cleanup ?? null,
     contact: extras?.contact ?? null,
     photo: extras?.photo ?? null,
+    /**
+     * ── THE OBSERVER ─────────────────────────────────────────────────────────
+     *
+     * Whether the interceptor is installed, in which world and at what timing,
+     * and the inventory of what it saw on this page. `installed: false` almost
+     * always means the page was loaded before the extension was — a soft reload
+     * away from working — and saying so beats a thin capture with no explanation.
+     */
+    observer: extras?.observer
+      ? {
+          installed: !!extras.observer.installed,
+          world: extras.observer.world ?? null,
+          timing: extras.observer.timing ?? null,
+          slug: extras.observer.slug ?? null,
+          recordCount: extras.observer.recordCount ?? 0,
+          inventory: extras.observer.inventory ?? [],
+        }
+      : null,
+    /**
+     * Which observed responses the mapping recognised, and which it did not.
+     *
+     * An UNMATCHED response that carries typed entities is the early warning that
+     * LinkedIn changed its schema: the data is still arriving, we simply no longer
+     * know how to read it. Reported with its URL pattern so the next recording
+     * session knows exactly where to look.
+     */
+    apiMapping: extras?.apiMapping ?? null,
     /** Which sections were mounted after scrolling, and whether About expanded. */
     sections: extras?.sections ?? null,
     bioExpansion: extras?.bioExpansion ?? null,

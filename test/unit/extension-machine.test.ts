@@ -78,7 +78,7 @@ interface Extracted {
   bio?: string;
   photoUrl?: string;
   flags: string[];
-  provenance: Record<string, { source: string; confidence: string }>;
+  provenance: Record<string, { source: string; confidence: string; via?: string }>;
   skipped: Record<string, string>;
   boundary: { ok: boolean; reason: string | null; identitiesInCard: number | null };
   _attempts: Record<string, string[]>;
@@ -597,6 +597,10 @@ describe("the machine reports itself", () => {
     const { result } = await runMachine("real-profile-sdui.html", PROFILE_URL);
     expect(result.machine.steps.map((s) => s.name)).toEqual([
       "ENSURE_ROUTE",
+      // The observation path runs FIRST — the DOM steps below it are the
+      // fallback now, not the primary route.
+      "COLLECT_OBSERVED",
+      "NORMALIZE",
       "READ_TOPCARD",
       "OPEN_CONTACT",
       "READ_CONTACT",
@@ -989,5 +993,161 @@ describe("the fallback chain for role and employer", () => {
     const out = extractFrom(dom, g);
     expect(out.jobTitle).toBeUndefined();
     expect(out.companyName).toBeUndefined();
+  });
+});
+
+// ── re-architecture items 5, 6, 8e: observation first, DOM as fallback ─────
+
+describe("the observation path runs first, and the DOM is the fallback", () => {
+  const G = "g-abbreviated-slug-us-metro.html";
+  const MG = "https://www.linkedin.com/in/mgoldberger/";
+
+  /** A stand-in for the bridge's same-world handle. */
+  function withObserver(
+    g: Record<string, unknown>,
+    opts: { installed: boolean; records?: unknown[] },
+  ) {
+    g.VentureObserved = {
+      status: () => ({
+        installed: opts.installed,
+        world: opts.installed ? "MAIN" : null,
+        timing: opts.installed ? "document_start" : null,
+        slug: "mgoldberger",
+        recordCount: (opts.records ?? []).length,
+        inventory: (opts.records ?? []).map((r) => ({
+          url: (r as { url: string }).url,
+          bodySize: (r as { bodySize?: number }).bodySize ?? 0,
+        })),
+      }),
+      take: () => opts.records ?? [],
+    };
+  }
+
+  it("collects what the page already fetched, without requesting anything", async () => {
+    const { dom, g } = page(G, MG);
+    withObserver(g, {
+      installed: true,
+      records: [
+        {
+          url: "https://www.linkedin.com/voyager/api/graphql?queryId=<scrubbed>",
+          status: 200,
+          bodySize: 40,
+          body: '{"included":[{"$type":"test.Thing"}]}',
+        },
+      ],
+    });
+    const result = await (g.VentureMachine as Machine).run({
+      ...FAST,
+      window: dom.window,
+      document: dom.window.document,
+    });
+    const collect = result.machine.steps.find((s) => s.name === "COLLECT_OBSERVED")!;
+    expect(collect.ok).toBe(true);
+    expect(collect.detail).toMatchObject({ records: 1 });
+  });
+
+  /**
+   * The state the user will actually hit first: the extension was installed or
+   * updated after the tab was opened, so the interceptor never saw the page load.
+   * Saying so beats silently producing a thin capture.
+   */
+  it("says the page needs a reload when the buffer is empty", async () => {
+    const { dom, g } = page(G, MG);
+    withObserver(g, { installed: true, records: [] });
+    const result = await (g.VentureMachine as Machine).run({
+      ...FAST,
+      window: dom.window,
+      document: dom.window.document,
+    });
+    const collect = result.machine.steps.find((s) => s.name === "COLLECT_OBSERVED")!;
+    expect(collect.ok).toBe(false);
+    expect(collect.reason).toBe("buffer_empty_page_loaded_before_observer");
+  });
+
+  it("says the observer is not installed when the bridge never announced", async () => {
+    const { dom, g } = page(G, MG);
+    withObserver(g, { installed: false, records: [] });
+    const result = await (g.VentureMachine as Machine).run({
+      ...FAST,
+      window: dom.window,
+      document: dom.window.document,
+    });
+    expect(result.machine.steps.find((s) => s.name === "COLLECT_OBSERVED")!.reason).toBe(
+      "observer_not_installed_reload_the_page",
+    );
+  });
+
+  /**
+   * ITEM 8e — an unrecognised schema falls back to the DOM, labelled.
+   *
+   * This is the state the extension ships in today: responses are observed, no
+   * mapping has been derived from a recording yet, so NORMALIZE declines and the
+   * DOM path carries the capture. It is also exactly what a future schema change
+   * looks like, which is why the fallback is kept rather than deleted.
+   */
+  it("falls back to the DOM when the mapping recognises nothing, and labels it", async () => {
+    const { dom, g } = page(G, MG);
+    withObserver(g, {
+      installed: true,
+      records: [
+        {
+          url: "https://www.linkedin.com/voyager/api/graphql?queryId=<scrubbed>",
+          status: 200,
+          bodySize: 60,
+          body: '{"included":[{"$type":"com.example.SomethingNew","mystery":"value"}]}',
+        },
+      ],
+    });
+    const result = await (g.VentureMachine as Machine).run({
+      ...FAST,
+      window: dom.window,
+      document: dom.window.document,
+    });
+
+    const normalize = result.machine.steps.find((s) => s.name === "NORMALIZE")!;
+    expect(normalize.ok).toBe(false);
+    expect(normalize.reason).toBe("mapping_not_yet_derived");
+
+    // And the capture still works, entirely from the DOM.
+    const out = extractFrom(dom, g);
+    expect(out.name).toBe("Mark Goldberger");
+    expect(out.jobTitle).toBe("VP Sales");
+    for (const field of ["name", "headline", "location", "companyName", "jobTitle"] as const) {
+      if (!out[field]) continue;
+      expect(out.provenance[field]!.via, `${field} is not labelled as DOM`).toBe("dom");
+    }
+  });
+
+  it("labels EVERY DOM field, on every fixture", () => {
+    for (const [fixture, url] of [
+      [G, MG],
+      ["real-profile-sdui.html", PROFILE_URL],
+      ["a-authenticated-with-right-rail.html", "https://www.linkedin.com/in/anna-kovacs-fixture/"],
+    ] as const) {
+      const { dom, g } = page(fixture, url);
+      const out = extractFrom(dom, g);
+      for (const [field, prov] of Object.entries(out.provenance)) {
+        expect((prov as { via?: string }).via, `${fixture}: ${field}`).toBe("dom");
+      }
+    }
+  });
+
+  it("reports the observer's state for the diagnostics", async () => {
+    const { dom, g } = page(G, MG);
+    withObserver(g, {
+      installed: true,
+      records: [{ url: "https://www.linkedin.com/voyager/api/x", status: 200, bodySize: 10, body: "{}" }],
+    });
+    const result = (await (g.VentureMachine as Machine).run({
+      ...FAST,
+      window: dom.window,
+      document: dom.window.document,
+    })) as unknown as { observer: { installed: boolean; world: string; timing: string }; observedCount: number };
+    expect(result.observer).toMatchObject({
+      installed: true,
+      world: "MAIN",
+      timing: "document_start",
+    });
+    expect(result.observedCount).toBe(1);
   });
 });

@@ -209,6 +209,8 @@ $("diagnose").addEventListener("click", async () => {
       ...buildDiagnostics(payload, {
         machine: prep.machine,
         cleanup: prep.cleanup,
+        observer: prep.observer,
+        apiMapping: prep.apiMapping,
         sections: prep.sections,
         bioExpansion: prep.bio,
         contact: { found: !!prep.contact, note: prep.note ?? null },
@@ -419,6 +421,8 @@ async function prepareAndRead(tabId) {
     cleanup: null,
     sections: null,
     bio: null,
+    observer: null,
+    apiMapping: null,
   };
   try {
     const [{ result }] = await chrome.scripting.executeScript({
@@ -445,6 +449,16 @@ async function prepareAndRead(tabId) {
       },
       sections: result.sections ?? null,
       bio: result.bio ?? null,
+      observer: result.observer ?? null,
+      apiMapping: {
+        observedRecords: result.observedCount ?? 0,
+        fieldsFromApi: Object.keys(result.api?.fields ?? {}).length,
+        // Reported by the NORMALIZE step; `mapping_not_yet_derived` while the
+        // snapshots have not been recorded.
+        reason:
+          (result.machine.steps ?? []).find((st) => st.name === "NORMALIZE")?.reason ?? null,
+        unmatched: result.api?.unmatched ?? [],
+      },
     };
   } catch (e) {
     // A failed injection must not stop the capture: the reader can still run.
@@ -545,6 +559,8 @@ $("capture").addEventListener("click", async () => {
        */
       machine: prep.machine,
       cleanup: prep.cleanup,
+      observer: prep.observer,
+      apiMapping: prep.apiMapping,
       sections: prep.sections,
       bioExpansion: prep.bio,
       contact: { found: !!contact, note: contactNote ?? null },

@@ -172,6 +172,46 @@
   setInterval(onNavigate, 1000);
 
   /**
+   * A same-world handle, for the state machine.
+   *
+   * The machine is injected into the ISOLATED world, which is the world this
+   * script already runs in — same extension, same frame, so one global object.
+   * It cannot use `chrome.tabs.sendMessage` to reach us (a content script cannot
+   * message itself), so the buffer is exposed directly.
+   *
+   * READ-ONLY, and a copy: a caller that mutated what it was handed would corrupt
+   * the buffer for the next capture.
+   */
+  globalThis.VentureObserved = {
+    status() {
+      prune();
+      const slug = currentSlug();
+      const entry = slug ? buffer.get(slug) : null;
+      return {
+        installed: nonce !== null,
+        world: installedAt?.world ?? null,
+        timing: installedAt?.at ?? null,
+        slug,
+        recordCount: entry?.records.length ?? 0,
+        inventory: (entry?.records ?? []).map((r) => ({
+          url: r.url,
+          method: r.method,
+          status: r.status,
+          contentType: r.contentType,
+          bodySize: r.bodySize,
+          truncated: !!r.truncated,
+        })),
+      };
+    },
+    take(slug) {
+      prune();
+      const key = slug ? String(slug).toLowerCase() : currentSlug();
+      const entry = key ? buffer.get(key) : null;
+      return (entry?.records ?? []).map((r) => ({ ...r }));
+    },
+  };
+
+  /**
    * Answer the popup and the service worker.
    *
    * Read-only: this hands over what was observed and never fetches anything to

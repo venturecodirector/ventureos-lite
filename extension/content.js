@@ -537,7 +537,21 @@
       return false;
     }
     note(field, source, "accepted");
-    fields[field] = { value, source, confidence };
+    /**
+     * `via: "dom"` on EVERY field this file produces.
+     *
+     * The DOM extractor is now the FALLBACK, not the primary path. It runs when
+     * passive observation produced nothing for a field, and the lead has to show
+     * which of the two answered — a field read off the rendering is a weaker fact
+     * than the same field read out of the response the page was rendered from, and
+     * an operator deciding whether to trust a value deserves to know which they
+     * are looking at.
+     *
+     * This file is deliberately KEPT rather than deleted: when LinkedIn changes
+     * its response schema, this is what keeps the feature alive while the
+     * snapshots are re-recorded.
+     */
+    fields[field] = { value, source, confidence, via: "dom" };
     delete skipped[field];
     return true;
   };
@@ -1301,7 +1315,10 @@
 
     // {value, source, confidence} per field, and why each rejection happened.
     provenance: Object.fromEntries(
-      Object.entries(fields).map(([k, v]) => [k, { source: v.source, confidence: v.confidence }]),
+      Object.entries(fields).map(([k, v]) => [
+        k,
+        { source: v.source, confidence: v.confidence, via: v.via ?? "dom" },
+      ]),
     ),
     skipped,
     boundary: {
