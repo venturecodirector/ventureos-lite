@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { signIn, signOut } from "@/lib/auth";
 import { attemptLogin } from "@/lib/auth/login";
+import { installAuthHooks } from "@/lib/auth/hooks";
 import {
   hashPassword,
   validatePassword,
@@ -14,9 +15,11 @@ import {
   MIN_PASSWORD_LENGTH,
 } from "@/lib/auth/password";
 import {
+  describeDevice,
   revokeAllUserSessions,
   revokeSession,
   resolveSession,
+  SESSION_IDLE_TTL_MS,
 } from "@/lib/auth/sessions";
 import { currentSessionToken } from "@/lib/auth";
 import { generateTotpSecret, totpQrDataUrl, verifyTotp } from "@/lib/auth/totp";
@@ -52,6 +55,9 @@ async function requestOrigin(): Promise<{ ip: string | null; userAgent: string |
  * token to Auth.js so it sets its cookie (see the note in src/lib/auth).
  */
 export async function signInWithPassword(raw: unknown): Promise<SignInResult> {
+  // Installs the new-login notification and the lockout audit entry on the
+  // authentication core, which imports neither by design (P6/2).
+  installAuthHooks();
   const parsed = loginSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Enter your email and password." };
 
@@ -313,6 +319,8 @@ export interface SecurityStatus {
     current: boolean;
     ip: string | null;
     userAgent: string | null;
+    /** "Chrome on macOS" — see describeDevice. */
+    device: string;
     lastSeenAt: string;
     expiresAt: string;
   }>;
@@ -333,8 +341,16 @@ export async function getSecurityStatus(): Promise<SecurityStatus> {
   });
   if (!user) throw new Error("Account not found.");
 
+  // Both limbs, so the list shows what can actually still sign in: an
+  // absolute expiry in the future is not enough if the session has been idle
+  // past the idle window (P6/2).
   const sessions = await prismaUnsafe.session.findMany({
-    where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+    where: {
+      userId,
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+      lastSeenAt: { gt: new Date(Date.now() - SESSION_IDLE_TTL_MS) },
+    },
     orderBy: { lastSeenAt: "desc" },
     select: { id: true, ip: true, userAgent: true, lastSeenAt: true, expiresAt: true },
   });
@@ -352,10 +368,46 @@ export async function getSecurityStatus(): Promise<SecurityStatus> {
       current: s.id === sessionId,
       ip: s.ip,
       userAgent: s.userAgent,
+      device: describeDevice(s.userAgent),
       lastSeenAt: s.lastSeenAt.toISOString(),
       expiresAt: s.expiresAt.toISOString(),
     })),
   };
+}
+
+/**
+ * Revoke ONE session (playbook-v2 P6/2).
+ *
+ * Scoped to the caller's own sessions — the id comes from a browser, and
+ * without the `userId` in the where clause a guessed id would sign out somebody
+ * else. Refuses the current one: "revoke" and "sign out" are different
+ * intentions, and doing the second when asked for the first is a surprise.
+ */
+export async function revokeOneSession(
+  targetSessionId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { userId, sessionId, workspaceId } = await getActiveContext();
+  if (targetSessionId === sessionId) {
+    return { ok: false, error: "That is this session. Use Sign out instead." };
+  }
+
+  const { count } = await prismaUnsafe.session.updateMany({
+    where: { id: targetSessionId, userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  if (count === 0) return { ok: false, error: "That session is already signed out." };
+
+  await getWorkspaceClient(workspaceId).auditLog.create({
+    data: {
+      workspaceId,
+      actorUserId: userId,
+      action: "auth.session_revoked",
+      entityType: "Session",
+      entityId: targetSessionId,
+    },
+  });
+  revalidatePath("/settings");
+  return { ok: true };
 }
 
 /** Sign out every other device. */

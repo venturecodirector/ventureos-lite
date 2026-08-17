@@ -284,6 +284,38 @@ export async function notifySyncFailed(params: {
 
 // ---- signal engine -------------------------------------------------------
 
+/**
+ * A sign-in happened on this account (playbook-v2 P6/2).
+ *
+ * Addressed to the account owner and nobody else — this is the one notification
+ * that is about the person rather than about the work, and a colleague seeing
+ * where you signed in from is a privacy problem, not a security feature.
+ *
+ * The dedupe discriminator is device + IP + day: signing in three times from
+ * the same laptop on one morning is one event worth telling you about, and a
+ * bell that fills with your own logins is a bell nobody reads.
+ */
+export async function notifyNewLogin(params: {
+  workspaceId: string;
+  userId: string;
+  device: string;
+  ip: string | null;
+  at: Date;
+}): Promise<void> {
+  const where = params.ip ? ` from ${params.ip}` : "";
+  await safeDeliver({
+    workspaceId: params.workspaceId,
+    userIds: [params.userId],
+    type: "new_login",
+    title: `New sign-in — ${params.device}`,
+    body: `Signed in${where} at ${params.at.toISOString().slice(0, 16).replace("T", " ")}. If this was not you, change your password and revoke the session.`,
+    href: "/settings?security=password",
+    entityType: "session",
+    entityId: params.userId,
+    discriminator: `${params.device}|${params.ip ?? "-"}|${params.at.toISOString().slice(0, 10)}`,
+  });
+}
+
 export async function notifyProposalPending(params: {
   workspaceId: string;
   count: number;

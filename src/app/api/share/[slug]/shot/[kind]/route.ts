@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { prismaUnsafe } from "@/lib/db";
 import { isShareExpired } from "@/modules/audit/share";
+import { guardRoute } from "@/lib/rate-limit-guard";
 
 /**
  * Screenshots for a PUBLIC audit report (P1/3a).
@@ -22,6 +23,12 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ slug: string; kind: string }> },
 ) {
+  // The slug is the capability, which means anyone holding a shared link can
+  // fetch these images as fast as they like. Rate-limited per address (P6/2):
+  // a report is meant to be read, not scraped.
+  const limited = await guardRoute("auditShare");
+  if (limited) return limited;
+
   const { slug, kind } = await params;
   if (kind !== "desktop" && kind !== "mobile") {
     return new Response("Not found", { status: 404 });

@@ -63,7 +63,34 @@ const BUSINESS_TABLES = [
   "merge_records",
   "import_templates",
   "import_batches",
+  // Added in P6/2 after a coverage audit found them missing. Every one of them
+  // is workspace-scoped and was relying on the Prisma guard alone — which is
+  // the belt without the braces, and on MySQL is all there is. The email sync
+  // layer in particular held whole conversations with clients.
+  "tasks",
+  "mail_accounts",
+  "email_threads",
+  "email_messages",
+  "address_links",
+  "audit_watches",
+  "tracked_keywords",
+  "keyword_positions",
+  "log_uploads",
+  "api_usage",
+  "capture_tokens",
 ];
+
+/**
+ * Public-intake tables (P12, P6/2).
+ *
+ * `public_audits` and `public_audit_consents` are written by ANONYMOUS
+ * visitors, before any user context exists, so the membership predicate every
+ * other business table uses would refuse the very insert they exist for. They
+ * follow the `sessions` shape instead: reachable while no user is set, and
+ * membership-scoped the moment one is — so a signed-in tenant can only ever see
+ * their own workspace's rows.
+ */
+const PUBLIC_INTAKE_TABLES = ["public_audits", "public_audit_consents"];
 
 const CURRENT_WS = "current_setting('app.current_workspace', true)";
 const CURRENT_USER = "current_setting('app.current_user', true)";
@@ -108,6 +135,26 @@ function statements(): string[] {
   // 3. Business tables: membership-keyed isolation.
   for (const table of BUSINESS_TABLES) {
     out.push(...businessTablePolicy(table));
+  }
+
+  // 3b. Public-intake tables: anonymous writes allowed, tenant reads scoped.
+  for (const table of PUBLIC_INTAKE_TABLES) {
+    const predicate = `
+      ${CURRENT_USER} IS NULL OR ${CURRENT_USER} = ''
+      OR (
+        workspace_id = ${CURRENT_WS}
+        AND EXISTS (
+          SELECT 1 FROM memberships m
+          WHERE m.workspace_id = ${table}.workspace_id
+            AND m.user_id = ${CURRENT_USER}
+        )
+      )`;
+    out.push(
+      `ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`,
+      `ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`,
+      `DROP POLICY IF EXISTS ws_public_intake ON ${table}`,
+      `CREATE POLICY ws_public_intake ON ${table} USING (${predicate}) WITH CHECK (${predicate})`,
+    );
   }
 
   // 4. Auth tables. `sessions` and `login_attempts` are global (no
@@ -159,6 +206,23 @@ function statements(): string[] {
 
   return out;
 }
+
+/**
+ * Every table this module claims to protect, by name.
+ *
+ * Exported so a unit test can compare it against the schema: the coverage gap
+ * this list closed in P6/2 existed because nothing checked, and a list nothing
+ * checks drifts again the next time a model is added.
+ */
+export const RLS_COVERED_TABLES: readonly string[] = [
+  ...BUSINESS_TABLES,
+  ...PUBLIC_INTAKE_TABLES,
+  // Handled by their own dedicated policies below the business loop.
+  "sessions",
+  "password_reset_tokens",
+  "memberships",
+  "workspaces",
+];
 
 /** Apply role + grants + RLS policies. Idempotent. Postgres only. */
 export async function applyRls(prisma: PrismaClient): Promise<void> {

@@ -12,7 +12,8 @@ import { getWriteAccount, saveRefreshedTokens } from "./credentials";
 import { calendarFailureActivity } from "./logic";
 import { enqueueMeetingBrief } from "./enqueue";
 import { botVerdict, MIN_FILL_MS } from "./botcheck";
-import { takeRateLimit } from "./ratelimit";
+import { takeRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMITS, retryAfterSeconds } from "@/lib/rate-limit-policy";
 import { notifyMeetingBooked } from "../notifications/notify";
 import type { WorkspaceBrand } from "@/modules/workspaces/brand";
 
@@ -51,8 +52,16 @@ export async function submitPublicBooking(raw: unknown): Promise<BookingResult> 
   // --- abuse controls (no third-party CAPTCHA) ---
   const h = await headers();
   const ip = (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "unknown").trim();
-  if (!takeRateLimit(`book:${ip}`, now)) {
-    return { ok: false, error: "Too many attempts. Please wait a minute and try again." };
+  // Redis-backed rather than the old process-local Map (P6/2): an in-memory
+  // bucket empties on every deploy and is not shared across processes, which
+  // makes it an abuse control that stops working exactly when it is needed.
+  const rate = await takeRateLimit(`${RATE_LIMITS.booking.bucket}:${ip}`, RATE_LIMITS.booking);
+  if (!rate.allowed) {
+    const wait = retryAfterSeconds(rate.resetAtMs, now);
+    return {
+      ok: false,
+      error: `Too many attempts. Please wait ${wait} second${wait === 1 ? "" : "s"} and try again.`,
+    };
   }
   const bot = botVerdict({
     honeypot: input.honeypot,

@@ -14,7 +14,26 @@ import { prismaUnsafe } from "../db";
  * `sessions` is a global auth table, not tenant data — `prismaUnsafe` is
  * correct here and carries no workspace scope by design.
  */
-export const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h — a working day
+/**
+ * Session lifetime, in two limbs (playbook-v2 P6/2).
+ *
+ * ABSOLUTE: 30 days. However active you are, a session eventually ends and you
+ * sign in again — that is what bounds the damage from a token that leaked
+ * months ago and was never used.
+ *
+ * IDLE: 7 days. A session nobody has used for a week is a laptop in a drawer or
+ * a browser on a machine that changed hands, and it should not still be able to
+ * read a pipeline.
+ *
+ * This replaces a flat 12-hour TTL. The old value was safer per-session and
+ * wrong in practice: it signed people out mid-week, and the honest fix for
+ * "sessions live too long" is the idle limb, not a working-day timer that
+ * punishes the people using the product most.
+ */
+export const SESSION_ABSOLUTE_TTL_MS = 30 * 86_400_000;
+export const SESSION_IDLE_TTL_MS = 7 * 86_400_000;
+/** Kept as the name the rest of the code already imports. */
+export const SESSION_TTL_MS = SESSION_ABSOLUTE_TTL_MS;
 export const SESSION_IDLE_REFRESH_MS = 15 * 60 * 1000; // throttle lastSeenAt writes
 
 export interface SessionUser {
@@ -85,7 +104,11 @@ export async function resolveSession(
   // Belt and braces against a hypothetical index/collision oddity.
   if (!constantTimeEquals(row.token, hashToken(token))) return null;
   if (row.revokedAt) return null;
+  // Absolute limb.
   if (row.expiresAt.getTime() <= nowMs) return null;
+  // Idle limb. Checked here rather than by a sweep so a dormant session is dead
+  // the moment it is used, not the next time a cron happens to run.
+  if (nowMs - row.lastSeenAt.getTime() > SESSION_IDLE_TTL_MS) return null;
 
   if (nowMs - row.lastSeenAt.getTime() > SESSION_IDLE_REFRESH_MS) {
     await prismaUnsafe.session
@@ -135,9 +158,48 @@ export async function revokeAllUserSessions(
 export async function pruneExpiredSessions(nowMs = Date.now()): Promise<number> {
   const cutoff = new Date(nowMs - 7 * 86_400_000);
   const { count } = await prismaUnsafe.session.deleteMany({
-    where: { OR: [{ expiresAt: { lt: new Date(nowMs) } }, { revokedAt: { lt: cutoff } }] },
+    where: {
+      OR: [
+        { expiresAt: { lt: new Date(nowMs) } },
+        { revokedAt: { lt: cutoff } },
+        // Idle-expired sessions can never resolve again either (see
+        // resolveSession), so there is no reason to keep the row.
+        { lastSeenAt: { lt: new Date(nowMs - SESSION_IDLE_TTL_MS) } },
+      ],
+    },
   });
   return count;
+}
+
+/**
+ * A human label for a session row.
+ *
+ * Deliberately coarse. The point of the list is "is one of these not me?", and
+ * a full user-agent string answers that worse than "Chrome on macOS" does —
+ * nobody reads 180 characters of version numbers looking for an intruder.
+ */
+export function describeDevice(userAgent: string | null): string {
+  const ua = userAgent ?? "";
+  if (!ua) return "Unknown device";
+
+  const browser =
+    /\bEdg\//.test(ua) ? "Edge"
+    : /\bOPR\//.test(ua) ? "Opera"
+    : /Chrome\//.test(ua) && !/Chromium/.test(ua) ? "Chrome"
+    : /Chromium\//.test(ua) ? "Chromium"
+    : /Firefox\//.test(ua) ? "Firefox"
+    : /Safari\//.test(ua) ? "Safari"
+    : "Browser";
+
+  const os =
+    /iPhone|iPad|iPod/.test(ua) ? "iOS"
+    : /Android/.test(ua) ? "Android"
+    : /Mac OS X|Macintosh/.test(ua) ? "macOS"
+    : /Windows/.test(ua) ? "Windows"
+    : /Linux/.test(ua) ? "Linux"
+    : null;
+
+  return os ? `${browser} on ${os}` : browser;
 }
 
 function constantTimeEquals(a: string, b: string): boolean {

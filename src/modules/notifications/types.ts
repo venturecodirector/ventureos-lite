@@ -30,6 +30,9 @@ export const NOTIFICATION_TYPES = [
   "campaign_paused",
   "sync_failed",
   "proposal_pending",
+  /// A sign-in on this account (v2 P6/2). The one notification about the person
+  /// rather than about the work.
+  "new_login",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -140,6 +143,15 @@ export const NOTIFICATION_TYPE_DEFS: Record<NotificationType, NotificationTypeDe
     "Signal Engine proposal",
     "The weekly analysis proposed a change and is waiting for approval.",
     { ownerOnly: true, emailDigest: true },
+  ),
+  new_login: def(
+    "new_login",
+    "New sign-in",
+    "Your account signed in on a device or from an address.",
+    // In the digest as well as in the bell: a sign-in you did not make is worth
+    // hearing about twice, and it is the one notification where a missed
+    // in-app badge is a real problem rather than an annoyance.
+    { emailDigest: true },
   ),
 };
 

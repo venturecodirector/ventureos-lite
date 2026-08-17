@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { takeRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMITS, tooManyRequests } from "@/lib/rate-limit-policy";
 import { callClaude } from "@/lib/ai/call-claude";
 import {
   PERSON_BRIEF_SYSTEM,
@@ -38,11 +39,13 @@ export async function POST(req: Request): Promise<Response> {
   if (!identity) return json({ error: "unauthorized" }, 401);
 
   // A stolen token should not be able to hammer the API or the model budget.
-  const rate = await takeRateLimit(`capture:${identity.tokenId}`, {
-    windowMs: 60 * 60 * 1000,
-    max: 120,
-  });
-  if (!rate.allowed) return json({ error: "rate_limited" }, 429);
+  const rate = await takeRateLimit(
+    `${RATE_LIMITS.capture.bucket}:${identity.tokenId}`,
+    RATE_LIMITS.capture,
+  );
+  // With Retry-After, so the extension backs off correctly instead of retrying
+  // straight into the same wall (P6/2).
+  if (!rate.allowed) return tooManyRequests(rate.resetAtMs, "Too many captures. Slow down.");
 
   const parsed = captureBodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {

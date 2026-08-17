@@ -53,6 +53,7 @@ export async function attemptLogin(input: LoginInput): Promise<LoginOutcome> {
       totpEnabled: true,
       totpLastStep: true,
       lockedUntil: true,
+      lockCount: true,
       mustChangePassword: true,
     },
   });
@@ -92,7 +93,7 @@ export async function attemptLogin(input: LoginInput): Promise<LoginOutcome> {
   const passwordOk = await verifyPassword(input.password, hash);
 
   if (!user || !passwordOk) {
-    await fail(email, ip, nowMs, accountAttempts, user?.id ?? null);
+    await fail(email, ip, nowMs, accountAttempts, user?.id ?? null, user?.lockCount ?? 0);
     return { ok: false, code: "invalid", message: GENERIC };
   }
 
@@ -101,7 +102,7 @@ export async function attemptLogin(input: LoginInput): Promise<LoginOutcome> {
   if (user.totpEnabled) {
     if (!user.totpSecret) {
       // Enrolled flag without a secret is a broken account, not a valid login.
-      await fail(email, ip, nowMs, accountAttempts, user.id);
+      await fail(email, ip, nowMs, accountAttempts, user.id, user.lockCount);
       return { ok: false, code: "invalid", message: GENERIC };
     }
     if (!input.totpCode) {
@@ -111,7 +112,7 @@ export async function attemptLogin(input: LoginInput): Promise<LoginOutcome> {
     }
     const result = verifyTotp(input.totpCode, user.totpSecret, nowMs, user.totpLastStep ?? null);
     if (!result.ok) {
-      await fail(email, ip, nowMs, accountAttempts, user.id);
+      await fail(email, ip, nowMs, accountAttempts, user.id, user.lockCount);
       return { ok: false, code: "invalid", message: GENERIC };
     }
     consumedStep = result.step;
@@ -143,6 +144,8 @@ export async function attemptLogin(input: LoginInput): Promise<LoginOutcome> {
     where: { id: user.id },
     data: {
       lockedUntil: null,
+      // The run of failures is over; the next lock starts from the first step.
+      lockCount: 0,
       lastLoginAt: new Date(nowMs),
       ...(consumedStep !== null ? { totpLastStep: consumedStep } : {}),
       // Opportunistically upgrade a hash made with an older cost factor.
@@ -152,6 +155,18 @@ export async function attemptLogin(input: LoginInput): Promise<LoginOutcome> {
     },
   });
   await record(email, ip, true, nowMs);
+
+  // A sign-in on a device you did not use is the single most useful security
+  // signal there is, so it goes out the moment it happens (P6/2).
+  await onNewLogin?.({
+    userId: user.id,
+    workspaceId: membership.workspaceId,
+    ip,
+    userAgent: input.userAgent ?? null,
+    at: new Date(nowMs),
+  }).catch(() => {
+    /* a notification must never be the reason a login fails */
+  });
 
   return {
     ok: true,
@@ -176,14 +191,56 @@ async function fail(
   nowMs: number,
   accountAttempts: Array<{ ok: boolean; createdAt: Date }>,
   userId: string | null,
+  priorLocks = 0,
 ): Promise<void> {
   await record(email, ip, false, nowMs);
-  const lock = lockAfterFailure(accountAttempts, nowMs);
+  const lock = lockAfterFailure(accountAttempts, nowMs, priorLocks);
   if (lock && userId) {
     await prismaUnsafe.user
-      .update({ where: { id: userId }, data: { lockedUntil: lock } })
+      .update({
+        where: { id: userId },
+        data: { lockedUntil: lock, lockCount: { increment: 1 } },
+      })
       .catch(() => {});
+    // A lockout is a security event, and CLAUDE.md hard rule #8 wants those on
+    // the record. Best-effort and workspace-scoped: a login failure has no
+    // workspace of its own, so the entry goes to the account's first one.
+    await onLockout?.({ userId, email, ip, until: lock }).catch(() => {});
   }
+}
+
+/**
+ * Side-effect hooks, injected rather than imported.
+ *
+ * `login.ts` is the authentication core and is exercised directly by tests with
+ * no request context. Importing the notification and audit modules here would
+ * drag Redis, the workspace client and `next/cache` into that path; a hook the
+ * server action installs keeps the core dependency-free and keeps the test
+ * honest about what it is testing.
+ */
+export interface NewLoginEvent {
+  userId: string;
+  workspaceId: string;
+  ip: string | null;
+  userAgent: string | null;
+  at: Date;
+}
+export interface LockoutEvent {
+  userId: string;
+  email: string;
+  ip: string | null;
+  until: Date;
+}
+
+let onNewLogin: ((e: NewLoginEvent) => Promise<void>) | null = null;
+let onLockout: ((e: LockoutEvent) => Promise<void>) | null = null;
+
+export function setAuthEventHooks(hooks: {
+  onNewLogin?: (e: NewLoginEvent) => Promise<void>;
+  onLockout?: (e: LockoutEvent) => Promise<void>;
+}): void {
+  if (hooks.onNewLogin) onNewLogin = hooks.onNewLogin;
+  if (hooks.onLockout) onLockout = hooks.onLockout;
 }
 
 /** Retention sweep for the attempt ledger — it holds emails and IPs. */

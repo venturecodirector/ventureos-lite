@@ -15,6 +15,30 @@ export const ACCOUNT_WINDOW_MS = 15 * 60_000;
 export const ACCOUNT_MAX_FAILURES = 5;
 export const ACCOUNT_LOCK_MS = 15 * 60_000;
 
+/**
+ * Escalating lockout (playbook-v2 P6/2 — "lockout with backoff").
+ *
+ * A flat fifteen minutes is a speed bump: an attacker who is willing to wait
+ * gets five guesses every quarter of an hour, for ever. Each consecutive lock
+ * doubles the wait, up to a day, so a persistent attack becomes uneconomic
+ * while an honest person who mistyped twice is barely inconvenienced.
+ *
+ * The count resets once a login SUCCEEDS, not on a timer: the point is to
+ * punish a run of failures, and the run is over when someone gets in.
+ */
+export const LOCK_BACKOFF_MS = [
+  15 * 60_000,
+  30 * 60_000,
+  60 * 60_000,
+  4 * 3_600_000,
+  24 * 3_600_000,
+] as const;
+
+export function lockDurationFor(consecutiveLocks: number): number {
+  const index = Math.min(Math.max(0, consecutiveLocks), LOCK_BACKOFF_MS.length - 1);
+  return LOCK_BACKOFF_MS[index]!;
+}
+
 export const IP_WINDOW_MS = 15 * 60_000;
 export const IP_MAX_FAILURES = 20;
 
@@ -64,14 +88,22 @@ export function evaluateThrottle(input: {
   return { allowed: true };
 }
 
-/** After a failure: the new `lockedUntil`, or null if the account stays open. */
+/**
+ * After a failure: the new `lockedUntil`, or null if the account stays open.
+ *
+ * `priorLocks` is how many times this account has already been locked in the
+ * current run of failures; it selects the backoff step.
+ */
 export function lockAfterFailure(
   accountAttempts: AttemptRecord[],
   nowMs: number,
+  priorLocks = 0,
 ): Date | null {
   // +1 for the failure being recorded by this very attempt.
   const fails = recentFailures(accountAttempts, nowMs, ACCOUNT_WINDOW_MS).length + 1;
-  return fails >= ACCOUNT_MAX_FAILURES ? new Date(nowMs + ACCOUNT_LOCK_MS) : null;
+  return fails >= ACCOUNT_MAX_FAILURES
+    ? new Date(nowMs + lockDurationFor(priorLocks))
+    : null;
 }
 
 /** "try again in 4 minutes" — user-facing, never leaks which limb tripped. */

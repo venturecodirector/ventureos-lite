@@ -1,3 +1,4 @@
+import { guardRoute } from "@/lib/rate-limit-guard";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tryGetActiveContextOrThrow } from "@/lib/session";
@@ -25,6 +26,12 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ path: string[] }> },
 ) {
+  // The API-wide backstop (P6/2). Authenticated, so this is not an abuse
+  // control so much as a guard against a runaway client asking for the same
+  // PDF a thousand times a second.
+  const limited = await guardRoute("api");
+  if (limited) return limited;
+
   let workspaceId: string;
   try {
     ({ workspaceId } = await tryGetActiveContextOrThrow());

@@ -7,6 +7,7 @@ import { FieldData } from "@/components/field-data";
 import { PublicComparison } from "@/components/public-comparison";
 import { brandFrom, brandGradient } from "@/modules/workspaces/brand";
 import { loadComparison } from "@/modules/audit/comparison-load";
+import { isRateLimited } from "@/lib/rate-limit-guard";
 
 // Public, prospect-facing, no product chrome. Cross-tenant read keyed on the
 // unguessable slug — a deliberate public surface, not tenant business logic.
@@ -24,6 +25,22 @@ export default async function SharePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+
+  // Unauthenticated and cross-tenant by design, so it gets an abuse control
+  // like every other public surface (P6/2). Refusing with a plain page rather
+  // than a 404 keeps the two states distinguishable: "slow down" is not the
+  // same as "this report does not exist".
+  if (await isRateLimited("auditShare")) {
+    return (
+      <main className="mx-auto max-w-[520px] px-6 py-20 text-center">
+        <h1 className="font-display text-[24px] lowercase tracking-display">slow down</h1>
+        <p className="mt-2 text-[13.5px] text-muted">
+          This report has been opened a lot in the last hour. Try again shortly.
+        </p>
+      </main>
+    );
+  }
+
   const share = await prismaUnsafe.auditShare.findUnique({
     where: { slug },
     include: { audit: true },

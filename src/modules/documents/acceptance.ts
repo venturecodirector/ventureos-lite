@@ -2,6 +2,8 @@
 
 import { z } from "zod";
 import { headers } from "next/headers";
+import { takeRateLimit } from "@/lib/rate-limit";
+import { clientIp, RATE_LIMITS } from "@/lib/rate-limit-policy";
 import { revalidatePath } from "next/cache";
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
@@ -171,6 +173,18 @@ export async function acceptQuote(
   slug: string,
   raw: unknown,
 ): Promise<{ ok: true; already: boolean } | { ok: false; error: string }> {
+  // Unauthenticated, and it writes contractual evidence — so it gets an abuse
+  // control like every other public route (P6/2). Rate-limited BEFORE parsing,
+  // because a limiter that only guards well-formed requests is not a limiter.
+  const requestHeaders = await headers();
+  const rate = await takeRateLimit(
+    `${RATE_LIMITS.quoteAcceptance.bucket}:${clientIp(requestHeaders)}`,
+    RATE_LIMITS.quoteAcceptance,
+  );
+  if (!rate.allowed) {
+    return { ok: false, error: "Too many attempts. Please try again shortly." };
+  }
+
   const input = acceptSchema.parse(raw);
   const outcome = getAcceptanceProvider().accept(input);
   if (!outcome.ok) return { ok: false, error: outcome.error ?? "Invalid acceptance." };
@@ -187,9 +201,8 @@ export async function acceptQuote(
   });
   if (existing) return { ok: true, already: true };
 
-  const h = await headers();
-  const ip = (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "").trim();
-  const userAgent = h.get("user-agent") ?? "";
+  const ip = clientIp(requestHeaders) === "unknown" ? "" : clientIp(requestHeaders);
+  const userAgent = requestHeaders.get("user-agent") ?? "";
 
   // Immutable acceptance record (create-only; contractual assent evidence).
   await prismaUnsafe.quoteAcceptance.create({

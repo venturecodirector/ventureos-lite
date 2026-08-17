@@ -223,6 +223,10 @@ model User {
   /// Consumed TOTP step, so a code cannot be replayed inside its 30s window.
   totpLastStep        Int?                 @map("totp_last_step")
   lockedUntil         DateTime?            @map("locked_until")
+  /// Consecutive lockouts in the current run of failures (v2 P6/2). Selects the
+  /// backoff step; reset to 0 the moment a login succeeds, because the run is
+  /// over when somebody gets in.
+  lockCount           Int                  @default(0) @map("lock_count")
   lastLoginAt         DateTime?            @map("last_login_at")
   /// Forces a password change on next login (seeded/reset accounts).
   mustChangePassword  Boolean              @default(false) @map("must_change_password")

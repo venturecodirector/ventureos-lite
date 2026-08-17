@@ -8,6 +8,7 @@ import {
   confirmTotpEnrollment,
   changePassword,
   disableTotp,
+  revokeOneSession,
   revokeOtherSessions,
   signOutEverywhere,
   type SecurityStatus,
@@ -289,23 +290,54 @@ export function SecurityPanel({
 
       {/* ---------- sessions ---------- */}
       <section className="mt-4 rounded-[11px] border border-line p-3.5">
-        <Heading title="signed-in devices" hint="Sessions expire after 12 hours of validity." />
-        <ul className="grid gap-1.5">
+        <Heading
+          title="signed-in devices"
+          hint="A session ends after 30 days, or after 7 days without use — whichever comes first."
+        />
+        <ul className="grid gap-1.5" data-testid="session-list">
           {status.activeSessions.map((s) => (
             <li
               key={s.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-line px-3 py-2 text-[12.5px]"
+              data-testid="session-row"
+              className={`flex flex-wrap items-center justify-between gap-2 rounded-[8px] border px-3 py-2 text-[12.5px] ${
+                s.current ? "border-accent bg-accent-soft" : "border-line"
+              }`}
             >
               <span className="text-ink">
-                {shortAgent(s.userAgent)}
+                {s.device}
                 {s.current && (
-                  <span className="ml-2 rounded-[5px] border border-line px-1.5 py-px text-[10px] uppercase tracking-[0.1em] text-muted">
+                  <span className="ml-2 rounded-[5px] border border-line px-1.5 py-px text-[10px] uppercase tracking-[0.1em] text-accent-ink">
                     this device
                   </span>
                 )}
+                <span className="block text-[11px] text-muted">{shortAgent(s.userAgent)}</span>
               </span>
-              <span className="tabular-nums text-muted">
-                {s.ip ?? "—"} · {new Date(s.lastSeenAt).toISOString().slice(0, 16).replace("T", " ")}
+              <span className="flex items-center gap-2">
+                <span className="tabular-nums text-muted">
+                  {s.ip ?? "—"} ·{" "}
+                  {new Date(s.lastSeenAt).toISOString().slice(0, 16).replace("T", " ")}
+                </span>
+                {!s.current && (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    data-testid="session-revoke"
+                    className={BTN}
+                    onClick={() =>
+                      run(async () => {
+                        const res = await revokeOneSession(s.id);
+                        setMsg(
+                          res.ok
+                            ? { kind: "ok", text: "That device was signed out." }
+                            : { kind: "err", text: res.error },
+                        );
+                        router.refresh();
+                      })
+                    }
+                  >
+                    Revoke
+                  </button>
+                )}
               </span>
             </li>
           ))}
