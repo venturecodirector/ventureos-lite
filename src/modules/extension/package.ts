@@ -74,11 +74,38 @@ export async function buildExtensionPackage(): Promise<ExtensionPackage> {
   // token and ask it to read a profile.
   const origin = new URL(appUrl()).origin;
   const pattern = `${origin}/*`;
-  manifest.host_permissions = [pattern];
+
+  /**
+   * ADDED TO the checked-in manifest, never substituted for it.
+   *
+   * These two lines used to ASSIGN, and that silently deleted everything the
+   * repository's own manifest declared. The passive observer registers two
+   * content scripts on linkedin.com at document_start and a host permission to
+   * match; the downloaded extension had neither, because packaging replaced the
+   * whole array with the single bridge entry. Nothing failed and nothing warned —
+   * the extension installed, the popup worked, and the content script simply was
+   * not there, which is a very hard shape of bug to see from the outside.
+   *
+   * Any future declaration in extension/manifest.json now survives packaging by
+   * default, which is the behaviour anyone editing that file would assume.
+   */
+  const declaredHosts = Array.isArray(manifest.host_permissions)
+    ? (manifest.host_permissions as string[])
+    : [];
+  manifest.host_permissions = [...new Set([...declaredHosts, pattern])];
+
   // The bridge runs ONLY on the app's own origin — never on LinkedIn. It is what
   // lets the app talk to its extension without knowing an id that differs on
-  // every side-loaded install.
-  manifest.content_scripts = [{ matches: [pattern], js: ["bridge.js"], run_at: "document_idle" }];
+  // every side-loaded install. It joins whatever the manifest already declares.
+  const declaredScripts = Array.isArray(manifest.content_scripts)
+    ? (manifest.content_scripts as Record<string, unknown>[])
+    : [];
+  const alreadyHasBridge = declaredScripts.some(
+    (cs) => Array.isArray(cs.js) && (cs.js as string[]).includes("bridge.js"),
+  );
+  manifest.content_scripts = alreadyHasBridge
+    ? declaredScripts
+    : [...declaredScripts, { matches: [pattern], js: ["bridge.js"], run_at: "document_idle" }];
   manifestEntry.content = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 
   // The default address travels as a tiny config file rather than being sewn
