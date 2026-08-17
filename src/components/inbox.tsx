@@ -19,6 +19,7 @@ import {
   QUAL_QUESTIONS,
   type QualItem,
 } from "@/modules/inbox/qualification";
+import { EmptyState } from "./empty-state";
 
 const INTENT: Record<string, { label: string; cls: string }> = {
   interested: { label: "interested", cls: "bg-[rgba(61,220,151,0.12)] text-[#3DDC97]" },
@@ -159,7 +160,12 @@ export function Inbox({
               </button>
             </div>
           </div>
-          {threads.length === 0 && <p className="px-2 py-2 text-[12px] text-muted">No threads yet.</p>}
+          {threads.length === 0 && (
+            <EmptyState title="no replies yet" testId="inbox-empty">
+              Replies land here once a mailbox is connected, or when you paste one in by
+              hand. Analysis runs when you open an unread message — never in bulk.
+            </EmptyState>
+          )}
           {threads.map((t) => (
             <button
               key={t.leadId}

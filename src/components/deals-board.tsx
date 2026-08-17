@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { moveDealStage, updateDeal } from "@/modules/deals/actions";
 import { useUndo } from "./undo-toast";
 import type { DealCardView, PipelineView } from "@/modules/deals/store";
+import { EmptyState } from "./empty-state";
 
 /**
  * The deals kanban (playbook-v2 P4/b).
@@ -248,6 +249,17 @@ export function DealsBoard({
         <div className="mb-3 rounded-[10px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.1)] px-3.5 py-2.5 text-[12.5px] text-[#FFB3C2]">
           {error}
         </div>
+      )}
+
+      {cards.length === 0 && (
+        <EmptyState
+          title="no deals on this board"
+          testId="deals-empty"
+          action={{ label: "Open Pipeline", href: "/pipeline" }}
+        >
+          A deal is a piece of work with money attached. Qualify a lead on the Pipeline
+          board and convert it — the value, the probability and the close date live here.
+        </EmptyState>
       )}
 
       <div className="grid snap-x snap-mandatory grid-flow-col auto-cols-[82vw] items-start gap-3 overflow-x-auto pb-3 sm:auto-cols-[248px]">

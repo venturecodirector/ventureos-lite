@@ -19,6 +19,7 @@ import {
 import { getComposerData, sendDocument } from "@/modules/mail/actions";
 import { publishQuoteAcceptance } from "@/modules/documents/acceptance";
 import { InvoiceButton } from "./invoice-button";
+import { EmptyState } from "./empty-state";
 
 const TYPE_LABEL: Record<DocumentType, string> = {
   QUOTE: "Quote",
@@ -78,7 +79,15 @@ export function DocumentChains({
   const refresh = () => router.refresh();
 
   if (chains.length === 0) {
-    return <p className="mt-4 text-[12.5px] text-muted">No documents yet — generate a quote above.</p>;
+    return (
+      <div className="mt-4">
+        <EmptyState title="no documents yet" testId="documents-empty">
+          A quote becomes a contract becomes a completion certificate, each one rendered
+          from a versioned template and carrying a DRAFT watermark until an Owner
+          finalises it. Start with a quote above.
+        </EmptyState>
+      </div>
+    );
   }
 
   return (

@@ -3,6 +3,8 @@ import { Greeting } from "@/components/greeting";
 import { TasksPanel } from "@/components/tasks-panel";
 import { myTasks } from "@/modules/tasks/actions";
 import { getLatestInsight } from "@/modules/signal/actions";
+import { Onboarding } from "@/components/onboarding";
+import { getOnboarding } from "@/modules/onboarding/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +12,11 @@ export default async function Home() {
   // Tasks are fetched HERE, on the server, and handed to the panel as a prop.
   // The dashboard is the first page loaded every morning; a client round trip
   // for its main list costs a flash and real latency on a phone.
-  const [insight, tasks] = await Promise.all([getLatestInsight(), myTasks()]);
+  const [insight, tasks, onboarding] = await Promise.all([
+    getLatestInsight(),
+    myTasks(),
+    getOnboarding(),
+  ]);
   const initialTasks = [
     ...tasks.overdue,
     ...tasks.today,
@@ -21,6 +27,9 @@ export default async function Home() {
   return (
     <AppShell activePath="/">
       <div className="max-w-[1400px]">
+        {/* First-login tour and the getting-started checklist (P7/4). */}
+        <Onboarding view={onboarding} />
+
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
           <div className="rounded-card border border-line bg-panel p-6 backdrop-blur-sm">
             <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">

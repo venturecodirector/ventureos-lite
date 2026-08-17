@@ -13,6 +13,7 @@ import {
   type MeetingRow,
   type MeetingDetail,
 } from "@/modules/meetings/actions";
+import { EmptyState } from "./empty-state";
 
 const BRIEF_BADGE: Record<string, { label: string; cls: string }> = {
   none: { label: "no brief", cls: "bg-panel-2 text-muted" },
@@ -297,7 +298,10 @@ export function Meetings({
 
           <div className="rounded-card border border-line bg-panel p-2">
             {meetings.length === 0 && (
-              <p className="px-2 py-2 text-[12px] text-muted">No meetings yet.</p>
+              <EmptyState title="no meetings yet" testId="meetings-empty">
+                Book one from a lead, or share your public booking page — the brief is
+                written once, when the meeting is booked, and waits on the card.
+              </EmptyState>
             )}
             {meetings.map((m) => (
               <button

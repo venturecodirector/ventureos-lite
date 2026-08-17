@@ -10,6 +10,7 @@ import {
 import type { LedgerRow } from "@/modules/referrals/data";
 import { STAGE_LABELS } from "@/modules/pipeline/transitions";
 import type { Stage } from "@prisma/client";
+import { EmptyState } from "./empty-state";
 
 function huf(n: number): string {
   return `${n.toLocaleString("en-US").replace(/,/g, " ")} Ft`;
@@ -171,7 +172,12 @@ export function Referrers({
             </span>
           </div>
 
-          {ledger.length === 0 && <p className="text-[13px] text-muted">No referrers yet.</p>}
+          {ledger.length === 0 && (
+            <EmptyState title="no referrers yet" testId="referrers-empty">
+              A referrer is the person or company who made an introduction. Tag a lead as
+              a referral and the revenue it produces is attributed back to them here.
+            </EmptyState>
+          )}
 
           {ledger.map((r) => (
             <div key={r.referrerId} className="mb-2 rounded-[11px] border border-line bg-panel-2">

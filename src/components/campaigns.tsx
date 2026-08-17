@@ -12,6 +12,7 @@ import {
   type CampaignView,
   type ColdStatus,
 } from "@/modules/campaigns/actions";
+import { EmptyState } from "./empty-state";
 
 const INPUT =
   "rounded-[8px] border border-line bg-[rgba(0,5,29,0.5)] px-2.5 py-2 text-[12.5px] text-ink outline-none placeholder:text-muted focus:border-accent";
@@ -131,7 +132,12 @@ export function Campaigns({ status, campaigns }: { status: ColdStatus; campaigns
         </button>
       </div>
 
-      {campaigns.length === 0 && <p className="text-[13px] text-muted">No campaigns yet.</p>}
+      {campaigns.length === 0 && (
+        <EmptyState title="no campaigns yet" testId="campaigns-empty">
+          Cold sequences send from a separate domain, at a daily cap, with instant
+          suppression and a bounce circuit breaker — and only once counsel has signed off.
+        </EmptyState>
+      )}
 
       {campaigns.map((c) => (
         <div key={c.id} className="mb-4 rounded-card border border-line bg-panel p-[18px]">

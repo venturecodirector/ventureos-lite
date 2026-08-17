@@ -13,6 +13,7 @@ import {
 import { moveLeadStage } from "@/modules/leads/actions";
 import { useUndo } from "./undo-toast";
 import { LeadDetailModal } from "./lead-detail-modal";
+import { EmptyState } from "./empty-state";
 import { closeDeal } from "@/modules/analytics/actions";
 import {
   OUTCOME_RESULTS,
@@ -182,6 +183,17 @@ export function PipelineBoard({
         <div className="mb-3 rounded-[10px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.1)] px-3.5 py-2.5 text-[12.5px] text-[#FFB3C2]">
           {error}
         </div>
+      )}
+
+      {cards.length === 0 && (
+        <EmptyState
+          title="the board is empty"
+          testId="pipeline-empty"
+          action={{ label: "Capture a lead", href: "/leads" }}
+        >
+          Every lead you capture starts in Researched and moves across as the conversation
+          does. From Qualified onward the money lives on a Deal.
+        </EmptyState>
       )}
 
       <div className="grid snap-x snap-mandatory grid-flow-col auto-cols-[82vw] items-start gap-3 overflow-x-auto pb-3 sm:auto-cols-[236px]">

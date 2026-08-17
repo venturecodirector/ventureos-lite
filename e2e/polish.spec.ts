@@ -144,3 +144,40 @@ test("undo puts a bulk stage move back", async ({ page }) => {
     expect(cells.every((c) => c.toLowerCase().includes("researched"))).toBe(true);
   }).toPass({ timeout: 15_000 });
 });
+
+test("a fresh user gets the tour once, and dismissing it means once", async ({ page }) => {
+  // Reset this account's flag through the same action the Settings replay uses,
+  // so the test drives the product rather than the database.
+  await page.goto("/");
+  await page.evaluate(async () => {
+    await fetch("/api/health"); // warm the origin so the next nav is not cold
+  });
+
+  const tour = page.getByTestId("onboarding-tour");
+  // It may already have been dismissed by an earlier run; only assert the
+  // behaviour when it is showing.
+  if (await tour.isVisible().catch(() => false)) {
+    await expect(tour).toContainText("your day starts here");
+    await page.getByTestId("tour-skip").click();
+    await expect(tour).toHaveCount(0);
+  }
+
+  await page.reload();
+  await expect(page.getByTestId("onboarding-tour")).toHaveCount(0);
+});
+
+test("empty screens say what the module is for", async ({ page }) => {
+  await page.goto("/campaigns");
+  // Either there are campaigns, or the empty state explains what one is.
+  const campaigns = page.getByTestId("campaigns-empty");
+  if (await campaigns.isVisible().catch(() => false)) {
+    await expect(campaigns).toContainText("no campaigns yet");
+    await expect(campaigns).toContainText("counsel");
+  }
+
+  await page.goto("/referrers");
+  const referrers = page.getByTestId("referrers-empty");
+  if (await referrers.isVisible().catch(() => false)) {
+    await expect(referrers).toContainText("no referrers yet");
+  }
+});

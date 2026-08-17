@@ -25,6 +25,7 @@ import {
 import { editLeadField } from "@/modules/leads/inline-actions";
 import { InlineCell, type InlineKind } from "./inline-cell";
 import { PIPELINE_STAGES, SIDE_STAGES, STAGE_LABELS } from "@/modules/pipeline/transitions";
+import { EmptyState } from "./empty-state";
 
 /**
  * The leads table (playbook-v2 P3/2): selectable columns, sorting, pagination
@@ -426,7 +427,19 @@ export function LeadsTable(props: LeadsTableProps) {
                       to see all {totalUnfiltered}.
                     </>
                   ) : (
-                    "No leads yet. Capture one above."
+                    <EmptyState
+                      title="no leads yet"
+                      testId="leads-empty"
+                      action={{ label: "Find businesses", href: "/prospector" }}
+                      secondary={
+                        <span className="text-[12px] text-muted">
+                          or add one by hand, paste a LinkedIn profile, or import a CSV
+                        </span>
+                      }
+                    >
+                      A lead is a person at a company you want to work with. Nothing is
+                      scraped and nothing is sent on its own — every message is yours.
+                    </EmptyState>
                   )}
                 </td>
               </tr>
