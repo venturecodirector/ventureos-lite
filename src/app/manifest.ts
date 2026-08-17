@@ -20,7 +20,7 @@ export default function manifest(): MetadataRoute.Manifest {
   const base = appUrl();
   return {
     id: `${base}/`,
-    name: "Venture OS Lite",
+    name: "Venture OS",
     short_name: "Venture OS",
     start_url: `${base}/`,
     scope: `${base}/`,

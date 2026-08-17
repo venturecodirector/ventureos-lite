@@ -222,9 +222,10 @@ export async function AppShell({
           {shell.brand.markLight ? (
             <span className="ml-1.5 font-light text-muted">{shell.brand.markLight}</span>
           ) : null}
-          <em className="ml-1.5 rounded-[5px] border border-line px-1.5 py-px align-middle text-[9px] font-semibold not-italic uppercase tracking-[0.14em] text-muted">
-            lite
-          </em>
+          {/* No edition badge. The wordmark stands alone: at the narrowest
+              desktop sidebar width a third element pushed the lockup past the
+              available space and wrapped, and the product is "Venture OS" — there
+              is no other edition for a badge to distinguish it from. */}
         </div>
 
         <SidebarNav>

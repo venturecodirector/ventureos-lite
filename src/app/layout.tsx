@@ -16,7 +16,7 @@ const bricolage = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  title: "Venture OS Lite",
+  title: "Venture OS",
   description: "AI-assisted sales & delivery workspace — Venture CO Group",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "Venture OS", statusBarStyle: "black-translucent" },
