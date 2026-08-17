@@ -15,29 +15,35 @@ done from a test runner, and it must not be done by asking LinkedIn for anything
 
 So this is a step you have to drive. It takes about ten minutes.
 
-## How to record
+## How to record — READ THIS, THE OBVIOUS WAY DOES NOT WORK
 
-1. **Load the extension fresh.** `chrome://extensions` → remove the old copy →
-   *Load unpacked* → the `extension/` directory. Version must read **5.0.0**.
-   Chrome will now ask for access to `linkedin.com` — that is new, and it is what
-   lets the observer install before the page starts fetching.
+The first real attempt taught us something that changes the procedure.
 
-2. **Open a LinkedIn profile and RELOAD it.** This matters: the interceptor is
-   installed at `document_start`, so it only sees responses fetched *after* it is
-   in place. A tab that was already open when you installed the extension has
-   nothing in its buffer.
+**A hard reload produces nothing.** On a fresh page load LinkedIn server-renders
+the profile straight into the HTML and fetches no JSON for it — the only JSON on
+that load is telemetry (`sensorCollect` and a couple of obfuscated tracking
+POSTs). None of the committed DOM fixtures carries a `<code>` block or an
+`application/json` script tag either, so there is no embedded payload to read.
 
-3. **Check that anything arrived.** Open the extension popup and press
-   **Copy observed responses**. You should see `observerInstalled: true` and a
-   non-zero `recordCount`. If it is zero, the reload in step 2 did not happen or
-   the page served everything from cache — reload with ⇧⌘R.
+The profile arrives as JSON only when the app navigates to it **client-side**.
+So the procedure is:
 
-4. **Press "Save API snapshot"**, give it one of the labels below, and save the
-   file into this directory.
+1. **Load the extension**, then open `https://www.linkedin.com/feed/` and let it
+   settle. (Reloading the extension does not reach tabs that are already open, so
+   this tab must be opened or reloaded AFTER the extension is in place.)
+2. **Click through to a profile from inside the app** — from the feed, from search,
+   from the "People you may know" rail. Do NOT paste the URL into the address bar
+   and do NOT reload: both are fresh page loads, and a fresh page load is exactly
+   the case that fetches nothing.
+3. Popup → **Copy observed responses**. You are looking for a record of tens or
+   hundreds of kilobytes. `pendingCount` above zero means something was seen
+   before the URL caught up, which is normal and is claimed on arrival.
+4. Popup → **Save API snapshot**, label it, save into this directory.
+5. For each further case, **navigate in-app again** rather than reloading.
 
-5. **Repeat for each case.** Then commit, and tell me — I will derive the mapping
-   from what is actually in the files and report which fields I found and which I
-   did not.
+If step 3 shows only small POSTs to obfuscated paths, stop and say so: it would
+mean the profile is not fetched as JSON on this account either, and the approach
+needs rethinking rather than more snapshots.
 
 ## The snapshots needed, and why each one
 
@@ -51,9 +57,10 @@ So this is a step you have to drive. It takes about ten minutes.
 | `company-page` | a `/company/...` page | company enrichment, later |
 | `contact-overlay` | a profile, then **open the Contact info overlay** before saving | email / phone / websites arrive in their own response |
 
-For `contact-overlay`: open the profile, reload, press **Contact info** on the
-page so LinkedIn fetches it, then save the snapshot. The observer will have seen
-both the profile response and the contact one.
+For `contact-overlay`: navigate to the profile in-app, press **Contact info** on
+the page so LinkedIn fetches it, then save the snapshot. The observer will have
+seen both the profile response and the contact one. (The overlay is fetched on
+demand, so this one works whether or not the page itself was server-rendered.)
 
 ## What the scrubber does before anything is written
 

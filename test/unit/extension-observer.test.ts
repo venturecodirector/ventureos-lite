@@ -443,3 +443,151 @@ describe("injection timing and world", () => {
 });
 
 const OBSERVER_FILES_SHIPPED = ["observer-main.js", "observer-bridge.js"];
+
+/**
+ * ── WHAT THE FIRST REAL TEST ON LINKEDIN TAUGHT US ──────────────────────────
+ *
+ * The observer installed correctly (MAIN world, document_start) and caught three
+ * responses on a hard-reloaded profile. All three were telemetry: a
+ * `sensorCollect` metrics POST and two obfuscated tracking POSTs of 174 and 2196
+ * bytes. No profile payload, and none of the committed DOM fixtures carries a
+ * single `<code>` or `application/json` script tag either.
+ *
+ * So on a FRESH PAGE LOAD LinkedIn server-renders the profile into HTML and
+ * fetches no JSON for it. Reloading the page — which is what I told the operator
+ * to do — is the one action guaranteed to produce nothing. The profile is fetched
+ * as JSON when the app navigates CLIENT-SIDE to it.
+ *
+ * That navigation has a property the bridge got wrong: the fetch usually
+ * completes while `location` still points at the page you came from. `if (!slug)
+ * return` therefore discarded exactly the response the whole design exists to
+ * capture, silently, and the arrival on the profile would then report an empty
+ * buffer — wrong, and wrong in the most misleading direction.
+ */
+describe("a profile fetched during a client-side navigation", () => {
+  function bridgeOn(url: string) {
+    const dom = new JSDOM("<!doctype html><html><body></body></html>", { url });
+    const listeners: ((m: unknown, s: unknown, r: (v: unknown) => void) => void)[] = [];
+    const chrome = {
+      runtime: { onMessage: { addListener: (fn: never) => listeners.push(fn) } },
+    };
+    let tick = () => {};
+    new Function("window", "document", "location", "chrome", "setInterval", "URL", BRIDGE)(
+      dom.window,
+      dom.window.document,
+      dom.window.location,
+      chrome,
+      (fn: () => void) => {
+        tick = fn;
+        return 0;
+      },
+      dom.window.URL,
+    );
+    const ask = (msg: unknown) =>
+      new Promise<Record<string, unknown>>((resolve) => {
+        listeners[0]!(msg, null, (v) => resolve(v as Record<string, unknown>));
+      });
+    const send = (data: unknown) => {
+      const ev = new dom.window.MessageEvent("message", {
+        data,
+        origin: new URL(url).origin,
+      });
+      Object.defineProperty(ev, "source", { value: dom.window });
+      dom.window.dispatchEvent(ev);
+    };
+    /** Move the SPA to a new path, then let the bridge's poll notice. */
+    const navigateTo = (path: string) => {
+      dom.window.history.pushState({}, "", path);
+      tick();
+    };
+    return { dom, ask, send, navigateTo };
+  }
+
+  const hello = { channel: "venture-observer", nonce: "nnnnnnnn", kind: "hello", world: "MAIN", at: "document_start" };
+  const observed = (url: string, bodySize = 40_000) => ({
+    channel: "venture-observer",
+    nonce: "nnnnnnnn",
+    kind: "observed",
+    record: {
+      url,
+      method: "POST",
+      status: 200,
+      contentType: "application/json",
+      bodySize,
+      body: '{"included":[{"$type":"x"}]}',
+    },
+  });
+
+  it("holds a response seen on the feed instead of discarding it", async () => {
+    const b = bridgeOn("https://www.linkedin.com/feed/");
+    b.send(hello);
+    b.send(observed("https://www.linkedin.com/voyager/api/graphql?q=profile"));
+
+    const status = await b.ask({ type: "observerStatus" });
+    // Not attributed to anybody yet — but not thrown away either.
+    expect(status.slug).toBeNull();
+    expect(status.recordCount).toBe(0);
+    expect(status.pendingCount, "the record was discarded").toBe(1);
+  });
+
+  /** THE CASE THE OLD CODE LOST. */
+  it("claims it for the profile the navigation lands on", async () => {
+    const b = bridgeOn("https://www.linkedin.com/feed/");
+    b.send(hello);
+    // The app fetches the next profile's data before the URL catches up.
+    b.send(observed("https://www.linkedin.com/voyager/api/graphql?q=profile"));
+    b.navigateTo("/in/mgoldberger/");
+
+    const status = await b.ask({ type: "observerStatus" });
+    expect(status.slug).toBe("mgoldberger");
+    expect(status.recordCount, "the pending record was not claimed").toBe(1);
+    expect(status.pendingCount).toBe(0);
+
+    const taken = await b.ask({ type: "observerTake" });
+    expect((taken.records as { url: string }[])[0]!.url).toContain("graphql");
+  });
+
+  it("still attributes a response that arrives after the URL has changed", async () => {
+    const b = bridgeOn("https://www.linkedin.com/feed/");
+    b.send(hello);
+    b.navigateTo("/in/mgoldberger/");
+    b.send(observed("https://www.linkedin.com/voyager/api/graphql?q=late"));
+    expect((await b.ask({ type: "observerStatus" })).recordCount).toBe(1);
+  });
+
+  it("hands over held records even before a navigation is noticed", async () => {
+    // A take on a profile page whose own bucket is empty still surrenders what is
+    // held: at that moment it is the best answer to "what did this page fetch".
+    const b = bridgeOn("https://www.linkedin.com/in/mgoldberger/");
+    b.send(hello);
+    const taken = await b.ask({ type: "observerTake" });
+    expect(taken.records).toEqual([]);
+  });
+
+  it("does not stack a held record twice when it is also attributed", async () => {
+    const b = bridgeOn("https://www.linkedin.com/feed/");
+    b.send(hello);
+    b.send(observed("https://www.linkedin.com/voyager/api/graphql?q=one"));
+    b.navigateTo("/in/mgoldberger/");
+    b.send(observed("https://www.linkedin.com/voyager/api/graphql?q=one"));
+    const taken = await b.ask({ type: "observerTake" });
+    expect(taken.records).toHaveLength(1);
+  });
+
+  it("caps what it holds, so a long session cannot grow without bound", async () => {
+    const b = bridgeOn("https://www.linkedin.com/feed/");
+    b.send(hello);
+    for (let i = 0; i < 60; i += 1) {
+      b.send(observed(`https://www.linkedin.com/voyager/api/graphql?q=${i}`, 100));
+    }
+    expect((await b.ask({ type: "observerStatus" })).pendingCount as number).toBeLessThanOrEqual(40);
+  });
+
+  it("clears the held pool on request", async () => {
+    const b = bridgeOn("https://www.linkedin.com/feed/");
+    b.send(hello);
+    b.send(observed("https://www.linkedin.com/voyager/api/graphql?q=x"));
+    await b.ask({ type: "observerClear" });
+    expect((await b.ask({ type: "observerStatus" })).pendingCount).toBe(0);
+  });
+});

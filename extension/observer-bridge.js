@@ -52,6 +52,15 @@
   /** slug -> { at, records: [] }. One page's worth of observations. */
   const buffer = new Map();
 
+  /**
+   * Records seen before the URL became a profile.
+   *
+   * A single-page navigation fetches the next profile's data before, or while,
+   * the address bar catches up. These wait here until we know which profile they
+   * describe.
+   */
+  let pending = [];
+
   const slugOf = (href) => {
     try {
       const m = /^\/in\/([^/]+)/.exec(new URL(href, location.href).pathname);
@@ -131,8 +140,27 @@
       if (data.kind !== "observed") return;
       if (!isValidRecord(data.record)) return;
 
+      /**
+       * A record observed while the URL is NOT yet a profile is held, not dropped.
+       *
+       * This mattered more than it looks. LinkedIn server-renders a profile on a
+       * fresh page load, so a reload produces no profile JSON at all — the only
+       * JSON on that load is telemetry. The profile is fetched as JSON when the
+       * app navigates CLIENT-SIDE to it, and in that case the request very often
+       * completes while `location` still points at the page you came from. The old
+       * `if (!slug) return` therefore threw away precisely the response we exist
+       * to capture, and did it silently.
+       *
+       * So: no slug yet means "pending". `onNavigate` claims the pending records
+       * for whichever profile we land on, which is the only moment we can know
+       * who they belonged to.
+       */
       const slug = currentSlug();
-      if (!slug) return; // Not a profile page; nothing here belongs to a lead.
+      if (!slug) {
+        pending.push({ ...data.record, observedAt: Date.now() });
+        while (pending.length > MAX_RECORDS) pending.shift();
+        return;
+      }
 
       prune();
       const entry = buffer.get(slug) ?? { at: Date.now(), records: [] };
@@ -164,6 +192,28 @@
       if (now === lastSlug) return;
       if (lastSlug) buffer.delete(lastSlug);
       lastSlug = now;
+
+      /**
+       * Landing on a profile claims whatever was observed on the way in.
+       *
+       * The fetch that carries a profile usually finishes before the URL changes,
+       * so without this the arrival on the page would find an empty buffer and
+       * report "the page loaded before the observer" — which would be wrong, and
+       * wrong in the most misleading possible direction.
+       */
+      if (now && pending.length > 0) {
+        prune();
+        const entry = buffer.get(now) ?? { at: Date.now(), records: [] };
+        entry.at = Date.now();
+        for (const record of pending) {
+          const existing = entry.records.findIndex((r) => r.url === record.url);
+          if (existing >= 0) entry.records.splice(existing, 1);
+          entry.records.push(record);
+        }
+        while (entry.records.length > MAX_RECORDS) entry.records.shift();
+        buffer.set(now, entry);
+        pending = [];
+      }
     } catch {
       /* nothing to do */
     }
@@ -193,6 +243,9 @@
         timing: installedAt?.at ?? null,
         slug,
         recordCount: entry?.records.length ?? 0,
+        // Observed but not yet attributed to a profile — visible, so "nothing
+        // here" and "held, waiting for a slug" cannot be confused.
+        pendingCount: pending.length,
         inventory: (entry?.records ?? []).map((r) => ({
           url: r.url,
           method: r.method,
@@ -207,7 +260,12 @@
       prune();
       const key = slug ? String(slug).toLowerCase() : currentSlug();
       const entry = key ? buffer.get(key) : null;
-      return (entry?.records ?? []).map((r) => ({ ...r }));
+      const own = (entry?.records ?? []).map((r) => ({ ...r }));
+      // Anything still unattributed is handed over too: on this page, at this
+      // moment, it is the best answer available to "what did the page fetch".
+      const held = pending.map((r) => ({ ...r }));
+      const seen = new Set(own.map((r) => r.url));
+      return [...own, ...held.filter((r) => !seen.has(r.url))];
     },
   };
 
@@ -231,6 +289,7 @@
           timing: installedAt?.at ?? null,
           slug,
           recordCount: entry?.records.length ?? 0,
+          pendingCount: pending.length,
           // The inventory, without the bodies: what was seen, how big, and when.
           inventory: (entry?.records ?? []).map((r) => ({
             url: r.url,
@@ -248,17 +307,21 @@
         prune();
         const slug = msg.slug ? String(msg.slug).toLowerCase() : currentSlug();
         const entry = slug ? buffer.get(slug) : null;
+        const own = entry?.records ?? [];
+        const seen = new Set(own.map((r) => r.url));
         sendResponse({
           ok: true,
           installed: nonce !== null,
           slug,
-          records: entry?.records ?? [],
+          // Unattributed records travel too — see the note on `pending`.
+          records: [...own, ...pending.filter((r) => !seen.has(r.url))],
         });
         return true;
       }
 
       if (msg?.type === "observerClear") {
         buffer.clear();
+        pending = [];
         sendResponse({ ok: true });
         return true;
       }
