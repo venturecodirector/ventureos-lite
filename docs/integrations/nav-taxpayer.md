@@ -5,6 +5,20 @@ was verified against current primary sources in **August 2026**, not recalled �
 the signing details in particular had changed, and one of them would have made
 every request fail.
 
+## Verified against production
+
+The signing implementation was confirmed end to end on 2026-08-17 with live
+credentials, using only the read-only `queryTaxpayer` operation. `funcCode=OK`
+on the first attempt, which means the SHA3-512 signature, the SHA-512 password
+hash, the timestamp mask, the requestId pattern and the mandatory `<software>`
+block are all correct as implemented.
+
+One response-side detail the request samples do not show: the RESPONSE uses
+different namespace prefixes from the request — `ns2` for `OSA/3.0/api`, `ns3`
+for `OSA/3.0/base`, and the default namespace for `NTCA/1.0/common`, so `header`
+and `result` are unprefixed while `taxpayerData` is `ns2:`. Parse by local name;
+prefix-matching will break.
+
 ## What I am implementing against
 
 | | |
@@ -33,11 +47,9 @@ hashes in the same `<user>` block use *different* algorithms, which is exactly
 the kind of detail worth writing down once.
 
 **2. There is no "unknown taxpayer" error code.** The brief asks for one in the
-error taxonomy. A tax number that does not exist returns **HTTP 200** with
-`funcCode=OK` and simply omits `taxpayerValidity` and `taxpayerData`
-(both are `minOccurs="0"`). Absence is the answer. A *deregistered* taxpayer is
-different again: `taxpayerValidity=false`, usually still with `taxpayerData`.
-Three outcomes, one of which is not an error at all.
+error taxonomy. There is none: every one of the three outcomes is `HTTP 200`
+with `funcCode=OK`. See "The three outcomes" below — measured against production,
+not inferred, because my first reading of the schema got the detail wrong.
 
 **3. The `<software>` block is mandatory and the brief does not mention it.**
 `queryTaxpayer` requires `softwareId`, `softwareName`, `softwareOperation`,
@@ -120,7 +132,7 @@ does.
 ```
 QueryTaxpayerResponse
   infoDate                     dateTime, optional
-  taxpayerValidity             boolean, optional   ← absent = unknown taxpayer
+  taxpayerValidity             boolean, optional   ← false + no data = unknown
   taxpayerData                 optional
     taxpayerName               ≤512 chars           ← the legal name, authoritative
     taxpayerShortName          ≤200 chars, optional
@@ -141,6 +153,47 @@ Two notes for the mapping. NAV calls the street-type field
 `publicPlaceCategory` (közterület jellege), not `streetType` as the brief does.
 And the registered seat is the `HQ` item — a company with sites returns several
 items and only `HQ` is the székhely.
+
+## The three outcomes — verified against production
+
+Every case below returned `HTTP 200` and `funcCode=OK`. There is no error code
+for "no such company"; the answer is in the body.
+
+| Case | `taxpayerValidity` | `taxpayerData` | `infoDate` |
+|---|---|---|---|
+| **Valid taxpayer** | `true` | present | recent |
+| **Deregistered** | `false` | **present** | old (2002, in the case measured) |
+| **Unknown / never registered** | `false` | **absent** | absent |
+
+So `taxpayerValidity=false` alone does not distinguish "this company was struck
+off" from "this number belongs to nobody" — the presence of `taxpayerData` is
+what separates them, and the two mean very different things to a salesperson.
+
+My earlier note here claimed an unknown taxpayer omits `taxpayerValidity`
+entirely. It does not: it returns `false`. That was a reading of `minOccurs="0"`
+in the schema rather than an observation, and probing production corrected it.
+The fixtures in `test/fixtures/nav/` are those exact responses.
+
+## VIES disagrees with NAV, legitimately — do not treat it as a veto
+
+While researching I recorded `10625790` as "passes the checksum but is not a
+registered taxpayer", on the strength of VIES returning `valid: false`. **That
+was wrong.** NAV returns it as MOL Nyrt., a large and entirely real company,
+with `vatCode: 4` — *member of a VAT group*.
+
+The explanation is the interesting part. A VAT-group member's own tax number is
+not a valid EU VAT number; the group's common number (`vatCode: 5`) is the one
+that trades. VIES is answering "is this a valid EU VAT identifier" and NAV is
+answering "does this taxpayer exist", and for group members those answers
+diverge *correctly*.
+
+Two consequences, both load-bearing:
+
+1. **A VIES `valid: false` must never be reported as "company not found".** It
+   is a cross-check on a different question. NAV is the authority on existence.
+2. **`vatCode: 4` has to be surfaced**, not hidden. It changes how the company is
+   invoiced, and the operator needs to know the number they hold is a group
+   member's rather than the group's.
 
 ## Error taxonomy (§3.2, technical errors)
 
@@ -215,17 +268,21 @@ call is best-effort and a failure never blocks anything.
 
 Verified empirically while writing this:
 
-| Tax number | Checksum | VIES |
-|---|---|---|
-| `15789934` (NAV) | passes | valid |
-| `10773381` (Magyar Telekom) | passes | valid |
-| `10625790` | **passes** | **invalid** |
-| `12862208` | fails | invalid |
+| Tax number | Checksum | VIES | NAV |
+|---|---|---|---|
+| `15789934` (NAV) | passes | valid | valid, `vatCode 2` |
+| `10773381` (Magyar Telekom) | passes | valid | valid, `vatCode 2` |
+| `10625790` (MOL) | passes | **invalid** | **valid**, `vatCode 4` — VAT group member |
+| `11111111` (BRO-KOMPLEX) | passes | not checked | **deregistered** since 2002 |
+| `99999999` | passes | not checked | **unknown** |
+| `12862208` | **fails** | invalid | never asked |
 
-`10625790` is the case that matters: a well-formed number with a correct check
-digit that is not a registered taxpayer. The checksum is a cheap filter for
-typos and fabrications, and it is *not* evidence that a company exists. Hence
-the order: checksum first to discard nonsense for free, then NAV for the truth.
+Read the last three rows together and the design falls out. A correct check
+digit tells you nothing about whether a company exists, is still trading, or is
+the same company you meant — `99999999` passes the checksum and belongs to
+nobody. So the checksum is a free filter for typos and fabrications, nothing
+more, and NAV is the only thing that establishes existence and status. Hence the
+order: checksum first to discard nonsense at no cost, then NAV for the truth.
 
 ## Tax number structure, as validated
 
