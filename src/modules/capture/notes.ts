@@ -1,4 +1,5 @@
 import type { CaptureBody } from "./body";
+import { contactNoteLines, type ResolvedContact } from "./resolve-contact";
 
 /**
  * Turning a capture into the lead's notes.
@@ -32,16 +33,16 @@ export const CAPTURE_END = "--- end of capture ---";
  * writes a block; a capture without stays silent and leaves notes as it found
  * them.
  */
-export function composeCapturedNotes(input: CaptureBody): string {
+export function composeCapturedNotes(input: CaptureBody, contact?: ResolvedContact): string {
   const scalars = [
     input.name,
     input.headline,
     input.jobTitle,
     input.companyName,
     input.location,
-    input.email,
-    input.phone,
-    input.websiteUrl,
+    contact?.email,
+    contact?.phone,
+    contact?.websiteUrl,
   ].filter(Boolean);
   // Prose is enough on its own; otherwise it takes a few facts to be worth a
   // research call. A name and nothing else is not a profile.
@@ -54,10 +55,11 @@ export function composeCapturedNotes(input: CaptureBody): string {
     input.jobTitle && `Role: ${input.jobTitle}`,
     input.companyName && `Company: ${input.companyName}`,
     input.location && `Location: ${input.location}`,
-    input.email && `Email: ${input.email}`,
-    input.phone && `Phone: ${input.phone}`,
-    input.websiteUrl && `Website: ${input.websiteUrl}`,
     `Profile: ${input.url}`,
+    // Resolved rather than raw: "Email:" here has to be the same address that
+    // went into the lead's email column, and composing them from different
+    // sources is how the two quietly diverge.
+    ...(contact ? contactNoteLines(contact) : []),
   ].filter(Boolean);
 
   if (input.bio) lines.push("", "About:", input.bio);

@@ -35,6 +35,7 @@ describe("extension package", () => {
       "diagnose.js",
       "snapshot.js",
       "photo.js",
+      "contact.js",
       "icons/icon-16.png",
       "icons/icon-128.png",
     ]) {

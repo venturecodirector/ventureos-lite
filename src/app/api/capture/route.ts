@@ -13,6 +13,7 @@ import { storeAvatar } from "@/modules/capture/avatar";
 import { normalizeDomain } from "@/modules/leads/dedupe";
 import { captureBodySchema } from "@/modules/capture/body";
 import { parseLocation } from "@/modules/capture/location";
+import { resolveContact } from "@/modules/capture/resolve-contact";
 import { composeCapturedNotes, mergeCapturedNotes } from "@/modules/capture/notes";
 
 /**
@@ -84,6 +85,13 @@ export async function POST(req: Request): Promise<Response> {
   const place = parseLocation(input.location);
   const city = place.ok ? place.city : null;
 
+  // The contact-info overlay, resolved. The extension sends every candidate with
+  // the label LinkedIn put on it; picking which of three websites is the
+  // company's and turning "06 1 234 5678" into E.164 are rules, and rules that
+  // live in two places drift — the copy already installed on somebody's machine
+  // being the one that cannot be corrected.
+  const contact = resolveContact(input);
+
   let companyId: string | null = null;
   if (input.companyName) {
     // The domain comes from a LINK the profile published, never from the
@@ -91,7 +99,7 @@ export async function POST(req: Request): Promise<Response> {
     // handed to a domain match, which is a name being asked to behave like a
     // hostname: it can only ever miss, and it made every capture create a
     // second copy of a company that was already on file.
-    const domain = input.websiteUrl ? normalizeDomain(input.websiteUrl) : null;
+    const domain = contact.websiteUrl ? normalizeDomain(contact.websiteUrl) : null;
     const company =
       (await db.company.findFirst({
         where: {
@@ -129,7 +137,7 @@ export async function POST(req: Request): Promise<Response> {
   // and merged rather than assigned: anything a person typed into notes stays.
   // A capture that read nothing writes nothing — `undefined` leaves the column
   // exactly as it was rather than blanking it.
-  const block = composeCapturedNotes(input);
+  const block = composeCapturedNotes(input, contact);
   const notes = block ? mergeCapturedNotes(existing?.notes, block) : undefined;
 
   const lead = existing
@@ -140,8 +148,8 @@ export async function POST(req: Request): Promise<Response> {
           // A real role beats the headline, which is often a slogan. Never
           // overwrite something a human already typed here.
           title: existing.title ?? input.jobTitle ?? input.headline ?? undefined,
-          email: existing.email ?? input.email ?? undefined,
-          phone: existing.phone ?? input.phone ?? undefined,
+          email: existing.email ?? contact.email ?? undefined,
+          phone: existing.phone ?? contact.phone ?? undefined,
           bio: input.bio ?? undefined,
           notes,
           companyId: companyId ?? undefined,
@@ -154,8 +162,8 @@ export async function POST(req: Request): Promise<Response> {
           companyId,
           contactName: input.name ?? null,
           title: input.jobTitle ?? input.headline ?? null,
-          email: input.email ?? null,
-          phone: input.phone ?? null,
+          email: contact.email ?? null,
+          phone: contact.phone ?? null,
           linkedinUrl: input.url,
           bio: input.bio ?? null,
           notes,
@@ -233,6 +241,10 @@ export async function POST(req: Request): Promise<Response> {
       // Reported so a photo that was read but could not be stored says so,
       // instead of silently degrading to initials.
       avatarProblem,
+      // Why each contact field is empty, so the UI never shows a blank box that
+      // might mean "not published" or might mean "we failed to read it".
+      contactReasons: contact.reasons,
+      locationReason: place.ok ? null : place.reason,
     },
     existing ? 200 : 201,
   );

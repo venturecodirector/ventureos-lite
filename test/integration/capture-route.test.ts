@@ -139,10 +139,13 @@ describe("a captured lead can be researched", () => {
     expect(lead!.contactName).toBe("Nagy Anna");
     expect(lead!.title).toBe("Ügyvezető");
     expect(lead!.email).toBe("anna@danubia.hu");
-    expect(lead!.phone).toBe("+36 30 123 4567");
+    // Normalized to E.164 on the way in, so two spellings of one number are
+    // one number and a dialler can use it without cleanup.
+    expect(lead!.phone).toBe("+36301234567");
     expect(lead!.bio).toContain("Fogászati rendelőt vezetek");
     expect(lead!.company!.name).toBe("Danubia Fogászat Kft.");
     expect(lead!.notes).toContain("Budapest, Hungary");
+    expect(lead!.notes).toContain("+36301234567");
     expect(lead!.notes).toContain("Új CBCT-t");
   });
 

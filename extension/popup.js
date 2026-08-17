@@ -246,6 +246,41 @@ async function uploadPhoto(tabId, leadId, photoUrl, skipped) {
   }
 }
 
+
+/**
+ * Read the contact-info overlay, on this one explicit capture.
+ *
+ * The only place the extension presses a button. Contact details are not on the
+ * profile page — the diagnostics measured zero mailto: links, zero tel: links,
+ * no outbound hosts — so they are behind this overlay or they are nowhere.
+ * contact.js opens it, reads it by label, closes it and puts the scroll and
+ * focus back.
+ *
+ * Candidates travel to the server unresolved, with the labels LinkedIn put on
+ * them: which of three websites is the company's, and what "06 1 234 5678" is in
+ * E.164, are rules that must not exist in a second drifting copy.
+ */
+async function readContact(tabId) {
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["contact.js"],
+    });
+    if (!result?.ok) return { contact: undefined, note: result?.reason ?? "overlay_unavailable" };
+    const e = result.entries ?? {};
+    const contact = {
+      emails: (e.email ?? []).slice(0, 5),
+      phones: (e.phone ?? []).slice(0, 5),
+      websites: (e.website ?? []).slice(0, 5),
+    };
+    const found =
+      contact.emails.length + contact.phones.length + contact.websites.length > 0;
+    return { contact, note: found ? null : "overlay_had_no_contact_details" };
+  } catch (e) {
+    return { contact: undefined, note: String(e?.message ?? e).slice(0, 60) };
+  }
+}
+
 $("capture").addEventListener("click", async () => {
   $("capture").disabled = true;
   msg("Reading the page…");
@@ -288,6 +323,12 @@ $("capture").addEventListener("click", async () => {
     } = payload;
     const fields = Object.keys(readFrom ?? {});
 
+    // The overlay first: its values belong in the capture body, so the lead is
+    // written once with everything rather than patched afterwards.
+    msg("Reading contact info…");
+    const { contact, note: contactNote } = await readContact(tab.id);
+    if (contact) body.contact = contact;
+
     const res = await chrome.runtime.sendMessage({ type: "capture", payload: body });
     if (res?.ok) {
       const what = res.data?.created ? "Captured as a new lead" : "Existing lead updated";
@@ -301,6 +342,15 @@ $("capture").addEventListener("click", async () => {
       // stops arriving, the layer that used to supply it is the thing that
       // broke, and this is the only place that difference is visible.
       const detail = fields.map((f) => `${f} (${readFrom[f]})`).join(", ");
+      // Why a field is empty, from both sides: what the page would not give us,
+      // and what the server would not accept.
+      const skippedHere = Object.entries(payload.skipped ?? {});
+      const skippedThere = Object.entries(res.data?.contactReasons ?? {});
+      const why = [...skippedHere, ...skippedThere]
+        .filter(([f]) => f !== "photoUrl")
+        .map(([f, r]) => `${f}: ${String(r).replace(/_/g, " ")}`)
+        .join("; ");
+      const contactLine = contactNote ? ` Contact info: ${contactNote.replace(/_/g, " ")}.` : "";
       const photo = photoNote;
       // A thin read is a FAILURE being reported as a success. The name alone is
       // what a broken extraction layer leaves behind — it comes from the page
@@ -312,7 +362,7 @@ $("capture").addEventListener("click", async () => {
           ? `${what}, but only the URL could be read — LinkedIn's layout has changed.`
           : thin
             ? `${what}, but only ${detail} came through — the rest of the profile could not be read.`
-            : `${what} · read ${detail}.${photo}`,
+            : `${what} · read ${detail}.${photo}${contactLine}${why ? ` Skipped — ${why}.` : ""}`,
         fields.length === 0 || thin || photo ? "err" : "ok",
       );
     } else if (res?.error === "not_configured") {

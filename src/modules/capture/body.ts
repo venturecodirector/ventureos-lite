@@ -77,6 +77,29 @@ export const captureBodySchema = z.object({
   phone: looseString(60),
   /** A personal or company site the profile links to, if it links to one. */
   websiteUrl: looseUrl(500),
+  /**
+   * The contact-info overlay, as READ — not as decided.
+   *
+   * The extension sends every candidate with the label LinkedIn put on it, and
+   * the server picks and normalises. Choosing which of three websites is the
+   * company's, and turning "06 1 234 5678" into E.164, are RULES; rules that
+   * exist in two places drift, and an extension already installed on somebody's
+   * machine is the copy that cannot be corrected.
+   */
+  contact: z
+    .object({
+      emails: z.array(z.string().max(320)).max(5).optional(),
+      phones: z
+        .array(z.object({ raw: z.string().max(60), qualifier: z.string().max(120).nullish() }))
+        .max(5)
+        .optional(),
+      websites: z
+        .array(z.object({ url: z.string().max(500), qualifier: z.string().max(120).nullish() }))
+        .max(5)
+        .optional(),
+    })
+    .nullish()
+    .transform((v) => v ?? undefined),
   bio: looseString(8000),
   photoUrl: looseUrl(2000),
   posts: z

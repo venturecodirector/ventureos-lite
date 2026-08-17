@@ -7,6 +7,7 @@ import {
   mergeCapturedNotes,
 } from "../../src/modules/capture/notes";
 import { hasAnalyzableText, researchSource } from "../../src/modules/leads/preparse";
+import { resolveContact } from "../../src/modules/capture/resolve-contact";
 
 /**
  * The join between a capture and a research run.
@@ -37,18 +38,19 @@ describe("a capture written as notes", () => {
   it("produces text a research call will accept", () => {
     // The whole point: this is the check that used to fail on every captured
     // lead, because the string being checked was empty.
-    expect(hasAnalyzableText(composeCapturedNotes(body()))).toBe(true);
+    expect(hasAnalyzableText(composeCapturedNotes(body(), resolveContact(body())))).toBe(true);
   });
 
   it("keeps every field the extension managed to read", () => {
-    const notes = composeCapturedNotes(body());
+    const notes = composeCapturedNotes(body(), resolveContact(body()));
     for (const expected of [
       "Nagy Anna",
       "Ügyvezető @ Danubia Fogászat",
       "Danubia Fogászat Kft.",
       "Budapest, Hungary",
       "anna@danubia.hu",
-      "+36 30 123 4567",
+      // Normalized: the notes carry the same value as the lead's phone column.
+      "+36301234567",
       "danubia-fogaszat.hu",
       "Fogászati rendelőt vezetek",
       "Új CBCT-t",
@@ -58,7 +60,7 @@ describe("a capture written as notes", () => {
   });
 
   it("omits what was not read rather than writing empty labels", () => {
-    const notes = composeCapturedNotes(body({ email: null, phone: null, bio: null, posts: [] }));
+    const notes = composeCapturedNotes(body({ email: null, phone: null, bio: null, posts: [] }), resolveContact(body({ email: null, phone: null, bio: null, posts: [] })));
     expect(notes).not.toContain("Email:");
     expect(notes).not.toContain("About:");
     expect(notes).toContain("Nagy Anna");
@@ -67,23 +69,19 @@ describe("a capture written as notes", () => {
   it("is worth analysing on a bio alone, and not on a bare URL", () => {
     expect(
       hasAnalyzableText(
-        composeCapturedNotes(
-          body({ name: null, headline: null, companyName: null, location: null, jobTitle: null, email: null, phone: null, websiteUrl: null, posts: [] }),
-        ),
+        composeCapturedNotes(body({ name: null, headline: null, companyName: null, location: null, jobTitle: null, email: null, phone: null, websiteUrl: null, posts: [] }), resolveContact(body({ name: null, headline: null, companyName: null, location: null, jobTitle: null, email: null, phone: null, websiteUrl: null, posts: [] }))),
       ),
     ).toBe(true);
     expect(
       hasAnalyzableText(
-        composeCapturedNotes(
-          body({ name: null, headline: null, companyName: null, location: null, jobTitle: null, email: null, phone: null, websiteUrl: null, bio: null, posts: [] }),
-        ),
+        composeCapturedNotes(body({ name: null, headline: null, companyName: null, location: null, jobTitle: null, email: null, phone: null, websiteUrl: null, bio: null, posts: [] }), resolveContact(body({ name: null, headline: null, companyName: null, location: null, jobTitle: null, email: null, phone: null, websiteUrl: null, bio: null, posts: [] }))),
       ),
     ).toBe(false);
   });
 });
 
 describe("merging a re-capture into notes somebody has been using", () => {
-  const block = composeCapturedNotes(body());
+  const block = composeCapturedNotes(body(), resolveContact(body()));
 
   it("writes the block outright when there is nothing there", () => {
     expect(mergeCapturedNotes(null, block)).toBe(block);
@@ -97,7 +95,7 @@ describe("merging a re-capture into notes somebody has been using", () => {
   });
 
   it("replaces the previous capture rather than stacking a second one", () => {
-    const older = mergeCapturedNotes("Met her at the trade fair.", composeCapturedNotes(body({ bio: "Régi szöveg." })));
+    const older = mergeCapturedNotes("Met her at the trade fair.", composeCapturedNotes(body({ bio: "Régi szöveg." }), resolveContact(body({ bio: "Régi szöveg." }))));
     const merged = mergeCapturedNotes(older, block);
     expect(merged.split(CAPTURE_BEGIN)).toHaveLength(2);
     expect(merged.split(CAPTURE_END)).toHaveLength(2);
@@ -107,7 +105,7 @@ describe("merging a re-capture into notes somebody has been using", () => {
 
   it("keeps text written on BOTH sides of the captured block", () => {
     const before = `Above the block.\n\n${block}\n\nBelow the block.`;
-    const merged = mergeCapturedNotes(before, composeCapturedNotes(body({ bio: "Friss szöveg." })));
+    const merged = mergeCapturedNotes(before, composeCapturedNotes(body({ bio: "Friss szöveg." }), resolveContact(body({ bio: "Friss szöveg." }))));
     expect(merged).toContain("Above the block.");
     expect(merged).toContain("Below the block.");
     expect(merged).toContain("Friss szöveg.");
