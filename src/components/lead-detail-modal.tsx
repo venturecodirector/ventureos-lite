@@ -17,6 +17,7 @@ import {
 } from "@/modules/deals/actions";
 import { PIPELINE_STAGES, SIDE_STAGES, STAGE_LABELS } from "@/modules/pipeline/transitions";
 import { LeadAvatar } from "./lead-avatar";
+import { CustomFieldsEditor } from "./custom-fields-editor";
 import { Modal } from "./modal";
 
 const INPUT =
@@ -506,6 +507,16 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
             {detail.stageReason && (
               <p className="text-[11.5px] text-muted">Reason: {detail.stageReason}</p>
             )}
+          </section>
+
+          <section className="grid gap-2 rounded-[11px] border border-line p-3">
+            <p className={LABEL}>Fields</p>
+            <CustomFieldsEditor
+              entity="lead"
+              entityId={detail.id}
+              defs={detail.customFieldDefs}
+              values={detail.customFieldValues}
+            />
           </section>
 
           <section className="grid gap-2 rounded-[11px] border border-line p-3">

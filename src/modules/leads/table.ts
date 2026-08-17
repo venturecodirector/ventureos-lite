@@ -10,6 +10,8 @@
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { companyUnderProceedings, riskLabel } from "@/modules/registry/risk";
 import { gateThresholdFromConfig } from "./scoring";
+import { listFieldDefsWith } from "@/modules/fields/store";
+import { readValues, type FieldDef } from "@/modules/fields/types";
 import {
   applyFilters,
   applySort,
@@ -55,6 +57,8 @@ export interface LeadTableData {
   totalUnfiltered: number;
   threshold: number;
   facets: LeadFacets;
+  /** Owner-defined lead fields (P5/1) — columns, filters and cell rendering. */
+  customFields: FieldDef[];
 }
 
 type LoadedLead = Awaited<ReturnType<typeof fetchLeads>>[number];
@@ -77,6 +81,7 @@ async function fetchLeads(workspaceId: string) {
       ownerId: true,
       lastActivityAt: true,
       createdAt: true,
+      customFields: true,
       company: {
         select: {
           name: true,
@@ -114,6 +119,7 @@ function toRow(l: LoadedLead, ownerNames: Map<string, string>): LeadTableRow {
     ownerName: l.ownerId ? (ownerNames.get(l.ownerId) ?? null) : null,
     lastActivityAt: l.lastActivityAt,
     createdAt: l.createdAt,
+    customFields: readValues(l.customFields),
     riskLabel: companyUnderProceedings(statusFlags) ? riskLabel(statusFlags) : null,
   };
 }
@@ -160,19 +166,20 @@ export async function loadLeadsTable(
     now?: Date;
   },
 ): Promise<LeadTableData> {
-  const [leads, owners, ws] = await Promise.all([
+  const [leads, owners, ws, customFields] = await Promise.all([
     fetchLeads(workspaceId),
     workspaceMembers(workspaceId),
     prismaUnsafe.workspace.findUnique({
       where: { id: workspaceId },
       select: { icpConfig: true },
     }),
+    listFieldDefsWith(getWorkspaceClient(workspaceId), "lead"),
   ]);
 
   const ownerNames = new Map(owners.map((o) => [o.id, o.name]));
   const all = leads.map((l) => toRow(l, ownerNames));
 
-  const matched = applyFilters(all, opts.filters, opts.now ?? new Date());
+  const matched = applyFilters(all, opts.filters, opts.now ?? new Date(), customFields);
   const sorted = applySort(matched, opts.sort);
   const page = paginate(sorted, opts.page, opts.pageSize ?? DEFAULT_PAGE_SIZE);
 
@@ -188,6 +195,7 @@ export async function loadLeadsTable(
     // its other options the moment you pick one cannot be used to change your
     // mind, which is most of what filtering is.
     facets: buildFacets(all, owners),
+    customFields,
   };
 }
 
@@ -202,7 +210,10 @@ export async function matchingLeadIds(
   filters: FilterSet,
   now: Date = new Date(),
 ): Promise<string[]> {
-  const leads = await fetchLeads(workspaceId);
+  const [leads, customFields] = await Promise.all([
+    fetchLeads(workspaceId),
+    listFieldDefsWith(getWorkspaceClient(workspaceId), "lead"),
+  ]);
   const rows = leads.map((l) => toRow(l, new Map()));
-  return applyFilters(rows, filters, now).map((r) => r.id);
+  return applyFilters(rows, filters, now, customFields).map((r) => r.id);
 }

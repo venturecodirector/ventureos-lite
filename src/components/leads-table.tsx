@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { moveLeadStage, runResearch } from "@/modules/leads/actions";
-import { COLUMNS, columnDef } from "@/modules/leads/columns";
+import { columnsWithCustom } from "@/modules/leads/columns";
 import type { FilterSet, SortField, SortSpec } from "@/modules/leads/filters";
 import type { LeadFacets, LeadTableRow } from "@/modules/leads/table";
 import { serializeColumns, serializeFilterSet, serializeSort } from "@/modules/leads/view-params";
@@ -15,6 +15,12 @@ import { LeadDetailModal } from "./lead-detail-modal";
 import { EnrichDialog, OverrideDialog } from "./lead-dialogs";
 import { LeadAvatar } from "./lead-avatar";
 import { RiskChip } from "./risk-chip";
+import {
+  customFieldKey,
+  formatValue,
+  isCustomFieldRef,
+  type FieldDef,
+} from "@/modules/fields/types";
 
 /**
  * The leads table (playbook-v2 P3/2): selectable columns, sorting, pagination
@@ -32,6 +38,8 @@ export interface LeadsTableProps {
   sort: SortSpec;
   filters: FilterSet;
   facets: LeadFacets;
+  /** Owner-defined lead fields (P5/1): extra columns and filter conditions. */
+  customFields?: FieldDef[];
   threshold: number;
   page: number;
   pageCount: number;
@@ -45,6 +53,26 @@ export interface LeadsTableProps {
   canDelete: boolean;
   /** `exports.run` grant (spec §3). */
   canExport: boolean;
+}
+
+/** One custom-field cell, formatted by its definition (P5/1). */
+function CustomCell({ def, value }: { def?: FieldDef; value?: unknown }) {
+  if (!def) return <span className="text-muted">—</span>;
+  const text = formatValue(def, value as never);
+  if (!text) return <span className="text-muted">—</span>;
+  if (def.type === "URL") {
+    return (
+      <a
+        href={text}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="text-accent-ink underline-offset-2 hover:underline"
+      >
+        {text.replace(/^https?:\/\//, "")}
+      </a>
+    );
+  }
+  return <span className="text-[12.5px]">{text}</span>;
 }
 
 function Notches({ score }: { score: number | null }) {
@@ -100,6 +128,7 @@ export function LeadsTable(props: LeadsTableProps) {
     canCurateViews,
     canDelete,
     canExport,
+    customFields = [],
   } = props;
   const router = useRouter();
   const pathname = usePathname();
@@ -119,9 +148,16 @@ export function LeadsTable(props: LeadsTableProps) {
    */
   const [allMatching, setAllMatching] = useState(false);
 
+  // Built-ins plus this workspace's own fields (P5/1).
+  const allColumns = useMemo(() => columnsWithCustom(customFields), [customFields]);
+
   const visible = useMemo(
-    () => columns.map(columnDef).filter((c): c is NonNullable<typeof c> => !!c),
-    [columns],
+    () => {
+      return columns
+        .map((key) => allColumns.find((c) => c.key === key))
+        .filter((c): c is NonNullable<typeof c> => !!c);
+    },
+    [columns, allColumns],
   );
 
   /**
@@ -226,6 +262,7 @@ export function LeadsTable(props: LeadsTableProps) {
         <LeadFilterBuilder
           value={filters}
           facets={facets}
+          customFields={customFields}
           onApply={applyFilters}
           activeCount={filters.conditions.length}
         />
@@ -247,7 +284,7 @@ export function LeadsTable(props: LeadsTableProps) {
               data-testid="column-panel"
               className="absolute right-0 top-[calc(100%+8px)] z-30 w-[240px] rounded-card border border-line bg-[#050A25] p-2 shadow-glow-lg"
             >
-              {COLUMNS.map((c) => {
+              {allColumns.map((c) => {
                 const on = columns.includes(c.key);
                 const required = c.key === "contact";
                 return (
@@ -454,6 +491,12 @@ export function LeadsTable(props: LeadsTableProps) {
                       )}
                       {c.key === "created" && (
                         <span className="text-[12px] text-muted">{relativeDays(l.createdAt)}</span>
+                      )}
+                      {isCustomFieldRef(c.key) && (
+                        <CustomCell
+                          def={customFields.find((d) => d.key === customFieldKey(c.key))}
+                          value={l.customFields?.[customFieldKey(c.key)]}
+                        />
                       )}
                     </td>
                   ))}

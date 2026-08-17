@@ -46,6 +46,12 @@ export interface FilterableLead {
   ownerId: string | null;
   lastActivityAt: Date | null;
   createdAt: Date;
+  /**
+   * Owner-defined field values, keyed by definition key (P5/1). Absent on rows
+   * loaded by callers that do not care about them, which is why every custom
+   * branch below treats "no object" the same as "no value".
+   */
+  customFields?: Record<string, unknown>;
 }
 
 export const FILTER_FIELDS = [
@@ -85,7 +91,12 @@ export const FILTER_OPERATORS = [
 export type FilterOperator = (typeof FILTER_OPERATORS)[number];
 
 export interface FilterCondition {
-  field: FilterField;
+  /**
+   * A built-in FilterField, or `cf:<key>` for an Owner-defined field (P5/1).
+   * Typed as a plain string because the custom set is per workspace and only
+   * knowable at runtime; `evaluateCondition` refuses anything it cannot resolve.
+   */
+  field: FilterField | string;
   operator: FilterOperator;
   value?: string | number | null;
   values?: string[];
@@ -149,6 +160,53 @@ export const OPERATOR_LABELS: Record<FilterOperator, string> = {
   is_false: "no",
 };
 
+/**
+ * The operators a field offers, built-in or custom.
+ *
+ * One function rather than two lookups at every call site: the filter builder,
+ * the URL parser and the saved-view validator all have to agree on what a
+ * coherent condition is, and three copies of that rule would eventually be two.
+ */
+export function operatorsForField(
+  field: string,
+  customFields?: readonly CustomFieldSpec[],
+): readonly FilterOperator[] {
+  if (field.startsWith("cf:")) {
+    const def = customFields?.find((d) => d.key === field.slice(3));
+    return def ? CUSTOM_OPERATORS_BY_TYPE[def.type] : [];
+  }
+  return OPERATORS_BY_FIELD[field as FilterField] ?? [];
+}
+
+/** What the chip and the dropdown call this field. */
+export function labelForField(
+  field: string,
+  customFields?: ReadonlyArray<CustomFieldSpec & { label?: string }>,
+): string {
+  if (field.startsWith("cf:")) {
+    const key = field.slice(3);
+    return customFields?.find((d) => d.key === key)?.label ?? key.replace(/_/g, " ");
+  }
+  return FIELD_LABELS[field as FilterField] ?? field;
+}
+
+/**
+ * Mirrors `fields/types.ts` OPERATORS_BY_TYPE.
+ *
+ * Duplicated deliberately rather than imported: `filters.ts` is the engine and
+ * has no dependencies, and importing the fields module here would make the pure
+ * filter unit tests pull in zod. A unit test asserts the two stay identical.
+ */
+const CUSTOM_OPERATORS_BY_TYPE: Record<CustomFieldSpec["type"], readonly FilterOperator[]> = {
+  TEXT: ["contains", "is", "is_set", "is_not_set"],
+  URL: ["contains", "is", "is_set", "is_not_set"],
+  NUMBER: ["between", "gte", "lte", "is_set", "is_not_set"],
+  DATE: ["within_days", "older_than_days", "is_set", "is_not_set"],
+  SELECT: ["is", "is_not", "is_any_of", "is_set", "is_not_set"],
+  MULTISELECT: ["has_any_of", "has_all_of", "has_none_of", "is_set", "is_not_set"],
+  CHECKBOX: ["is_true", "is_false"],
+};
+
 // ---- helpers --------------------------------------------------------------
 
 /** Present means non-null AND not whitespace — a blank column is absence. */
@@ -193,8 +251,21 @@ export function evaluateCondition(
   lead: FilterableLead,
   c: FilterCondition,
   now: Date,
+  customFields?: readonly CustomFieldSpec[],
 ): boolean {
   const values = c.values ?? [];
+
+  // Owner-defined fields (P5/1). Evaluated by the definition's TYPE rather than
+  // by the operator alone, so "contains" on a multi-select cannot quietly do
+  // something a text field's "contains" would.
+  if (typeof c.field === "string" && c.field.startsWith("cf:")) {
+    const key = c.field.slice(3);
+    const def = customFields?.find((d) => d.key === key);
+    // An unknown field is inert rather than exclusionary: a saved view written
+    // before a field was archived must not silently empty the table.
+    if (!def) return true;
+    return evaluateCustom(lead.customFields?.[key], def, c, now);
+  }
 
   switch (c.field) {
     case "text": {
@@ -287,6 +358,94 @@ export function evaluateCondition(
   }
 }
 
+/** The slice of a field definition the evaluator needs. */
+export interface CustomFieldSpec {
+  key: string;
+  type: "TEXT" | "NUMBER" | "DATE" | "SELECT" | "MULTISELECT" | "CHECKBOX" | "URL";
+}
+
+/**
+ * One custom-field condition.
+ *
+ * Deliberately mirrors the built-in branches rather than sharing them: the
+ * built-ins read named properties, and threading a dynamic accessor through
+ * them would have made every existing case harder to read for the benefit of
+ * one new one.
+ */
+function evaluateCustom(
+  raw: unknown,
+  def: CustomFieldSpec,
+  c: FilterCondition,
+  now: Date,
+): boolean {
+  const set = !(
+    raw === null ||
+    raw === undefined ||
+    (typeof raw === "string" && raw.trim() === "") ||
+    (Array.isArray(raw) && raw.length === 0)
+  );
+  if (c.operator === "is_set") return set;
+  if (c.operator === "is_not_set") return !set;
+
+  switch (def.type) {
+    case "CHECKBOX": {
+      const on = raw === true;
+      return c.operator === "is_false" ? !on : on;
+    }
+    case "NUMBER": {
+      if (!set) return false;
+      const n = typeof raw === "number" ? raw : Number(raw);
+      if (!Number.isFinite(n)) return false;
+      if (c.operator === "between") {
+        const min = asNumber(c.min);
+        const max = asNumber(c.max);
+        if (min === null && max === null) return true;
+        return (min === null || n >= min) && (max === null || n <= max);
+      }
+      const bound = asNumber(c.value);
+      if (bound === null) return true;
+      if (c.operator === "gte") return n >= bound;
+      if (c.operator === "lte") return n <= bound;
+      return true;
+    }
+    case "DATE": {
+      if (!set) return c.operator === "older_than_days";
+      const at = new Date(String(raw));
+      if (Number.isNaN(at.getTime())) return false;
+      const days = asNumber(c.value);
+      if (days === null) return true;
+      const age = ageInDays(at, now);
+      if (age === null) return false;
+      return c.operator === "within_days" ? age <= days : age > days;
+    }
+    case "MULTISELECT": {
+      const held = (Array.isArray(raw) ? raw : []).map((v) => foldText(String(v)));
+      const wanted = (c.values ?? []).map(foldText);
+      if (wanted.length === 0) return true;
+      if (c.operator === "has_all_of") return wanted.every((w) => held.includes(w));
+      if (c.operator === "has_none_of") return !wanted.some((w) => held.includes(w));
+      return wanted.some((w) => held.includes(w));
+    }
+    case "SELECT": {
+      const actual = set ? String(raw) : null;
+      if (c.operator === "is_any_of") {
+        const wanted = c.values ?? [];
+        return wanted.length === 0 || (actual !== null && wanted.includes(actual));
+      }
+      if (!present(String(c.value ?? ""))) return true;
+      const match = actual === String(c.value);
+      return c.operator === "is_not" ? !match : match;
+    }
+    default: {
+      // TEXT and URL.
+      const actual = set ? String(raw) : null;
+      if (!present(String(c.value ?? ""))) return true;
+      if (c.operator === "is") return foldedEquals(actual, String(c.value));
+      return foldedContains(actual, String(c.value));
+    }
+  }
+}
+
 /**
  * Does this lead satisfy the set?
  *
@@ -295,20 +454,26 @@ export function evaluateCondition(
  * someone flips the match mode before adding a condition. No filter means no
  * filtering.
  */
-export function matchesFilters(lead: FilterableLead, set: FilterSet, now: Date): boolean {
+export function matchesFilters(
+  lead: FilterableLead,
+  set: FilterSet,
+  now: Date,
+  customFields?: readonly CustomFieldSpec[],
+): boolean {
   if (set.conditions.length === 0) return true;
   return set.match === "any"
-    ? set.conditions.some((c) => evaluateCondition(lead, c, now))
-    : set.conditions.every((c) => evaluateCondition(lead, c, now));
+    ? set.conditions.some((c) => evaluateCondition(lead, c, now, customFields))
+    : set.conditions.every((c) => evaluateCondition(lead, c, now, customFields));
 }
 
 export function applyFilters<T extends FilterableLead>(
   leads: T[],
   set: FilterSet,
   now: Date = new Date(),
+  customFields?: readonly CustomFieldSpec[],
 ): T[] {
   if (set.conditions.length === 0) return [...leads];
-  return leads.filter((l) => matchesFilters(l, set, now));
+  return leads.filter((l) => matchesFilters(l, set, now, customFields));
 }
 
 // ---- sorting --------------------------------------------------------------

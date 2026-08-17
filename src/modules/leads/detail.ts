@@ -6,6 +6,8 @@ import type { Lang } from "@prisma/client";
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { MAX_ICP_SCORE } from "@/modules/leads/scoring";
+import { listFieldDefsWith } from "@/modules/fields/store";
+import { readValues, type FieldDef, type FieldValues } from "@/modules/fields/types";
 
 /**
  * Lead detail for the pipeline card modal (spec §4.5).
@@ -50,6 +52,9 @@ export interface LeadDetail {
   personBrief: string | null;
   /** The About text the capture read, which the brief was written from. */
   bio: string | null;
+  /** Owner-defined field definitions and this lead's values (P5/1). */
+  customFieldDefs: FieldDef[];
+  customFieldValues: FieldValues;
   timeline: TimelineEntry[];
 }
 
@@ -131,6 +136,8 @@ export async function getLeadDetail(leadId: string): Promise<LeadDetail | null> 
     avatarPath: lead.avatarPath ?? null,
     personBrief: lead.personBrief ?? null,
     bio: lead.bio ?? null,
+    customFieldDefs: await listFieldDefsWith(db, "lead"),
+    customFieldValues: readValues(lead.customFields),
     timeline: timeline.slice(0, 60),
   };
 }

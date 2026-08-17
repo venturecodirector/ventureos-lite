@@ -24,6 +24,12 @@ export const CSV_FIELDS = [
 
 export type CsvField = (typeof CSV_FIELDS)[number]["key"];
 
+/**
+ * A mappable target: a built-in field, or `cf:<key>` for an Owner-defined one
+ * (P5/1). A plain string because the custom set is per workspace.
+ */
+export type CsvTarget = CsvField | string;
+
 export const DELIMITERS = [",", ";", "\t"] as const;
 export type Delimiter = (typeof DELIMITERS)[number];
 
@@ -242,6 +248,10 @@ export interface CsvCandidate {
   linkedinUrl?: string;
   companyName?: string;
   companyDomain?: string;
+  /** Raw values for Owner-defined fields, keyed by definition key (P5/1).
+   *  Coerced and validated server-side against the definitions; a cell is a
+   *  string here because a spreadsheet has no types. */
+  customFields?: Record<string, string>;
 }
 
 /**
@@ -251,8 +261,9 @@ export interface CsvCandidate {
  */
 export function toCandidates(
   parsed: ParsedCsv,
-  mapping: Partial<Record<CsvField, number>>,
+  mapping: Partial<Record<CsvTarget, number>>,
 ): CsvCandidate[] {
+  const customTargets = Object.keys(mapping).filter((k) => k.startsWith("cf:"));
   return parsed.rows.map((row) => {
     const c: CsvCandidate = {};
     for (const { key } of CSV_FIELDS) {
@@ -260,6 +271,13 @@ export function toCandidates(
       if (idx === undefined) continue;
       const value = (row[idx] ?? "").trim();
       if (value) c[key] = value;
+    }
+    for (const target of customTargets) {
+      const idx = mapping[target];
+      if (idx === undefined) continue;
+      const value = (row[idx] ?? "").trim();
+      if (!value) continue;
+      c.customFields = { ...(c.customFields ?? {}), [target.slice(3)]: value };
     }
     return c;
   });
@@ -277,7 +295,7 @@ export interface MappingProblem {
 /** Blocking problems with the current mapping, shown before the dedupe step. */
 export function validateMapping(
   parsed: ParsedCsv,
-  mapping: Partial<Record<CsvField, number>>,
+  mapping: Partial<Record<CsvTarget, number>>,
 ): MappingProblem[] {
   const problems: MappingProblem[] = [];
   const mapped = Object.values(mapping).filter((v) => v !== undefined);

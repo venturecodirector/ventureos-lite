@@ -19,6 +19,8 @@
 
 import type { Stage } from "@prisma/client";
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
+import { listFieldDefsWith } from "@/modules/fields/store";
+import { readValues } from "@/modules/fields/types";
 import { eraseLeadData } from "@/modules/gdpr/erase";
 import { canQualify, type Qualification } from "../inbox/qualification";
 import { requiresReason } from "../pipeline/transitions";
@@ -255,9 +257,13 @@ export async function exportLeadsCsv(
       ownerId: true,
       lastActivityAt: true,
       createdAt: true,
+      customFields: true,
       company: { select: { name: true, industry: true, city: true } },
     },
   });
+  // The workspace's own fields, so an exported custom column carries its label
+  // and its formatted value rather than an empty cell (P5/1).
+  const customFields = await listFieldDefsWith(db, "lead");
 
   const ownerIds = [...new Set(rows.map((r) => r.ownerId).filter((v): v is string => !!v))];
   const owners = ownerIds.length
@@ -283,10 +289,12 @@ export async function exportLeadsCsv(
       signals: Array.isArray(r.signals) ? (r.signals as string[]) : [],
       source: r.source,
       ownerName: r.ownerId ? (ownerNames.get(r.ownerId) ?? null) : null,
+      customFields: readValues(r.customFields),
       lastActivityAt: r.lastActivityAt,
       createdAt: r.createdAt,
     })),
     columns,
+    customFields,
   );
 }
 

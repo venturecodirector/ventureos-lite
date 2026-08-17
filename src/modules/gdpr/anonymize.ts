@@ -27,6 +27,14 @@ export interface AnonymizedPatch {
   bio: null;
   personBrief: null;
   avatarPath: null;
+  /**
+   * Owner-defined values go too (v2 P5/1). A custom field is free-form by
+   * construction — whatever a workspace decided to record about a person ends
+   * up here, so keeping it would defeat the anonymization entirely. Cleared
+   * wholesale rather than field by field, because a definition can be added
+   * after the sweep last ran and there is no list of "safe" custom fields.
+   */
+  customFields: null;
   anonymizedAt: Date;
 }
 
@@ -49,6 +57,7 @@ export function pseudonymizeLead(lead: AnonymizableLead, nowMs: number): Anonymi
     bio: null,
     personBrief: null,
     avatarPath: null,
+    customFields: null,
     // Preserve the original timestamp so repeated runs are stable.
     anonymizedAt: lead.anonymizedAt ?? new Date(nowMs),
   };

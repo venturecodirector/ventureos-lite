@@ -12,6 +12,14 @@ export const GRANTS = [
   "templates.edit",
   "signal_engine.approve",
   "exports.run",
+  /// Owner-defined fields (v2 P5/1). Adding a REQUIRED field changes what every
+  /// form in the workspace demands and archiving one changes what every table
+  /// shows, so the definition set is a capability rather than an edit.
+  "fields.manage",
+  /// Merging two companies or two leads (v2 P5/2). Irreversible after 30 days,
+  /// and it moves every activity, document and deal off one record onto
+  /// another — a mistake here is not a typo, it is two clients becoming one.
+  "data.merge",
 ] as const;
 
 export type Grant = (typeof GRANTS)[number];

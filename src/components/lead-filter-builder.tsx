@@ -6,6 +6,8 @@ import {
   FILTER_FIELDS,
   OPERATORS_BY_FIELD,
   OPERATOR_LABELS,
+  labelForField,
+  operatorsForField,
   type FilterCondition,
   type FilterField,
   type FilterOperator,
@@ -13,6 +15,7 @@ import {
 } from "@/modules/leads/filters";
 import { describeCondition, MAX_CONDITIONS } from "@/modules/leads/view-params";
 import type { LeadFacets } from "@/modules/leads/table";
+import { customFieldRef, isCustomFieldRef, type FieldDef } from "@/modules/fields/types";
 
 /**
  * The filter builder (playbook-v2 P3/2): combinable field/operator/value
@@ -32,19 +35,35 @@ function defaultCondition(): FilterCondition {
 /** Which values a given operator needs, so the row renders the right input. */
 type InputKind = "none" | "number" | "range" | "text" | "one" | "many";
 
-function inputKind(field: FilterField, operator: FilterOperator): InputKind {
+function inputKind(
+  field: string,
+  operator: FilterOperator,
+  customFields: FieldDef[],
+): InputKind {
   if (["is_set", "is_not_set", "is_true", "is_false"].includes(operator)) return "none";
   if (operator === "between") return "range";
   if (["gte", "lte", "within_days", "older_than_days"].includes(operator)) return "number";
   if (["is_any_of", "has_any_of", "has_all_of", "has_none_of"].includes(operator)) return "many";
+  if (isCustomFieldRef(field)) {
+    const def = customFields.find((d) => customFieldRef(d.key) === field);
+    return def?.type === "SELECT" ? "one" : "text";
+  }
   if (["stage", "source", "owner"].includes(field)) return "one";
   return "text";
 }
 
 /** The option list a field draws on, when it has one. */
-function optionsFor(field: FilterField, facets: LeadFacets): Array<{ value: string; label: string }> {
+function optionsFor(
+  field: string,
+  facets: LeadFacets,
+  customFields: FieldDef[],
+): Array<{ value: string; label: string }> {
   const plain = (values: string[]) =>
     values.map((v) => ({ value: v, label: v.toLowerCase().replace(/_/g, " ") }));
+  if (isCustomFieldRef(field)) {
+    const def = customFields.find((d) => customFieldRef(d.key) === field);
+    return def?.options ?? [];
+  }
   switch (field) {
     case "stage":
       return plain(facets.stages);
@@ -70,23 +89,28 @@ const inputClass = `${selectClass} min-w-0`;
 function ConditionRow({
   condition,
   facets,
+  customFields,
   onChange,
   onRemove,
 }: {
   condition: FilterCondition;
   facets: LeadFacets;
+  customFields: FieldDef[];
   onChange: (next: FilterCondition) => void;
   onRemove: () => void;
 }) {
-  const operators = OPERATORS_BY_FIELD[condition.field] ?? [];
-  const kind = inputKind(condition.field, condition.operator);
-  const options = optionsFor(condition.field, facets);
+  const field = String(condition.field);
+  const specs = customFields.map((d) => ({ key: d.key, type: d.type, label: d.label }));
+  const operators = operatorsForField(field, specs);
+  const kind = inputKind(field, condition.operator, customFields);
+  const options = optionsFor(field, facets, customFields);
   const selected = condition.values ?? [];
 
-  function setField(field: FilterField) {
+  function setField(next: string) {
     // Operators are field-specific, so changing the field has to reset the rest
     // of the row — otherwise "stage is between 3 and 5" becomes representable.
-    onChange({ field, operator: OPERATORS_BY_FIELD[field][0]!, values: [] });
+    const ops = operatorsForField(next, specs);
+    onChange({ field: next, operator: ops[0]!, values: [] });
   }
 
   function toggleValue(value: string) {
@@ -104,8 +128,8 @@ function ConditionRow({
       <select
         aria-label="Field"
         data-testid="filter-field"
-        value={condition.field}
-        onChange={(e) => setField(e.target.value as FilterField)}
+        value={field}
+        onChange={(e) => setField(e.target.value)}
         className={selectClass}
       >
         {FILTER_FIELDS.map((f) => (
@@ -113,6 +137,17 @@ function ConditionRow({
             {FIELD_LABELS[f]}
           </option>
         ))}
+        {/* Owner-defined fields (P5/1), grouped so they read as a workspace's
+            own vocabulary rather than as more built-ins. */}
+        {customFields.length > 0 && (
+          <optgroup label="Custom fields">
+            {customFields.map((d) => (
+              <option key={d.key} value={customFieldRef(d.key)}>
+                {d.label}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
 
       <select
@@ -175,14 +210,14 @@ function ConditionRow({
           <input
             aria-label="Value"
             data-testid="filter-value"
-            list={options.length ? `facet-${condition.field}` : undefined}
+            list={options.length ? `facet-${field}` : undefined}
             value={condition.value == null ? "" : String(condition.value)}
             onChange={(e) => onChange({ ...condition, value: e.target.value })}
-            placeholder={condition.field === "text" ? "name, company, email…" : "value"}
+            placeholder={field === "text" ? "name, company, email…" : "value"}
             className={`${inputClass} w-48`}
           />
           {options.length > 0 && (
-            <datalist id={`facet-${condition.field}`}>
+            <datalist id={`facet-${field}`}>
               {options.map((o) => (
                 <option key={o.value} value={o.value} />
               ))}
@@ -249,11 +284,13 @@ function ConditionRow({
 export function LeadFilterBuilder({
   value,
   facets,
+  customFields = [],
   onApply,
   activeCount,
 }: {
   value: FilterSet;
   facets: LeadFacets;
+  customFields?: FieldDef[];
   onApply: (next: FilterSet) => void;
   activeCount: number;
 }) {
@@ -362,6 +399,7 @@ export function LeadFilterBuilder({
                 key={i}
                 condition={c}
                 facets={facets}
+                customFields={customFields}
                 onChange={(next) => update(i, next)}
                 onRemove={() => remove(i)}
               />

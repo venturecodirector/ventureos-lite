@@ -8,6 +8,12 @@
 
 import { foldText } from "../search/fuzzy";
 import { columnDef } from "./columns";
+import {
+  customFieldKey,
+  formatValue,
+  isCustomFieldRef,
+  type FieldDef,
+} from "@/modules/fields/types";
 
 /**
  * How many leads one server round trip touches.
@@ -140,9 +146,20 @@ export interface CsvLead {
   ownerName?: string | null;
   lastActivityAt?: Date | string | null;
   createdAt?: Date | string | null;
+  /** Owner-defined field values, keyed by definition key (P5/1). */
+  customFields?: Record<string, unknown>;
 }
 
-function cellValue(lead: CsvLead, column: string): string {
+function cellValue(lead: CsvLead, column: string, customFields: FieldDef[] = []): string {
+  // Owner-defined fields (P5/1). Formatted the same way the table cell is, so
+  // an export reads like the screen it came from rather than like the JSON
+  // underneath it.
+  if (isCustomFieldRef(column)) {
+    const key = customFieldKey(column);
+    const def = customFields.find((d) => d.key === key);
+    if (!def) return "";
+    return formatValue(def, lead.customFields?.[key] as never);
+  }
   const date = (v: Date | string | null | undefined) =>
     v ? new Date(v).toISOString().slice(0, 10) : "";
   switch (column) {
@@ -191,10 +208,18 @@ function escapeCsv(value: string): string {
  * Export exactly the columns on screen, in the order they are on screen — the
  * point of exporting a filtered, arranged table is to get that table.
  */
-export function buildLeadsCsv(leads: CsvLead[], columns: string[]): string {
-  const header = columns.map((key) => escapeCsv(columnDef(key)?.label ?? key)).join(",");
+export function buildLeadsCsv(
+  leads: CsvLead[],
+  columns: string[],
+  customFields: FieldDef[] = [],
+): string {
+  const label = (key: string) =>
+    isCustomFieldRef(key)
+      ? (customFields.find((d) => d.key === customFieldKey(key))?.label ?? customFieldKey(key))
+      : (columnDef(key)?.label ?? key);
+  const header = columns.map((key) => escapeCsv(label(key))).join(",");
   const lines = leads.map((lead) =>
-    columns.map((key) => escapeCsv(cellValue(lead, key))).join(","),
+    columns.map((key) => escapeCsv(cellValue(lead, key, customFields))).join(","),
   );
   return [header, ...lines].join("\n");
 }

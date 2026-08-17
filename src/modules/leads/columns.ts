@@ -8,6 +8,7 @@
  */
 
 import type { SortField } from "./filters";
+import { customFieldRef, type FieldDef } from "@/modules/fields/types";
 
 export interface ColumnDef {
   key: string;
@@ -60,4 +61,29 @@ export const REQUIRED_COLUMN = "contact";
 
 export function columnDef(key: string): ColumnDef | undefined {
   return COLUMNS.find((c) => c.key === key);
+}
+
+/**
+ * The built-in columns plus one per active Owner-defined field (P5/1).
+ *
+ * Archived fields are dropped from the PICKER but their values still render if
+ * a saved view already selected them — a column vanishing from under a saved
+ * view is more confusing than a column nobody can add again.
+ */
+export function columnsWithCustom(defs: FieldDef[]): ColumnDef[] {
+  return [
+    ...COLUMNS,
+    ...defs
+      .filter((d) => !d.archived)
+      .map((d) => ({
+        key: customFieldRef(d.key),
+        label: d.label,
+        secondary: true,
+      })),
+  ];
+}
+
+/** Every selectable column key, for `parseColumns`. */
+export function columnKeysWithCustom(defs: FieldDef[]): string[] {
+  return columnsWithCustom(defs).map((c) => c.key);
 }

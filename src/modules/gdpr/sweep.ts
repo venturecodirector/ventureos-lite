@@ -1,6 +1,7 @@
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { prismaUnsafe, getWorkspaceClient, type WorkspaceClient } from "../../lib/db";
+import { Prisma } from "@prisma/client";
 import { pseudonymizeLead, shouldAnonymize } from "./anonymize";
 import { parseRetention } from "./retention";
 
@@ -33,7 +34,14 @@ export async function anonymizeLead(
   if (!lead) return false;
 
   const patch = pseudonymizeLead(lead, nowMs);
-  await db.lead.update({ where: { id: leadId }, data: patch });
+  await db.lead.update({
+    where: { id: leadId },
+    // `customFields` is a nullable Json column, and Prisma spells "write SQL
+    // NULL here" as DbNull rather than as `null` — passing `null` is a type
+    // error, and passing JsonNull would store the JSON literal `null`, which is
+    // a value rather than an absence.
+    data: { ...patch, customFields: Prisma.DbNull },
+  });
 
   // Clearing avatarPath is not enough — the image is a photograph of a person
   // and has to leave the disk too (P1/1f). Best effort: a file already gone is

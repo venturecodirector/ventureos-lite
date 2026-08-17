@@ -7,6 +7,8 @@ import { hasGrant, isOwner } from "@/lib/authz";
 import { loadLeadsTable } from "@/modules/leads/table";
 import { listViews } from "@/modules/leads/view-store";
 import { parseColumns, parseFilterSet, parseSort } from "@/modules/leads/view-params";
+import { listFieldDefs } from "@/modules/fields/store";
+import { columnKeysWithCustom } from "@/modules/leads/columns";
 
 // Reads tenant data per request — never statically cached.
 export const dynamic = "force-dynamic";
@@ -33,9 +35,12 @@ export default async function LeadsPage({
   const { workspaceId, userId } = await getActiveContext();
   const params = await searchParams;
 
-  const filters = parseFilterSet(first(params.f));
+  // The workspace's own fields decide which filter conditions and which
+  // columns are legal, so they are resolved before the parsers run (P5/1).
+  const customFields = await listFieldDefs(workspaceId, "lead");
+  const filters = parseFilterSet(first(params.f), customFields);
   const sort = parseSort(first(params.sort));
-  const columns = parseColumns(first(params.cols));
+  const columns = parseColumns(first(params.cols), columnKeysWithCustom(customFields));
   const page = Number(first(params.page) ?? 1);
 
   const [data, views, membership, owner, exporter] = await Promise.all([
@@ -61,6 +66,7 @@ export default async function LeadsPage({
             sort={sort}
             filters={filters}
             facets={data.facets}
+            customFields={data.customFields}
             threshold={data.threshold}
             page={data.page}
             pageCount={data.pageCount}

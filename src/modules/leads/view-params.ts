@@ -19,9 +19,11 @@ import {
   FIELD_LABELS,
   FILTER_FIELDS,
   FILTER_OPERATORS,
-  OPERATORS_BY_FIELD,
   OPERATOR_LABELS,
   SORT_FIELDS,
+  labelForField,
+  operatorsForField,
+  type CustomFieldSpec,
   type FilterCondition,
   type FilterField,
   type FilterSet,
@@ -39,7 +41,11 @@ export const MAX_CONDITIONS = 25;
 const MAX_VALUES = 50;
 
 export const conditionSchema = z.object({
-  field: z.enum(FILTER_FIELDS),
+  // A built-in field name, or `cf:<key>` for an Owner-defined one (P5/1).
+  // Coherence against the workspace's actual definitions is checked in
+  // `conditionIsCoherent`, which needs them passed in; the schema only bounds
+  // the shape so a hostile string cannot become a giant key.
+  field: z.union([z.enum(FILTER_FIELDS), z.string().regex(/^cf:[a-z][a-z0-9_]{0,39}$/)]),
   operator: z.enum(FILTER_OPERATORS),
   value: z.union([z.string(), z.number(), z.null()]).optional(),
   values: z.array(z.string()).max(MAX_VALUES).optional(),
@@ -62,9 +68,17 @@ export const sortSchema = z.object({
   direction: z.enum(["asc", "desc"]),
 });
 
-/** An operator has to belong to the field, or the condition means nothing. */
-function conditionIsCoherent(c: FilterCondition): boolean {
-  const allowed = OPERATORS_BY_FIELD[c.field];
+/**
+ * An operator has to belong to the field, or the condition means nothing.
+ *
+ * When the caller has not supplied the workspace's custom-field definitions,
+ * a `cf:` condition is accepted on shape alone — the evaluator treats an
+ * unresolvable custom field as inert, so the worst case is a condition that
+ * filters nothing rather than a page that refuses to render.
+ */
+function conditionIsCoherent(c: FilterCondition, customFields?: readonly CustomFieldSpec[]): boolean {
+  if (typeof c.field === "string" && c.field.startsWith("cf:") && !customFields) return true;
+  const allowed = operatorsForField(c.field, customFields);
   return Array.isArray(allowed) && allowed.includes(c.operator);
 }
 
@@ -74,7 +88,10 @@ function conditionIsCoherent(c: FilterCondition): boolean {
  * Accepts a string (URL) or an already-parsed object (Prisma hands JSONB back
  * decoded), so callers do not have to remember which side they are on.
  */
-export function parseFilterSet(raw: string | Record<string, unknown> | null | undefined): FilterSet {
+export function parseFilterSet(
+  raw: string | Record<string, unknown> | null | undefined,
+  customFields?: readonly CustomFieldSpec[],
+): FilterSet {
   if (raw === null || raw === undefined || raw === "") return EMPTY_FILTER_SET;
 
   let candidate: unknown = raw;
@@ -98,7 +115,7 @@ export function parseFilterSet(raw: string | Record<string, unknown> | null | un
     const parsed = conditionSchema.safeParse(entry);
     if (!parsed.success) continue;
     const condition = parsed.data as FilterCondition;
-    if (!conditionIsCoherent(condition)) continue;
+    if (!conditionIsCoherent(condition, customFields)) continue;
     conditions.push(condition);
   }
   return { match, conditions };
@@ -130,15 +147,19 @@ export function serializeSort(sort: SortSpec): string {
  * something that identifies and opens it), and a selection with nothing
  * recognisable left falls back to the defaults rather than to an empty table.
  */
-export function parseColumns(raw: string | string[] | null | undefined): string[] {
+export function parseColumns(
+  raw: string | string[] | null | undefined,
+  extraKeys: readonly string[] = [],
+): string[] {
   if (raw === null || raw === undefined || raw === "") return [...DEFAULT_COLUMNS];
   const requested = Array.isArray(raw) ? raw : raw.split(",");
+  const allowed = new Set<string>([...COLUMN_KEYS, ...extraKeys]);
 
   const seen = new Set<string>();
   const keys: string[] = [];
   for (const key of requested) {
     const trimmed = String(key).trim();
-    if (!COLUMN_KEYS.includes(trimmed) || seen.has(trimmed)) continue;
+    if (!allowed.has(trimmed) || seen.has(trimmed)) continue;
     seen.add(trimmed);
     keys.push(trimmed);
   }
@@ -164,8 +185,11 @@ function humanValue(v: unknown): string {
  * so the same wording can be reused by the bulk-action confirmation, which has
  * to tell the user exactly what set it is about to act on.
  */
-export function describeCondition(c: FilterCondition): string {
-  const field = FIELD_LABELS[c.field as FilterField] ?? c.field;
+export function describeCondition(
+  c: FilterCondition,
+  customFields?: ReadonlyArray<CustomFieldSpec & { label?: string }>,
+): string {
+  const field = labelForField(String(c.field), customFields);
   const operator = OPERATOR_LABELS[c.operator] ?? c.operator;
 
   switch (c.operator) {
@@ -192,8 +216,11 @@ export function describeCondition(c: FilterCondition): string {
 }
 
 /** All the chips, for a one-line summary of the active filter. */
-export function describeFilterSet(set: FilterSet): string {
+export function describeFilterSet(
+  set: FilterSet,
+  customFields?: ReadonlyArray<CustomFieldSpec & { label?: string }>,
+): string {
   if (set.conditions.length === 0) return "No filter";
   const joiner = set.match === "any" ? " or " : " and ";
-  return set.conditions.map(describeCondition).join(joiner);
+  return set.conditions.map((c) => describeCondition(c, customFields)).join(joiner);
 }

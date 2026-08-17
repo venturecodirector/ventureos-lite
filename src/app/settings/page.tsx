@@ -8,6 +8,7 @@ import { SettingsEmail } from "@/components/settings-email";
 import { SettingsNotifications } from "@/components/settings-notifications";
 import { SettingsHealthRules } from "@/components/settings-health-rules";
 import { SettingsBranding } from "@/components/settings-branding";
+import { SettingsFields } from "@/components/settings-fields";
 import { SettingsExtension } from "@/components/settings-extension";
 import { ProposalQueue } from "@/components/proposal-queue";
 import { GdprPanel } from "@/components/gdpr-panel";
@@ -23,6 +24,7 @@ import { getIntegrations } from "@/modules/integrations/actions";
 import { getNotificationPreferences } from "@/modules/notifications/preference-actions";
 import { getHealthRules } from "@/modules/revenue/health-actions";
 import { getWorkspaceBrand } from "@/modules/workspaces/brand-actions";
+import { listFieldDefs } from "@/modules/fields/store";
 import { listCaptureTokens } from "@/modules/capture/actions";
 import { buildExtensionPackage } from "@/modules/extension/package";
 import { listProposals } from "@/modules/signal/actions";
@@ -67,6 +69,10 @@ export default async function SettingsPage({
   const healthRules = await getHealthRules();
   // Workspace-wide letterhead (audit-v2 item 6).
   const brand = await getWorkspaceBrand();
+  // Owner-defined fields (P5/1). Read for everyone — a BDR needs to see what
+  // the workspace's fields ARE even though only an Owner may change them.
+  const customFields = await listFieldDefs(workspaceId);
+  const canManageFields = await hasGrant("fields.manage");
   // Version only — the zip itself is built on demand by the download route.
   const extensionVersion = (await buildExtensionPackage()).version;
   return (
@@ -75,6 +81,7 @@ export default async function SettingsPage({
         <SecurityPanel status={securityStatus} focusPassword={security === "password"} />
         <SettingsNotifications initial={notificationPrefs} />
         <SettingsBranding initial={brand} isOwner={owner} />
+        <SettingsFields defs={customFields} canManage={canManageFields} />
         <SettingsHealthRules initial={healthRules} isOwner={owner} />
         <SettingsExtension tokens={captureTokens} version={extensionVersion} />
         {owner && (

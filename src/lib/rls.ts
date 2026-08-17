@@ -59,6 +59,7 @@ const BUSINESS_TABLES = [
   "pipelines",
   "deal_stages",
   "deals",
+  "custom_field_defs",
 ];
 
 const CURRENT_WS = "current_setting('app.current_workspace', true)";

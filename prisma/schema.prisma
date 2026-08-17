@@ -184,6 +184,17 @@ enum MessageStatus {
   FAILED
 }
 
+/// The shape of an Owner-defined field (playbook-v2 P5/1).
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  SELECT
+  MULTISELECT
+  CHECKBOX
+  URL
+}
+
 enum FrameStatus {
   DRAFT
   PROPOSED
@@ -399,6 +410,8 @@ model Company {
   invoices      Invoice[]
   subscriptions Subscription[]
   deals         Deal[]
+  /// Owner-defined field values (P5/1). See Lead.customFields.
+  customFields  Json?            @map("custom_fields")
 
   @@unique([workspaceId, taxId])
   @@index([workspaceId])
@@ -441,22 +454,30 @@ model Lead {
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
-  company     Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  referrer    Referrer?     @relation(fields: [referrerId], references: [id], onDelete: SetNull)
-  activities  Activity[]
-  messages    Message[]
-  calls       Call[]
-  meetings    Meeting[]
-  documents   Document[]
-  emailLogs   EmailLog[]
-  outcomes    DealOutcome[]
-  deals       Deal[]
+  company      Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  referrer     Referrer?     @relation(fields: [referrerId], references: [id], onDelete: SetNull)
+  activities   Activity[]
+  messages     Message[]
+  calls        Call[]
+  meetings     Meeting[]
+  documents    Document[]
+  emailLogs    EmailLog[]
+  outcomes     DealOutcome[]
+  deals        Deal[]
   /// Captured from the page the user was viewing (P1/1e). Personal data:
   /// all three join the erasure cascade and the anonymization job.
-  avatarPath  String?       @map("avatar_path")
-  bio         String?       @db.Text
-  personBrief String?       @map("person_brief") @db.Text
-  briefAt     DateTime?     @map("brief_at")
+  avatarPath   String?       @map("avatar_path")
+  bio          String?       @db.Text
+  personBrief  String?       @map("person_brief") @db.Text
+  briefAt      DateTime?     @map("brief_at")
+  /// Owner-defined field values (P5/1), keyed by CustomFieldDef.key. Json
+  /// rather than columns because the shape is per workspace; validated
+  /// server-side against the definitions with a zod schema built from them, so
+  /// a hand-written value cannot reach the table.
+  ///
+  /// GDPR: a custom field can hold anything a person typed into it, so the
+  /// whole object joins the erasure cascade and the anonymization job.
+  customFields Json?         @map("custom_fields")
 
   @@index([workspaceId])
   @@index([companyId])
@@ -1447,6 +1468,8 @@ model Deal {
   status          DealStatus @default(OPEN)
   closedAt        DateTime?  @map("closed_at")
   lostReason      String?    @map("lost_reason")
+  /// Owner-defined field values (P5/1). See Lead.customFields.
+  customFields    Json?      @map("custom_fields")
   /// "p4_migration" for the rows the deals migration derived from lead stages.
   /// This is what makes the migration reversible: rollback deletes exactly the
   /// rows it created and nothing a person has since added by hand.
@@ -1746,6 +1769,43 @@ model PushSubscription {
 
   @@index([workspaceId, userId])
   @@map("push_subscriptions")
+}
+
+/// An Owner-defined field on a Lead, Company or Deal (playbook-v2 P5/1).
+///
+/// A DEFINITION REGISTRY plus a typed JSON column, rather than a column per
+/// field: a workspace adding a field must not be a migration, and the schema
+/// has to stay identical across tenants for the tenant guard and RLS to mean
+/// anything.
+///
+/// Fields are ARCHIVED, never hard-deleted while they hold data. Dropping a
+/// definition would leave orphaned values that nothing can read or erase — and
+/// an unreadable value someone typed a client's phone number into is a GDPR
+/// problem, not a tidiness one.
+model CustomFieldDef {
+  id          String          @id @default(cuid())
+  workspaceId String          @map("workspace_id")
+  /// lead | company | deal
+  entity      String
+  /// Stable slug, and the key inside the entity's customFields object. Renaming
+  /// the LABEL must never orphan the values, so the key never changes.
+  key         String
+  label       String
+  type        CustomFieldType
+  /// [{ value, label }] for SELECT / MULTISELECT; empty otherwise.
+  options     Json            @default("[]")
+  required    Boolean         @default(false)
+  archived    Boolean         @default(false)
+  position    Int             @default(0)
+  /// Shown under the input. Optional, and the only free text a definition has.
+  help        String?
+  createdBy   String?         @map("created_by")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@unique([workspaceId, entity, key])
+  @@index([workspaceId, entity, position])
+  @@map("custom_field_defs")
 }
 
 /// A named filter set + column selection + sort over a list surface

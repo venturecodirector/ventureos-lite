@@ -1,6 +1,8 @@
 import type { WorkspaceClient } from "@/lib/db";
 import { MAX_RESULTS_PER_KIND, type SearchHit } from "./query";
 import { foldText, scoreFields, taxIdMatches, SCORE } from "./fuzzy";
+import { listFieldDefsWith } from "@/modules/fields/store";
+import { isTextual, readValues, searchableValues } from "@/modules/fields/types";
 
 /**
  * The typo- and accent-tolerant pass (playbook-v2 P3/1).
@@ -27,7 +29,11 @@ export async function broadSearch(
   const q = foldText(query);
   if (q.length < 2) return [];
 
-  const [leads, companies, documents] = await Promise.all([
+  // Owner-defined TEXT and URL fields are searchable too (P5/1). Only the
+  // textual ones: a number or a checkbox has no words in it, and folding "1"
+  // into the corpus would match every lead whose phone contains a one.
+  const [leadFieldDefs, leads, companies, documents] = await Promise.all([
+    listFieldDefsWith(db, "lead"),
     db.lead.findMany({
       take: CANDIDATE_LIMIT,
       orderBy: { lastActivityAt: "desc" },
@@ -38,6 +44,7 @@ export async function broadSearch(
         email: true,
         phone: true,
         stage: true,
+        customFields: true,
         company: { select: { name: true } },
       },
     }),
@@ -61,6 +68,8 @@ export async function broadSearch(
 
   const hits: SearchHit[] = [];
 
+  const textualDefs = leadFieldDefs.filter((d) => isTextual(d.type));
+
   for (const l of leads) {
     const score = scoreFields(query, [
       l.contactName,
@@ -68,6 +77,7 @@ export async function broadSearch(
       l.title,
       l.phone,
       l.company?.name,
+      ...searchableValues(textualDefs, readValues(l.customFields)),
     ]);
     if (score < MIN_SCORE) continue;
     hits.push({
