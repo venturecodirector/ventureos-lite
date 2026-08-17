@@ -119,11 +119,18 @@ $("capture").addEventListener("click", async () => {
       // broke, and this is the only place that difference is visible.
       const detail = fields.map((f) => `${f} (${readFrom[f]})`).join(", ");
       const photo = res.data?.avatarProblem ? ` Photo not saved: ${res.data.avatarProblem}.` : "";
+      // A thin read is a FAILURE being reported as a success. The name alone is
+      // what a broken extraction layer leaves behind — it comes from the page
+      // title, which survives anything — so treating "name only" as a good
+      // capture is precisely how a layout change went unnoticed for months.
+      const thin = fields.length > 0 && fields.every((f) => f === "name" || f === "photoUrl");
       msg(
         fields.length === 0
           ? `${what}, but only the URL could be read — LinkedIn's layout has changed.`
-          : `${what} · read ${detail}.${photo}`,
-        fields.length === 0 || photo ? "err" : "ok",
+          : thin
+            ? `${what}, but only ${detail} came through — the rest of the profile could not be read.`
+            : `${what} · read ${detail}.${photo}`,
+        fields.length === 0 || thin || photo ? "err" : "ok",
       );
     } else if (res?.error === "not_configured") {
       $("settings").open = true;

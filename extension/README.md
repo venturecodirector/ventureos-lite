@@ -47,10 +47,24 @@ to one workspace.
 
 ## Captured fields
 
-Name, headline, current company, location, About text, profile photo URL and up
-to three visible posts. The photo is downloaded once server-side and stored on
-your own volume rather than hotlinked, because the CDN URL expires and
-hotlinking would leak every lead-card view to LinkedIn.
+Name, headline, current job title, current company, location, About text, up to
+three visible posts, the profile photo, and an email address, phone number or
+website **if the person published one on the page**. Contact details come from
+two places, both of them already on screen: prose the person wrote into their
+own profile, and `mailto:`/`tel:` links the page has already rendered. LinkedIn
+keeps the contact overlay behind a click and this extension does not click — if
+you open that panel yourself before pressing Capture, its links are read like
+anything else on the page.
+
+The photo is downloaded once server-side and stored on your own volume rather
+than hotlinked, because the CDN URL expires and hotlinking would leak every
+lead-card view to LinkedIn. The avatar lazy-loads, so its real address is read
+from `data-delayed-url`/`srcset` rather than `src` — reading `src` gets you the
+1×1 placeholder, which is why captured leads used to show initials.
+
+Everything read is written to the lead's **notes** as a delimited block as well
+as to its own fields, which is what "Research with Claude" reads. A re-capture
+replaces that block and leaves anything you typed around it alone.
 
 Everything captured is personal data: it joins the GDPR erasure cascade and the
 anonymization job like any other lead field.
