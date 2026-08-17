@@ -176,7 +176,7 @@
   };
 
   return {
-    diagnoseVersion: 2,
+    diagnoseVersion: 3,
     pageKind: /\/sales\//.test(location.pathname)
       ? "sales-navigator"
       : /\/in\//.test(location.pathname)

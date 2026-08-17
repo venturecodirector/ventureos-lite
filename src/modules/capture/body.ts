@@ -102,6 +102,32 @@ export const captureBodySchema = z.object({
     .transform((v) => v ?? undefined),
   bio: looseString(8000),
   photoUrl: looseUrl(2000),
+  /**
+   * What the reader tried, and why each field is or is not there.
+   *
+   * Stored with the capture so a lead can explain itself later. The last two
+   * rounds of this bug were expensive because the evidence existed only in a
+   * popup message that had already closed — the operator saw "read name" and
+   * had no way to hand over what happened underneath.
+   *
+   * Deliberately loose and size-capped: it is a diagnostic, and a schema strict
+   * enough to reject a new probe would mean losing the diagnostic exactly when
+   * something new has broken.
+   */
+  diagnostics: z
+    .unknown()
+    .nullish()
+    .transform((v) => {
+      if (v === null || v === undefined) return undefined;
+      try {
+        const json = JSON.stringify(v);
+        // 32 kB is generous for a field-by-field trace and far below anything
+        // that would bloat the activity row.
+        return json.length > 32_000 ? undefined : (JSON.parse(json) as unknown);
+      } catch {
+        return undefined;
+      }
+    }),
   posts: z
     .array(z.string())
     .nullish()

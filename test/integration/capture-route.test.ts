@@ -239,3 +239,54 @@ describe("the endpoint still refuses what it should", () => {
     expect((await res.json()).fields).toContain("url");
   });
 });
+
+describe("the capture explains itself later (diagnostics v3)", () => {
+  it("stores the reader's account on the capture activity", async () => {
+    // Two rounds of the extraction bug each began with "can you reproduce it and
+    // tell me what the popup said" — and the popup had closed. The evidence is
+    // now a property of the lead.
+    await post({
+      ...FULL_CAPTURE,
+      diagnostics: {
+        diagnoseVersion: 3,
+        fields: { headline: { present: true, strategy: "topcard", attempted: ["topcard:accepted"] } },
+        boundary: { ok: true, identitiesInCard: 1, excludedNegativeSpaceNodes: 1 },
+      },
+    });
+    const lead = await prismaUnsafe.lead.findFirst({ where: { linkedinUrl: PROFILE } });
+    const act = await prismaUnsafe.activity.findFirst({
+      where: { leadId: lead!.id, type: "capture_created" },
+    });
+    const payload = act!.payload as Record<string, unknown>;
+    expect(payload.diagnostics).toMatchObject({ diagnoseVersion: 3 });
+    expect(payload.city).toBe("Budapest");
+    expect(payload.contactReasons).toBeTruthy();
+  });
+
+  it("drops an oversized diagnostic rather than refusing the capture", async () => {
+    // A diagnostic is not worth losing a lead over.
+    const res = await post({ ...FULL_CAPTURE, diagnostics: { blob: "x".repeat(40_000) } });
+    expect(res.status).toBe(201);
+    const lead = await prismaUnsafe.lead.findFirst({ where: { linkedinUrl: PROFILE } });
+    const act = await prismaUnsafe.activity.findFirst({
+      where: { leadId: lead!.id, type: "capture_created" },
+    });
+    expect((act!.payload as Record<string, unknown>).diagnostics).toBeNull();
+  });
+
+  it("records the resolved city and the reason when a location does not resolve", async () => {
+    await post({ ...FULL_CAPTURE, location: "Keletso Thophego, CFP" });
+    const lead = await prismaUnsafe.lead.findFirst({
+      where: { linkedinUrl: PROFILE },
+      include: { company: true },
+    });
+    // Empty beats wrong: the city is blank and the reason says why.
+    expect(lead!.company!.city).toBeNull();
+    const act = await prismaUnsafe.activity.findFirst({
+      where: { leadId: lead!.id, type: "capture_created" },
+    });
+    expect((act!.payload as Record<string, unknown>).locationReason).toBe(
+      "reads_as_a_person_name",
+    );
+  });
+});

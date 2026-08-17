@@ -113,33 +113,18 @@ $("diagnose").addEventListener("click", async () => {
       files: ["content.js"],
     });
 
-    // The reader's verdict, as layers and absences — never the values. Which
-    // fields came back empty is the whole question; what they would have said
-    // is somebody's personal data and no help in answering it.
-    const { _from: readFrom = {}, posts = [], photoUrl, url, ...rest } = payload ?? {};
-    const fields = Object.keys(rest);
-    const report = {
-      extension: chrome.runtime.getManifest().version,
-      read: readFrom,
-      missing: [
-        "name", "headline", "companyName", "location", "jobTitle",
-        "email", "phone", "websiteUrl", "bio", "photoUrl",
-      ].filter((f) => !readFrom[f]),
-      postsRead: posts.length,
-      // The photo is reported as a shape because the failure being chased is
-      // "the server could not fetch it", and that is a question about the
-      // address, not the picture.
-      photo: photoUrl
-        ? { scheme: photoUrl.split(":")[0], length: photoUrl.length, hasQuery: photoUrl.includes("?") }
-        : null,
-      fieldsSent: fields.length,
-      probes,
-    };
+    // The reader's verdict plus the probes behind it — never the values. Which
+    // fields came back empty is the whole question; what they would have said is
+    // somebody's personal data and no help in answering it.
+    const report = { ...buildDiagnostics(payload), probes };
+    const missing = Object.entries(report.fields)
+      .filter(([, f]) => !f.present)
+      .map(([name]) => name);
 
     await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
     msg(
-      `Copied. ${report.missing.length} field(s) could not be read: ${report.missing.join(", ") || "none"}.`,
-      report.missing.length ? "err" : "ok",
+      `Copied. ${missing.length} field(s) could not be read: ${missing.join(", ") || "none"}.`,
+      missing.length ? "err" : "ok",
     );
   } catch (e) {
     msg(`Could not read this page (${String(e?.message ?? e).slice(0, 60)}).`, "err");
@@ -197,24 +182,19 @@ $("snapshot").addEventListener("click", async () => {
 
 
 /**
- * Fetch the profile photo in the page, then upload the bytes.
+ * Read the photo's bytes in the page. No lead id needed, so this runs BEFORE the
+ * capture is posted and its outcome can travel with the diagnostics — the
+ * previous ordering lost the reason a photo failed as soon as the popup closed.
  *
  * Two injections rather than one: `executeScript({files})` cannot take
  * arguments, so a tiny function plants the URL on the isolated world's global
  * first and photo.js reads it. Both run in the same world, so the value carries.
- *
- * Every outcome returns a SENTENCE, because the previous version's silence is
- * what made this take two rounds to diagnose: "Photo not saved" with no reason
- * looks identical whether the URL expired, the CDN refused the origin, or the
- * server rejected the file.
  */
-async function uploadPhoto(tabId, leadId, photoUrl, skipped) {
+async function fetchPhotoBytes(tabId, photoUrl, skipped) {
   if (!photoUrl) {
-    const why = skipped?.photoUrl;
-    return why ? ` No photo: ${why.replace(/_/g, " ")}.` : "";
+    const why = skipped?.photoUrl ?? "no_photo_on_page";
+    return { ok: false, reason: why };
   }
-  if (!leadId) return " Photo not saved: the capture returned no lead id.";
-
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
@@ -227,25 +207,26 @@ async function uploadPhoto(tabId, leadId, photoUrl, skipped) {
       target: { tabId },
       files: ["photo.js"],
     });
-
-    if (!result?.ok) {
-      return ` Photo not saved: ${String(result?.reason ?? "unknown").replace(/_/g, " ")}.`;
-    }
-
-    const up = await chrome.runtime.sendMessage({
-      type: "avatar",
-      leadId,
-      bytes: result.bytes,
-      mime: result.mime,
-    });
-    if (up?.ok) return ` Photo saved (${result.width}×${result.height}).`;
-    const reason = up?.data?.reason ?? up?.error ?? `status ${up?.status ?? "?"}`;
-    return ` Photo rejected by the server: ${String(reason).replace(/_/g, " ")}.`;
+    return result ?? { ok: false, reason: "photo_script_returned_nothing" };
   } catch (e) {
-    return ` Photo not saved: ${String(e?.message ?? e).slice(0, 50)}.`;
+    return { ok: false, reason: `injection_failed_${String(e?.name ?? "error").toLowerCase()}` };
   }
 }
 
+/** Upload bytes already read. Its own step, so a rejected picture costs no lead. */
+async function sendPhotoBytes(leadId, photo) {
+  if (!photo?.ok) return ` Photo not saved: ${String(photo?.reason ?? "unknown").replace(/_/g, " ")}.`;
+  if (!leadId) return " Photo not saved: the capture returned no lead id.";
+  const up = await chrome.runtime.sendMessage({
+    type: "avatar",
+    leadId,
+    bytes: photo.bytes,
+    mime: photo.mime,
+  });
+  if (up?.ok) return ` Photo saved (${photo.width}×${photo.height}).`;
+  const reason = up?.data?.reason ?? up?.error ?? `status ${up?.status ?? "?"}`;
+  return ` Photo rejected by the server: ${String(reason).replace(/_/g, " ")}.`;
+}
 
 /**
  * Read the contact-info overlay, on this one explicit capture.
@@ -329,12 +310,25 @@ $("capture").addEventListener("click", async () => {
     const { contact, note: contactNote } = await readContact(tab.id);
     if (contact) body.contact = contact;
 
+    // Sent with the capture so the LEAD can explain itself later, rather than
+    // the explanation living in a popup that is about to close.
+    msg("Reading the photo…");
+    const photoResult = await fetchPhotoBytes(tab.id, photoUrl, payload.skipped);
+
+    body.diagnostics = buildDiagnostics(payload, {
+      contact: { found: !!contact, note: contactNote ?? null },
+      // The bytes themselves never go into the diagnostics — only whether they
+      // arrived, how, and why not.
+      photo: photoResult.ok
+        ? { ok: true, width: photoResult.width, height: photoResult.height, trail: photoResult.trail ?? [] }
+        : { ok: false, reason: photoResult.reason, trail: photoResult.trail ?? [] },
+    });
+
     const res = await chrome.runtime.sendMessage({ type: "capture", payload: body });
     if (res?.ok) {
       const what = res.data?.created ? "Captured as a new lead" : "Existing lead updated";
-      // The photo, as bytes, fetched in the page where the signed URL still
-      // works. Its own step so a rejected picture cannot cost the lead.
-      const photoNote = await uploadPhoto(tab.id, res.data?.leadId, photoUrl, payload.skipped);
+      // The bytes were read before the post; this only sends them.
+      const photoNote = await sendPhotoBytes(res.data?.leadId, photoResult);
       // A capture that read nothing but the URL used to look identical to a
       // good one — that is how a lead called "unknown" with no data happened
       // without anybody noticing.

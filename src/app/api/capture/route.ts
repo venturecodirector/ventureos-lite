@@ -228,7 +228,19 @@ export async function POST(req: Request): Promise<Response> {
       leadId: lead.id,
       type: existing ? "capture_updated" : "capture_created",
       byUserId: identity.userId,
-      payload: { url: input.url, hasPhoto: !!avatarPath, hasBio: !!input.bio },
+      payload: {
+        url: input.url,
+        hasPhoto: !!avatarPath,
+        hasBio: !!input.bio,
+        // The reader's own account of itself, kept with the capture so the lead
+        // can explain later why a field is empty. Costs one JSON column on an
+        // activity row and saves a round trip through the operator every time
+        // LinkedIn moves something.
+        diagnostics: input.diagnostics ?? null,
+        contactReasons: contact.reasons,
+        locationReason: place.ok ? null : place.reason,
+        city,
+      },
     },
   });
 

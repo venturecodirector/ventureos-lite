@@ -18,6 +18,7 @@ import {
 import { PIPELINE_STAGES, SIDE_STAGES, STAGE_LABELS } from "@/modules/pipeline/transitions";
 import { LeadAvatar } from "./lead-avatar";
 import { CustomFieldsEditor } from "./custom-fields-editor";
+import { CaptureDiagnosticsPanel } from "./capture-diagnostics";
 import { duplicatesForLead } from "@/modules/merge/actions";
 import { Modal } from "./modal";
 
@@ -550,6 +551,10 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
               defs={detail.customFieldDefs}
               values={detail.customFieldValues}
             />
+            {/* Collapsed unless the lead came from the extension. The evidence
+                for "why is this field empty" belongs with the lead, not in a
+                popup that has already closed. */}
+            <CaptureDiagnosticsPanel leadId={detail.id} />
           </section>
 
           <section className="grid gap-2 rounded-[11px] border border-line p-3">
