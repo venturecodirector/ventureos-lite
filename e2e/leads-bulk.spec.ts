@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { PrismaClient } from "@prisma/client";
 
 /**
  * Bulk actions (playbook-v2 P3/2).
@@ -11,6 +12,44 @@ import { test, expect, type Page } from "@playwright/test";
  * Serial: every test writes to the same workspace's leads.
  */
 test.describe.configure({ mode: "serial" });
+
+const prisma = new PrismaClient();
+/** Every company this file creates starts with this. */
+const COMPANY_PREFIX = "Bulk Co ";
+
+/**
+ * Clear this file's OWN leftovers before it runs.
+ *
+ * The filter these tests narrow with is the fuzzy one (P3/1), and fuzziness is
+ * the point of it: two random six-letter tags one edit apart match each other.
+ * So after enough runs, "the two leads I just made" quietly became four, and
+ * the spec failed on its own accumulated history rather than on the product.
+ * The suite shares one workspace; a spec that seeds into it should tidy up.
+ */
+test.beforeAll(async () => {
+  const companies = await prisma.company.findMany({
+    where: { name: { startsWith: COMPANY_PREFIX } },
+    select: { id: true },
+  });
+  const ids = companies.map((c) => c.id);
+  if (ids.length === 0) return;
+  const leads = await prisma.lead.findMany({
+    where: { companyId: { in: ids } },
+    select: { id: true },
+  });
+  const leadIds = leads.map((l) => l.id);
+  if (leadIds.length) {
+    await prisma.activity.deleteMany({ where: { leadId: { in: leadIds } } });
+    await prisma.deal.deleteMany({ where: { leadId: { in: leadIds } } });
+    await prisma.task.deleteMany({ where: { entityType: "lead", entityId: { in: leadIds } } });
+    await prisma.lead.deleteMany({ where: { id: { in: leadIds } } });
+  }
+  await prisma.company.deleteMany({ where: { id: { in: ids } } });
+});
+
+test.afterAll(async () => {
+  await prisma.$disconnect();
+});
 
 /** Letters, not a timestamp — near-identical digits fuzzy-match each other. */
 function tag(): string {
@@ -93,7 +132,7 @@ async function filterTo(page: Page, text: string) {
 /** Two leads sharing a company, so one filter finds exactly them. */
 async function seedPair(page: Page) {
   const suffix = tag();
-  const company = `Bulk Co ${suffix}`;
+  const company = `${COMPANY_PREFIX}${suffix}`;
   await page.goto("/leads");
   await createLead(page, `Bulk One ${suffix}`, company);
   await createLead(page, `Bulk Two ${suffix}`, company);
