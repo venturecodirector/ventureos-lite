@@ -189,16 +189,42 @@ export async function captureLinkedin(raw: unknown): Promise<{ leadId: string }>
 
 // ---- 4.2 Claude research run (Sonnet, structured) -------------------------
 
-export async function runResearch(
-  leadId: string,
-): Promise<{ card: LeadCard; icpScore: number }> {
+/**
+ * The result of a research run.
+ *
+ * ── WHY THIS RETURNS INSTEAD OF THROWING ────────────────────────────────────
+ *
+ * Because in a production build it CANNOT throw usefully. Next.js redacts every
+ * error that escapes a Server Action — the client receives a bare Error carrying
+ * only a `digest`, and the message is stripped on the server before it is sent.
+ * So a perfectly ordinary, user-fixable condition ("there is no profile text
+ * yet") reached the operator as:
+ *
+ *     An error occurred in the Server Components render. The specific message is
+ *     omitted in production builds to avoid leaking sensitive details.
+ *
+ * The UI was already catching it and rendering `e.message`; there was simply
+ * nothing left in the message to render. It worked in development, which is
+ * exactly why it survived.
+ *
+ * The rule this settles: an EXPECTED outcome is data, and only a bug is an
+ * exception. `moveLeadStage` in this same file already worked that way, which is
+ * the pattern followed here.
+ */
+export type ResearchResult =
+  | { ok: true; card: LeadCard; icpScore: number }
+  | { ok: false; error: string; reason: "no_text" | "not_found" | "ai_failed" | "budget" };
+
+export async function runResearch(leadId: string): Promise<ResearchResult> {
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
   const lead = await db.lead.findUnique({
     where: { id: leadId },
     include: { company: true },
   });
-  if (!lead) throw new Error("Lead not found");
+  if (!lead) {
+    return { ok: false, reason: "not_found", error: "That lead no longer exists." };
+  }
 
   // Everything on the lead a research call could read — not just `notes`, which
   // is what made research impossible on extension-captured leads.
@@ -228,15 +254,70 @@ export async function runResearch(
     }
   }
 
-  // P1/1a — refuse to spend a Sonnet call on a paste with nothing in it.
-  if (!hasAnalyzableText(analyzable)) {
-    throw new ResearchInputError(
-      "There is no profile text to analyse yet. Paste the profile text alongside the URL, or capture the page with the browser extension.",
-    );
+  /**
+   * THE COMPANY'S OWN SITE, FETCHED BEFORE THE GATE — not after it.
+   *
+   * This ordering was the whole reason a Google-sourced lead could never be
+   * researched. Places gives a name, an address, a phone and a website but no
+   * prose, so `hasAnalyzableText` refused and returned before the site was ever
+   * fetched — and the site is exactly where the prose is. A lead with a perfectly
+   * good website was declared unanalysable because we had not looked at it.
+   *
+   * Fetched once and cached for thirty days, robots.txt honoured, so moving it
+   * above the gate costs a request only on leads that would otherwise have been
+   * refused outright.
+   */
+  const site = companyId ? await enrichCompanySite(companyId) : null;
+
+  /**
+   * The contacts on that page, applied to the lead.
+   *
+   * Places has no email for any business, ever — so a prospected lead arrived
+   * with an empty Email field and stayed that way. The address is in the site's
+   * footer or impresszum, in the page we just downloaded. Only ever FILLS a blank
+   * field: a value a human typed is never overwritten by a scrape.
+   */
+  const siteContacts = site?.contacts ?? { emails: [], phones: [] };
+  if (companyId && (siteContacts.emails[0] || siteContacts.phones[0])) {
+    const current = await db.lead.findUnique({
+      where: { id: leadId },
+      select: { email: true, phone: true },
+    });
+    if ((!current?.email && siteContacts.emails[0]) || (!current?.phone && siteContacts.phones[0])) {
+      await db.lead.update({
+        where: { id: leadId },
+        data: {
+          email: current?.email ?? siteContacts.emails[0] ?? undefined,
+          phone: current?.phone ?? siteContacts.phones[0] ?? undefined,
+        },
+      });
+    }
+    // Company carries a phone but no email column, so the address lives on the
+    // lead — which is where an operator looks for it anyway.
+    if (!lead.company?.phone && siteContacts.phones[0]) {
+      await db.company.update({
+        where: { id: companyId },
+        data: { phone: siteContacts.phones[0] },
+      });
+    }
   }
 
-  // P1/1c — the company's own words, fetched once and cached for 30 days.
-  const site = companyId ? await enrichCompanySite(companyId) : null;
+  /**
+   * P1/1a — refuse to spend a Sonnet call on a lead with nothing to read.
+   *
+   * "Nothing" now includes the website, so this only fires when there is
+   * genuinely no prose anywhere: no notes, no bio, no posts, and either no site
+   * or one that could not be read.
+   */
+  if (!hasAnalyzableText(analyzable) && !site?.text) {
+    return {
+      ok: false,
+      reason: "no_text",
+      error: site?.skipped
+        ? `There is nothing to analyse yet: this lead has no pasted text, and its website could not be read (${String(site.skipped).replace(/_/g, " ")}). Paste the company's page text and try again.`
+        : "There is nothing to analyse on this lead yet. Add the company's website, paste its page text, or capture a LinkedIn profile with the extension, then run research again.",
+    };
+  }
 
   const profile = [
     lead.company?.name && `Company: ${lead.company.name}`,
@@ -255,13 +336,43 @@ export async function runResearch(
     .filter(Boolean)
     .join("\n");
 
-  const { data } = await callClaude({
-    useCase: "lead_research",
-    workspaceId,
-    system: LEAD_RESEARCH_SYSTEM,
-    messages: [{ role: "user", content: buildResearchUserMessage(profile) }],
-    schema: leadCardSchema,
-  });
+  /**
+   * A model that refuses, returns unparseable JSON, or runs the workspace out of
+   * budget is an EXPECTED outcome, not a bug — and in production every one of
+   * them reached the operator as the same opaque "Server Components render"
+   * error, because Next.js strips the message off anything thrown out of a
+   * Server Action.
+   *
+   * Reported by name instead, so the next step is obvious: retry, or top up the
+   * budget, or paste better text.
+   */
+  let data: unknown;
+  try {
+    ({ data } = await callClaude({
+      useCase: "lead_research",
+      workspaceId,
+      system: LEAD_RESEARCH_SYSTEM,
+      messages: [{ role: "user", content: buildResearchUserMessage(profile) }],
+      schema: leadCardSchema,
+    }));
+  } catch (e) {
+    const name = (e as Error)?.name ?? "Error";
+    if (name === "BudgetExceededError") {
+      return {
+        ok: false,
+        reason: "budget",
+        error: "This workspace has reached its Claude budget for today. Research again tomorrow, or raise the cap in Settings.",
+      };
+    }
+    return {
+      ok: false,
+      reason: "ai_failed",
+      error:
+        name === "ClaudeRefusalError"
+          ? "Claude declined to analyse this lead. Check the pasted text and try again."
+          : "Claude's answer could not be read. Try research again — this usually passes on a second attempt.",
+    };
+  }
   const card = data as LeadCard;
   const icpScore = computeIcpScore(card.icp);
   // P1/1d — which criteria the model could not judge, kept separately so an
@@ -279,7 +390,7 @@ export async function runResearch(
     },
   });
   revalidatePath("/leads");
-  return { card, icpScore };
+  return { ok: true, card, icpScore };
 }
 
 // ---- 4.5 Score override (audited) -----------------------------------------

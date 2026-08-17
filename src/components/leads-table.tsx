@@ -250,7 +250,13 @@ export function LeadsTable(props: LeadsTableProps) {
   async function research(leadId: string) {
     setError(null);
     try {
-      await runResearch(leadId);
+      // A refused research is an ANSWER, not a crash — the table shows it in the
+      // same error strip it uses for a refused stage move.
+      const res = await runResearch(leadId);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
       router.refresh();
     } catch (e) {
       setError((e as Error).message);

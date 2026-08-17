@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { normalizePhone } from "@/modules/capture/contact";
 import { revalidatePath } from "next/cache";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
@@ -153,13 +154,25 @@ export async function addProspectAsLead(
       address: input.address ?? undefined,
     },
   });
-  // Unnamed contact — filled in later (spec §4.3).
+  /**
+   * Unnamed contact — filled in later (spec §4.3) — but NOT contactless.
+   *
+   * The phone went onto the company and stopped there, so a prospected lead
+   * opened with an empty Phone field even though Google had just handed us one.
+   * It is the same number either way; putting it on the lead is where the
+   * operator actually looks for it.
+   *
+   * Normalised on the way in, so a Places "+36 1 234 5678" and a pasted
+   * "06 1 234 5678" end up as the same stored value rather than as two leads.
+   */
+  const leadPhone = normalizePhone(input.phone).value;
   const lead = await db.lead.create({
     data: {
       workspaceId,
       companyId: company.id,
       source: "PROSPECTOR",
       stage: "RESEARCHED",
+      phone: leadPhone ?? undefined,
     },
   });
 

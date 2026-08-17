@@ -1,5 +1,8 @@
 import { prismaUnsafe } from "@/lib/db";
 import { parseRobots, isAllowed, VENTURE_USER_AGENT } from "@/lib/robots";
+// One implementation of "is this a usable email / phone", shared with the
+// extension capture path — two copies would drift.
+import { normalizeEmail, normalizePhone } from "@/modules/capture/contact";
 
 /**
  * Company-website enrichment (P1/1c).
@@ -54,7 +57,94 @@ export function extractReadableText(html: string): string {
     .slice(0, MAX_TEXT);
 }
 
+/**
+ * Contact details out of a company's own web page.
+ *
+ * ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
+ *
+ * A Google Places result carries a name, an address, a phone and a website. It
+ * carries no email — Places simply does not have one, for any business, ever. So
+ * a prospected lead arrived with an empty Email field and stayed that way, and
+ * the obvious conclusion ("that is impossible, every company has an email") is
+ * right about the company and wrong about the source.
+ *
+ * The email is on the company's own site, usually in a footer or an impresszum.
+ * We are already fetching that page for its copy, already honouring robots.txt,
+ * and already caching the result for thirty days — so reading the contacts out of
+ * the same response costs nothing extra.
+ *
+ * READ FROM THE RAW HTML, not from the extracted text: `extractReadableText`
+ * strips markup, and `mailto:` / `tel:` links live in the markup. That is why the
+ * details were being thrown away by a function that had already downloaded them.
+ */
+export interface SiteContacts {
+  emails: string[];
+  phones: string[];
+}
+
+/** Addresses no human reads — a site's plumbing, not its contact details. */
+const EMAIL_NOISE =
+  /^(no-?reply|do-?not-?reply|postmaster|abuse|webmaster|hostmaster|mailer-daemon|bounce)/i;
+/** Placeholders that appear in templates and stock footers. */
+const EMAIL_PLACEHOLDER =
+  /(example\.(com|org|net)|yourdomain|domain\.tld|email@|sentry\.io|wixpress|\.png$|\.jpg$|\.webp$)/i;
+
+export function extractSiteContacts(html: string): SiteContacts {
+  const emails = new Set<string>();
+  const phones = new Set<string>();
+
+  // mailto: and tel: first — an explicit link is a stated contact detail, where
+  // a regex over body text is a guess.
+  for (const m of html.matchAll(/href\s*=\s*["']\s*mailto:([^"'?>]+)/gi)) {
+    const value = decodeURIComponent(m[1]!.trim());
+    if (value) emails.add(value);
+  }
+  for (const m of html.matchAll(/href\s*=\s*["']\s*tel:([^"'?>]+)/gi)) {
+    const value = decodeURIComponent(m[1]!.trim());
+    if (value) phones.add(value);
+  }
+
+  /**
+   * Then plain text, for the sites that print an address without linking it.
+   *
+   * NOT via `extractReadableText`: that strips <footer>, <header> and <nav> on
+   * purpose, because they are chrome rather than prose and the model should not
+   * be shown them. But the footer is exactly where a contact address lives — so
+   * using it here would throw away the thing we came for. This is the lighter
+   * pass: drop the regions that are never text, keep everything else.
+   */
+  const visible = String(html ?? "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ");
+  for (const m of visible.matchAll(/[\w.+-]+@[\w-]+\.[\w.-]{2,}/g)) emails.add(m[0]);
+
+  /** `normalizeEmail`/`normalizePhone` answer with {value, reason}; value is truth. */
+  const clean = (list: Set<string>, normalize: (v: string) => string | null): string[] => {
+    const out: string[] = [];
+    for (const raw of list) {
+      const value = normalize(raw);
+      if (value && !out.includes(value)) out.push(value);
+    }
+    return out;
+  };
+
+  return {
+    emails: clean(emails, (v) => {
+      const local = v.split("@")[0] ?? "";
+      // A no-reply address is not a way to reach anybody, and a template
+      // placeholder is not an address at all.
+      if (EMAIL_NOISE.test(local) || EMAIL_PLACEHOLDER.test(v)) return null;
+      return normalizeEmail(v).value;
+    }).slice(0, 5),
+    phones: clean(phones, (v) => normalizePhone(v).value).slice(0, 5),
+  };
+}
+
 export interface EnrichmentResult {
+  /** Contacts read out of the same page, when it was reachable. */
+  contacts?: SiteContacts;
   text: string | null;
   /** Why there is no text, when there is none. */
   skipped: "no_domain" | "robots" | "unreachable" | "empty" | null;
@@ -111,6 +201,7 @@ export async function enrichCompanySite(companyId: string): Promise<EnrichmentRe
   }
 
   let text: string | null = null;
+  let contacts: SiteContacts = { emails: [], phones: [] };
   try {
     const res = await fetch(`${origin}${path}`, {
       headers: { "User-Agent": VENTURE_USER_AGENT, Accept: "text/html" },
@@ -118,7 +209,11 @@ export async function enrichCompanySite(companyId: string): Promise<EnrichmentRe
       redirect: "follow",
     });
     if (res.ok && (res.headers.get("content-type") ?? "").includes("text/html")) {
-      text = extractReadableText(await res.text()) || null;
+      const html = await res.text();
+      text = extractReadableText(html) || null;
+      // From the RAW html: mailto:/tel: live in the markup that the text
+      // extraction above strips out.
+      contacts = extractSiteContacts(html);
     }
   } catch {
     await stampFetch(company.id, null);
@@ -126,7 +221,7 @@ export async function enrichCompanySite(companyId: string): Promise<EnrichmentRe
   }
 
   await stampFetch(company.id, text);
-  return { text, skipped: text ? null : "empty", fromCache: false };
+  return { text, skipped: text ? null : "empty", fromCache: false, contacts };
 }
 
 /** Record the attempt either way, so a dead site is not refetched every run. */

@@ -290,8 +290,13 @@ export function LeadEngine({
     setError(null);
     setRail({ status: "streaming" });
     try {
-      const { card, icpScore } = await runResearch(leadId);
-      setRail({ status: "done", card, icpScore, leadId });
+      const res = await runResearch(leadId);
+      if (!res.ok) {
+        setRail({ status: "idle" });
+        setError(res.error);
+        return;
+      }
+      setRail({ status: "done", card: res.card, icpScore: res.icpScore, leadId });
       router.refresh();
     } catch (e) {
       setRail({ status: "idle" });
@@ -344,6 +349,14 @@ export function LeadEngine({
           return;
         }
         const read = await runResearch(res.leadId);
+        if (!read.ok) {
+          setRail({ status: "idle" });
+          // The lead WAS captured — only the analysis did not run, so say so
+          // rather than implying the capture failed.
+          setError(`${read.error} The lead was saved.`);
+          router.refresh();
+          return;
+        }
         setRail({ status: "done", card: read.card, icpScore: read.icpScore, leadId: res.leadId });
         setPaste("");
         router.refresh();
@@ -354,8 +367,15 @@ export function LeadEngine({
         url: firstUrl(paste) || paste.slice(0, 120),
         pageText: paste,
       });
-      const { card, icpScore } = await runResearch(leadId);
-      setRail({ status: "done", card, icpScore, leadId });
+      const done = await runResearch(leadId);
+      if (!done.ok) {
+        setRail({ status: "idle" });
+        setError(`${done.error} The lead was saved.`);
+        setPaste("");
+        router.refresh();
+        return;
+      }
+      setRail({ status: "done", card: done.card, icpScore: done.icpScore, leadId });
       setPaste("");
       router.refresh();
     } catch (e) {
