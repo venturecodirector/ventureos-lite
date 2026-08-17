@@ -280,6 +280,71 @@ describe("layouts that are not the one we expected", () => {
   });
 });
 
+describe("Sales Navigator, where the same person has a different address", () => {
+  const SALES = "https://www.linkedin.com/sales/lead/ACwAAB1234567,NAME_SEARCH,a1b2";
+
+  /**
+   * A lead is keyed on its LinkedIn URL. A Sales Navigator address is a
+   * different string for the same human, so capturing someone from both views
+   * would file them as two leads — and the two would then diverge.
+   */
+  it("keys on the public profile the page names, not the sales address", () => {
+    const out = extract(
+      `<!doctype html><html><body><main><section><div>
+        <h1>Nagy Anna</h1><div>Ügyvezető</div>
+        <a href="https://www.linkedin.com/in/nagy-anna" aria-label="View LinkedIn profile">LinkedIn</a>
+      </div></section></main></body></html>`,
+      SALES,
+    );
+    expect(out.url).toBe("https://www.linkedin.com/in/nagy-anna");
+  });
+
+  it("strips the search context, which changes with how you got there", () => {
+    // Without this every visit from a different search is a new lead.
+    const out = extract(
+      `<!doctype html><html><body><main><section><div><h1>Nagy Anna</h1></div></section></main></body></html>`,
+      SALES,
+    );
+    expect(out.url).toBe("https://www.linkedin.com/sales/lead/ACwAAB1234567");
+  });
+
+  it("matches the profile link by name when nothing says which link it is", () => {
+    const out = extract(
+      `<!doctype html><html><body><main><section><div>
+        <h1>Nagy Anna</h1>
+        <a href="/in/nagy-anna-b2c3">profile</a>
+      </div></section></main></body></html>`,
+      SALES,
+    );
+    expect(out.url).toBe("https://www.linkedin.com/in/nagy-anna-b2c3");
+  });
+
+  it("refuses to guess when the page links to several other people", () => {
+    // "Similar leads" and colleagues are also /in/ links. Filing a capture
+    // under the wrong person is a quiet and expensive mistake, so ambiguity
+    // falls back to the sales address rather than picking one.
+    const out = extract(
+      `<!doctype html><html><body><main><section><div>
+        <h1>Nagy Anna</h1>
+        <a href="/in/kovacs-bela">Kovács Béla</a>
+        <a href="/in/szabo-petra">Szabó Petra</a>
+      </div></section></main></body></html>`,
+      SALES,
+    );
+    expect(out.url).toBe("https://www.linkedin.com/sales/lead/ACwAAB1234567");
+  });
+
+  it("leaves an ordinary profile URL exactly as it always handled it", () => {
+    const out = extract(
+      `<!doctype html><html><body><main><section><div>
+        <h1>Nagy Anna</h1><a href="/in/valaki-mas">Valaki Más</a>
+      </div></section></main></body></html>`,
+      "https://www.linkedin.com/in/nagy-anna/?trk=abc",
+    );
+    expect(out.url).toBe("https://www.linkedin.com/in/nagy-anna");
+  });
+});
+
 describe("the logged-out public view, which does ship a Person graph", () => {
   it("prefers the graph over everything scraped from the page", () => {
     const out = extract(`<!doctype html><html><head>

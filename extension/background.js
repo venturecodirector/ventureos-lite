@@ -96,7 +96,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
  * visible: the operator sees the page that was read.
  */
 async function captureProfileInTab(profileUrl) {
-  if (!/^https:\/\/([a-z-]+\.)?linkedin\.com\/in\//i.test(profileUrl)) {
+  // Ordinary profiles and Sales Navigator lead pages. Kept in step with the
+  // same pattern in popup.js — two small copies rather than a shared module,
+  // because an MV3 service worker without "type": "module" cannot import one.
+  if (!/^https:\/\/([a-z-]+\.)?linkedin\.com\/(in\/|sales\/(lead|people)\/)/i.test(profileUrl)) {
     return { ok: false, error: "not_a_profile" };
   }
 

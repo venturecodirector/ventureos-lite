@@ -1,3 +1,7 @@
+/** A page this extension is willing to read: a profile, or a Sales Nav lead. */
+const PROFILE_URL =
+  /^https:\/\/([a-z-]+\.)?linkedin\.com\/(in\/|sales\/(lead|people)\/)/i;
+
 const $ = (id) => document.getElementById(id);
 const msg = (text, cls) => {
   $("msg").textContent = text;
@@ -86,8 +90,12 @@ $("capture").addEventListener("click", async () => {
   msg("Reading the page…");
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.url?.includes("linkedin.com/in/")) {
-      msg("Open a LinkedIn profile first.", "err");
+    // Ordinary profiles and Sales Navigator lead pages. Kept in step with the
+    // same pattern in background.js — two small copies rather than a shared
+    // module, because an MV3 service worker without "type": "module" cannot
+    // import one.
+    if (!PROFILE_URL.test(tab?.url ?? "")) {
+      msg("Open a LinkedIn profile or a Sales Navigator lead first.", "err");
       return;
     }
 

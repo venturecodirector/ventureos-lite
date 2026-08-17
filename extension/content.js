@@ -639,9 +639,70 @@
     // Strip tracking parameters so the same profile dedupes to one lead.
     try {
       const u = new URL(window.location.href);
-      return `${u.origin}${u.pathname}`.replace(/\/$/, "");
+      if (!/^\/sales\//i.test(u.pathname)) {
+        return `${u.origin}${u.pathname}`.replace(/\/$/, "");
+      }
+
+      // Sales Navigator. The lead is keyed on its LinkedIn URL, and a Sales
+      // Navigator address is a different string for the same human — capture
+      // someone from both views and you get two leads for one person. So when
+      // the page names the public profile, that is the address we key on.
+      const canonical = publicProfileLink();
+      if (canonical) return canonical;
+
+      // Otherwise the sales URL, minus the search context after the first
+      // comma ("…/lead/ACwAAB1234,NAME_SEARCH,abcd"), which changes with how
+      // you arrived and would otherwise make every visit a new lead.
+      const stable = u.pathname.split(",")[0].replace(/\/$/, "");
+      return `${u.origin}${stable}`;
     } catch {
       return String(window.location.href ?? "").split("?")[0];
     }
+  }
+
+  /**
+   * The public /in/ profile this page is about.
+   *
+   * Deliberately not "the first /in/ link on the page": a lead page also links
+   * to similar leads and to colleagues, and picking one of those would file the
+   * capture under the wrong person — a quiet, expensive mistake. Only two
+   * things are trusted. A link that SAYS it is this person's LinkedIn profile,
+   * and a link whose slug carries a piece of the name in the heading. Anything
+   * less certain than that gets nothing, and the sales URL is used instead.
+   */
+  function publicProfileLink() {
+    const candidates = [];
+    for (const a of $$('a[href*="/in/"]')) {
+      const href = a.getAttribute("href");
+      if (!href) continue;
+      let u;
+      try {
+        u = new URL(href, window.location.href);
+      } catch {
+        continue;
+      }
+      if (!/(^|\.)linkedin\.com$/i.test(u.hostname)) continue;
+      if (!/^\/in\/[^/]+/.test(u.pathname)) continue;
+
+      const says = `${a.getAttribute("aria-label") ?? ""} ${text(a) ?? ""}`;
+      const url = `${u.origin}${u.pathname}`.replace(/\/$/, "");
+      if (/linkedin profile|view.*linkedin|full profile|teljes profil/i.test(says)) return url;
+      candidates.push({ url, slug: decodeURIComponent(u.pathname.slice(4).toLowerCase()) });
+    }
+
+    // Fall back to matching the slug against the name in the heading. A single
+    // shared token is not enough — "anna" appears in plenty of slugs — so this
+    // wants a token of real length.
+    const tokens = (name ?? "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 4);
+    if (tokens.length === 0) return null;
+
+    const matched = candidates.filter((c) => tokens.some((t) => c.slug.includes(t)));
+    // Exactly one, or we do not know which person this page is about.
+    return matched.length === 1 ? matched[0].url : null;
   }
 })();

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync } from "node:fs";
+import { writeFileSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appUrl } from "@/lib/env";
@@ -104,6 +104,43 @@ describe("extension package", () => {
     // PNG magic — proves the writer did not mangle binary content as UTF-8.
     expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
     expect(png.byteLength).toBeGreaterThan(1000);
+  });
+
+  it("gates the same page kinds in the popup and the service worker", async () => {
+    // The two gates are separate copies — an MV3 service worker without
+    // "type": "module" cannot import a shared one — so the thing worth testing
+    // is that they have not drifted apart. A popup that offers to read a page
+    // the worker then refuses is the confusing half of that failure.
+    const patternIn = (name: string) => {
+      const src = readFileSync(join(process.cwd(), "extension", name), "utf8");
+      // The regex literal as SHIPPED, lifted out and run — not a copy of it
+      // written here, which would pass happily while the file said something
+      // else.
+      const m = /(\/\^https:[^\n]*?\/)i/.exec(src);
+      expect(m, `no profile-URL pattern found in ${name}`).not.toBeNull();
+      return new RegExp(m![1]!.slice(1, -1), "i");
+    };
+
+    for (const name of ["popup.js", "background.js"]) {
+      const gate = patternIn(name);
+      for (const allowed of [
+        "https://www.linkedin.com/in/nagy-anna",
+        "https://linkedin.com/in/nagy-anna/",
+        "https://www.linkedin.com/sales/lead/ACwAAB1234,NAME_SEARCH,a1b2",
+        "https://www.linkedin.com/sales/people/ACwAAB1234",
+      ]) {
+        expect(gate.test(allowed), `${name} should accept ${allowed}`).toBe(true);
+      }
+      for (const refused of [
+        "https://www.linkedin.com/feed/",
+        "https://www.linkedin.com/company/danubia",
+        "https://www.linkedin.com/sales/search/people",
+        "http://www.linkedin.com/in/nagy-anna",
+        "https://linkedin.com.evil.test/in/nagy-anna",
+      ]) {
+        expect(gate.test(refused), `${name} should refuse ${refused}`).toBe(false);
+      }
+    }
   });
 
   it("ships the licence and privacy policy", async () => {
