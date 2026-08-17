@@ -42,12 +42,13 @@ export async function eraseLeadData(
     where: { id: leadId },
     // avatarPath joins the file sweep below: a captured photo is personal data
     // and erasure must take the bytes off disk, not just the row (P1/1f).
-    select: { id: true, companyId: true, avatarPath: true },
+    select: { id: true, companyId: true, avatarPath: true, contactName: true },
   });
   if (!lead) return { leadId, deleted: {}, filesRemoved: 0 };
 
   const deleted: Record<string, number> = {};
   const files: Array<string | null> = [];
+  const leadName = lead.contactName;
 
   // Files first (collect paths before rows vanish).
   files.push(lead.avatarPath);
@@ -98,6 +99,35 @@ export async function eraseLeadData(
     deleted.documentsDetached = (
       await db.document.updateMany({ where: { leadId }, data: { leadId: null } })
     ).count;
+  }
+
+  // Deals (v2 P4). A deal is a commercial record about money, held under the
+  // same kind of lawful basis as a retained document, so it is DETACHED rather
+  // than deleted — the foreign key would do that on its own.
+  //
+  // What the foreign key would NOT do is the part that matters here: a deal
+  // created for a lead with no company is titled after the PERSON, and a title
+  // is personal data that would survive the erasure in plain sight. Any title
+  // carrying the contact's name is rewritten before the link is cut.
+  const leadDeals = await db.deal.findMany({
+    where: { leadId },
+    select: { id: true, title: true, company: { select: { name: true } } },
+  });
+  if (leadDeals.length) {
+    const name = leadName?.trim();
+    for (const deal of leadDeals) {
+      const carriesName = !!name && name.length > 1 && deal.title.includes(name);
+      await db.deal.update({
+        where: { id: deal.id },
+        data: {
+          leadId: null,
+          ...(carriesName
+            ? { title: deal.company?.name ? `${deal.company.name} — deal` : "Erased contact — deal" }
+            : {}),
+        },
+      });
+    }
+    deleted.dealsDetached = leadDeals.length;
   }
 
   // Delete the lead → cascades activities, messages, calls, deal_outcomes.

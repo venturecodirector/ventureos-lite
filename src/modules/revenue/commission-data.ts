@@ -31,11 +31,20 @@ export interface CommissionReport {
 /**
  * Who a client's revenue is credited to.
  *
- * The chain, in order: the lead's OWNER (P3/2 put an owner on every lead
- * precisely so this question has an answer), then whoever first worked the lead
- * according to the activity log. A referrer is deliberately NOT part of this —
- * a Referrer is an outside person or company who made an introduction, not a
- * user who can be paid, so it travels with the report as context instead.
+ * The chain, in order:
+ *   1. the owner of a WON DEAL for that company (v2 P4 — the deal is the sale,
+ *      and whoever closed it is the person the commission clause is about);
+ *   2. failing that, the owner of any deal at all;
+ *   3. the lead's OWNER (P3/2 put an owner on every lead precisely so this
+ *      question has an answer);
+ *   4. whoever first worked the lead according to the activity log.
+ *
+ * Deals took the top of the chain rather than replacing the rest: a client can
+ * predate the deals layer entirely, and dropping the lead-owner fallback would
+ * silently unattribute every one of them. A referrer is deliberately NOT part
+ * of this — a Referrer is an outside person or company who made an
+ * introduction, not a user who can be paid, so it travels with the report as
+ * context instead.
  */
 async function attributionByCompany(
   workspaceId: string,
@@ -46,6 +55,30 @@ async function attributionByCompany(
   if (companyIds.length === 0) return { owner, referrer };
 
   const db = getWorkspaceClient(workspaceId);
+
+  // 1 + 2 — the deal's owner, newest first, won deals preferred. Resolved for
+  // every company up front rather than inside the lead loop below, because a
+  // client can have a deal and no lead at all (a renewal outlived the contact),
+  // and iterating leads would never reach it.
+  const deals = await db.deal.findMany({
+    where: { companyId: { in: companyIds }, ownerId: { not: null } },
+    orderBy: [{ closedAt: "desc" }, { createdAt: "desc" }],
+    select: { companyId: true, ownerId: true, status: true },
+  });
+  const wonOwner = new Map<string, string>();
+  const anyDealOwner = new Map<string, string>();
+  for (const deal of deals) {
+    if (!deal.companyId || !deal.ownerId) continue;
+    if (deal.status === "WON" && !wonOwner.has(deal.companyId)) {
+      wonOwner.set(deal.companyId, deal.ownerId);
+    }
+    if (!anyDealOwner.has(deal.companyId)) anyDealOwner.set(deal.companyId, deal.ownerId);
+  }
+  for (const companyId of companyIds) {
+    const fromDeal = wonOwner.get(companyId) ?? anyDealOwner.get(companyId);
+    if (fromDeal) owner.set(companyId, fromDeal);
+  }
+
   const leads = await db.lead.findMany({
     where: { companyId: { in: companyIds } },
     orderBy: { createdAt: "asc" },

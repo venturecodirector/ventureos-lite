@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { getWorkspaceClient, prismaUnsafe } from "../../src/lib/db";
 import { eraseLeadData } from "../../src/modules/gdpr/erase";
 import { anonymizeLead } from "../../src/modules/gdpr/sweep";
+import { ensurePipelines } from "../../src/modules/deals/store";
 
 /**
  * GDPR erasure + anonymization proofs (spec §10):
@@ -19,7 +20,8 @@ async function clean() {
   if (!ids.length) return;
   for (const table of [
     "activity", "message", "call", "dealOutcome", "meeting", "emailLog",
-    "auditShare", "campaignRecipient", "document", "auditResult", "campaign", "lead", "company",
+    "auditShare", "campaignRecipient", "document", "auditResult", "campaign",
+    "deal", "dealStage", "pipeline", "lead", "company",
   ] as const) {
     // @ts-expect-error dynamic model access
     await prismaUnsafe[table].deleteMany({ where: { workspaceId: { in: ids } } });
@@ -52,6 +54,21 @@ async function seedLeadWithEverything() {
   const campaign = await prismaUnsafe.campaign.create({ data: { workspaceId: wsId, name: "C" } });
   await prismaUnsafe.campaignRecipient.create({ data: { workspaceId: wsId, campaignId: campaign.id, leadId, email: "m@x.hu" } });
   await prismaUnsafe.document.create({ data: { workspaceId: wsId, leadId, type: "QUOTE" } });
+
+  // v2 P4: a deal titled after the PERSON, so erasure has something to scrub
+  // beyond what the foreign key would do on its own.
+  const [pipeline] = await ensurePipelines(wsId);
+  await prismaUnsafe.deal.create({
+    data: {
+      workspaceId: wsId,
+      leadId,
+      companyId,
+      title: "Márta — Web projects",
+      pipelineId: pipeline.id,
+      stageId: pipeline.stages[0].id,
+      value: 500_000,
+    },
+  });
 }
 
 beforeEach(async () => {
@@ -82,8 +99,9 @@ describe("lead erasure — cascade completeness (no orphans)", () => {
       prismaUnsafe.auditShare.count({ where: { leadId } }),
       prismaUnsafe.campaignRecipient.count({ where: { leadId } }),
       prismaUnsafe.document.count({ where: { leadId } }),
+      prismaUnsafe.deal.count({ where: { leadId } }),
     ]);
-    expect(orphanCounts).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(orphanCounts).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
     // The lead itself is gone, and the company's audits went with its last lead.
     expect(await prismaUnsafe.lead.count({ where: { id: leadId } })).toBe(0);
@@ -97,6 +115,21 @@ describe("lead erasure — cascade completeness (no orphans)", () => {
     // Document survives but no longer references the lead (no orphan).
     expect(await prismaUnsafe.document.count({ where: { workspaceId: wsId } })).toBe(1);
     expect(await prismaUnsafe.document.count({ where: { leadId } })).toBe(0);
+  });
+
+  it("keeps the deal as a commercial record, with the person's name scrubbed off it", async () => {
+    await seedLeadWithEverything();
+    const db = getWorkspaceClient(wsId);
+    const res = await eraseLeadData(db, leadId, { eraseDocuments: false });
+    expect(res.deleted.dealsDetached).toBe(1);
+
+    const deal = await prismaUnsafe.deal.findFirstOrThrow({ where: { workspaceId: wsId } });
+    // The money survives — it is not the person's data.
+    expect(deal.value).toBe(500_000);
+    expect(deal.leadId).toBeNull();
+    // The name does not.
+    expect(deal.title).not.toContain("Márta");
+    expect(deal.title).toBe("Erase Co Kft. — deal");
   });
 });
 

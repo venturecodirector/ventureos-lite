@@ -266,11 +266,16 @@ describe("the task-due sweep", () => {
 
     await prismaUnsafe.notification.deleteMany({ where: { workspaceId: ws } });
     await prismaUnsafe.task.deleteMany({ where: { workspaceId: ws } });
-    // Due earlier today.
+    // Due earlier today. The sweep's clock is passed in explicitly rather than
+    // read from the wall: with an implicit `new Date()` this test failed for
+    // the first five minutes of every UTC day, because 00:05 today was still
+    // in the future and the task was correctly left alone.
     const today = new Date();
     today.setUTCHours(0, 5, 0, 0);
+    const midday = new Date(today);
+    midday.setUTCHours(12, 0, 0, 0);
     await makeTask(today);
-    await processTaskDueSweep();
+    await processTaskDueSweep(midday);
     expect((await only())?.title).toMatch(/^Due now/);
   });
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { prismaUnsafe, getWorkspaceClient } from "../../src/lib/db";
+import { ensurePipelines } from "../../src/modules/deals/store";
 import {
   buildCommissionReport,
   buildSettlementReport,
@@ -33,6 +34,9 @@ async function clean() {
       "subscriptionEvent",
       "subscription",
       "activity",
+      "deal",
+      "dealStage",
+      "pipeline",
       "lead",
       "company",
     ] as const) {
@@ -62,7 +66,17 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  for (const t of ["invoice", "subscriptionEvent", "subscription", "activity", "lead", "company"] as const) {
+  for (const t of [
+    "invoice",
+    "subscriptionEvent",
+    "subscription",
+    "activity",
+    "deal",
+    "dealStage",
+    "pipeline",
+    "lead",
+    "company",
+  ] as const) {
     // @ts-expect-error dynamic model access
     await prismaUnsafe[t].deleteMany({ where: { workspaceId: { in: [wsA, wsB] } } });
   }
@@ -221,6 +235,56 @@ describe("attribution follows the lead chain", () => {
     const report = await buildCommissionReport(wsA, "2026-03");
     expect(report.referrers[c.companyId]).toBe("Kovács Béla");
     // Still the lead OWNER who is paid — a referrer is not a user.
+    expect(report.users[0].userId).toBe(fanni);
+  });
+});
+
+describe("attribution prefers the deal that closed (v2 P4)", () => {
+  async function dealFor(companyId: string, ownerId: string, status: "OPEN" | "WON") {
+    const [pipeline] = await ensurePipelines(wsA);
+    const stage =
+      status === "WON"
+        ? pipeline.stages.find((s) => s.kind === "won")!
+        : pipeline.stages.find((s) => s.kind === "open")!;
+    return db().deal.create({
+      data: {
+        workspaceId: wsA,
+        companyId,
+        title: "Rebuild",
+        pipelineId: pipeline.id,
+        stageId: stage.id,
+        ownerId,
+        status,
+        closedAt: status === "WON" ? new Date("2026-02-01") : null,
+      },
+    });
+  }
+
+  it("credits whoever closed the deal, over the lead's owner", async () => {
+    const c = await client("Danubia Kft", tamas);
+    await dealFor(c.companyId, fanni, "WON");
+    await paid(c.companyId, 100_000, "2026-03-10", c.subscriptionId);
+
+    const report = await buildCommissionReport(wsA, "2026-03");
+    expect(report.users[0].userId).toBe(fanni);
+  });
+
+  it("falls back to the lead owner for a client that predates the deals layer", async () => {
+    const c = await client("Danubia Kft", tamas);
+    await paid(c.companyId, 100_000, "2026-03-10", c.subscriptionId);
+
+    const report = await buildCommissionReport(wsA, "2026-03");
+    expect(report.users[0].userId).toBe(tamas);
+  });
+
+  it("credits a deal owner even when the client has no lead at all", async () => {
+    const company = await db().company.create({
+      data: { workspaceId: wsA, name: "Leadless Kft", clientStatus: "CLIENT" },
+    });
+    await dealFor(company.id, fanni, "WON");
+    await paid(company.id, 100_000, "2026-03-10", null);
+
+    const report = await buildCommissionReport(wsA, "2026-03");
     expect(report.users[0].userId).toBe(fanni);
   });
 });
