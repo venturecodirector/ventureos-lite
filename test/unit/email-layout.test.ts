@@ -88,3 +88,112 @@ describe("brand email layout", () => {
     expect(escapeHtml(`&<>"'`)).toBe("&amp;&lt;&gt;&quot;&#39;");
   });
 });
+
+/**
+ * Reports and digests, which need more than a paragraph and a button.
+ *
+ * ── WHAT WAS WRONG ──────────────────────────────────────────────────────────
+ *
+ * "Nézd át az összes email templatet, legyen sokkal designosabb, illetve a
+ * weekly digest egyéb riportok is legyenek html-ek és fullos design-al ellátva."
+ *
+ * The layout above already existed and was used by the six transactional
+ * senders. The four REPORT senders bypassed it entirely and concatenated tags:
+ *
+ *     `<h2>${subject}</h2><p>${intro}</p><ul>${rows}</ul>`
+ *
+ * which arrives as unstyled browser-default text — Times New Roman on a white
+ * background — with no sender identity, no plain-text part, and no resemblance
+ * to the product it reports on. Two of them also said "Venture OS" in the
+ * heading AND the subject line of every workspace's mail.
+ */
+describe("report blocks", () => {
+  const report = {
+    preheader: "the week",
+    heading: "Friday report",
+    paragraphs: ["The week in numbers."],
+    metrics: [
+      { label: "New leads", value: "34", hint: "target 30" },
+      { label: "Meetings", value: "6" },
+      { label: "Quotes", value: "2" },
+      { label: "Revenue", value: "1 800 000 Ft" },
+    ],
+    sections: [
+      { heading: "Funnel", rows: [{ label: "Contacted", value: "21 · 62%" }] },
+      { heading: "What works", bullets: ["Audits first.", "Referrals close."] },
+      { heading: "Next", paragraphs: ["Keep auditing."], emphasis: true },
+    ],
+  };
+
+  it("renders every metric with its label, value and hint", () => {
+    const html = brandEmail(report);
+    for (const m of report.metrics) {
+      expect(html).toContain(m.label);
+      expect(html).toContain(m.value);
+    }
+    expect(html).toContain("target 30");
+  });
+
+  /**
+   * Three per row, because a fourth box in 600px leaves each too narrow for a
+   * thousands-separated figure — and Outlook will not wrap a cell to rescue it.
+   */
+  it("chunks metrics into rows of at most three", () => {
+    const html = brandEmail(report);
+    const widths = [...html.matchAll(/<td width="(\d+)%"/g)].map((m) => m[1]);
+    expect(widths).toEqual(["33", "33", "33", "100"]);
+  });
+
+  it("renders sections in the order given", () => {
+    const html = brandEmail(report);
+    const at = (s: string) => html.indexOf(s);
+    expect(at("Funnel")).toBeLessThan(at("What works"));
+    expect(at("What works")).toBeLessThan(at("Next"));
+  });
+
+  it("draws an emphasised section in the accent, so a conclusion reads as one", () => {
+    const html = brandEmail(report);
+    const box = html.slice(html.indexOf("Next") - 400, html.indexOf("Keep auditing."));
+    expect(box).toContain("#7427C6");
+  });
+
+  it("still uses only tables and inline styles for the new blocks", () => {
+    const html = brandEmail(report);
+    expect(html).not.toContain("<style");
+    expect(html).not.toContain("display:flex");
+    expect(html).not.toContain("display:grid");
+  });
+
+  it("escapes metric and section content too", () => {
+    const html = brandEmail({
+      ...report,
+      metrics: [{ label: "<script>x</script>", value: "<b>1</b>", hint: "<i>h</i>" }],
+      sections: [
+        {
+          heading: "<script>s</script>",
+          bullets: ["<img src=x>"],
+          rows: [{ label: "<b>l</b>", value: "<b>v</b>" }],
+          paragraphs: ["<script>p</script>"],
+        },
+      ],
+    });
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<img src=x");
+  });
+
+  /** A report with no plain-text part is a report half the clients cannot read. */
+  it("carries the metrics and sections in the text part as well", () => {
+    const text = brandEmailText(report);
+    expect(text).toContain("New leads: 34 (target 30)");
+    expect(text).toContain("FUNNEL");
+    expect(text).toContain("Contacted: 21 · 62%");
+    expect(text).toContain("· Audits first.");
+    expect(text).toContain("Keep auditing.");
+  });
+
+  it("omits the new blocks entirely when a message has none", () => {
+    const html = brandEmail({ preheader: "p", heading: "h", paragraphs: ["b"] });
+    expect(html).not.toContain('<td width="33%"');
+    expect(html).not.toContain("text-transform:uppercase;color:#858CAE;padding-bottom:8px");
+  });
+});

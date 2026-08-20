@@ -13,7 +13,7 @@ import { allowedStatusTransition } from "@/modules/documents/chain";
 import { getMailProvider, type MailAttachment } from "./provider";
 import { resolveSendingIdentity } from "./identity";
 import { isRecipientSuppressed } from "./suppression";
-import { brandEmail } from "./layout";
+import { brandEmail, brandEmailText } from "./layout";
 import { quoteAcceptLink } from "@/lib/public-links";
 import { brandFrom } from "@/modules/workspaces/brand";
 
@@ -118,6 +118,20 @@ export async function sendDocument(
     }
   }
 
+  // Named `email`, not `content`: the PDF buffer above already uses that name,
+  // and a shadowed variable in a send path is a bad place to save four letters.
+  const email = {
+    brand,
+    preheader: input.subject,
+    heading: input.subject,
+    paragraphs: input.body.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean),
+    button:
+      doc.type === "QUOTE" && doc.acceptSlug
+        ? { label: "Review and accept", url: quoteAcceptLink(doc.acceptSlug) }
+        : undefined,
+    footNote: doc.pdfUrl ? "The signed PDF is attached." : undefined,
+  };
+
   try {
     const { id } = await getMailProvider().send({
       domain: identity.domain,
@@ -129,18 +143,8 @@ export async function sendDocument(
       // shipping bare <br>-joined lines. A quote also gets a button straight to
       // its acceptance page, which previously only appeared as a bare URL in
       // the body if the sender remembered to paste one.
-      html: brandEmail({
-        brand,
-        preheader: input.subject,
-        heading: input.subject,
-        paragraphs: input.body.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean),
-        button:
-          doc.type === "QUOTE" && doc.acceptSlug
-            ? { label: "Review and accept", url: quoteAcceptLink(doc.acceptSlug) }
-            : undefined,
-        footNote: doc.pdfUrl ? "The signed PDF is attached." : undefined,
-      }),
-      text: input.body,
+      html: brandEmail(email),
+      text: brandEmailText(email),
       attachments,
     });
     await db.emailLog.create({

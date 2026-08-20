@@ -3,6 +3,7 @@ import { getMailProvider } from "./provider";
 import { resolveSendingIdentity } from "./identity";
 import { getTopReferrers } from "../referrals/data";
 import { brandFrom } from "@/modules/workspaces/brand";
+import { brandEmail, brandEmailText } from "./layout";
 
 function huf(n: number): string {
   return `${n.toLocaleString("en-US").replace(/,/g, " ")} Ft`;
@@ -33,19 +34,41 @@ export async function sendFridayReport(workspaceId: string): Promise<void> {
     include: { user: { select: { email: true } } },
   });
 
-  // Top referrers — the network as a measurable channel (spec §4.18).
-  const referrersHtml = topReferrers.length
-    ? `<h3>Top referrers</h3><ul>${topReferrers
-        .map((r) => `<li>${r.name} — ${huf(r.attributedRevenue)} (${r.won}/${r.referred} won)</li>`)
-        .join("")}</ul>`
-    : "";
   // The workspace's own name, not the product's: a second workspace's Owner
   // should not receive a report headed by this agency (audit-v2 item 6).
   const reportTitle = `${brand.name} — Friday report`;
-  const html =
-    `<h2>${reportTitle}</h2>` +
-    `<p>${leads} leads · ${meetings} meetings so far. Full analytics land with the Reports module.</p>` +
-    referrersHtml;
+
+  /**
+   * Rendered through the brand layout, like every other message this system
+   * sends. It used to be three concatenated tags — `<h2>`, a `<p>` and a `<ul>`
+   * — which arrive as unstyled browser-default text with no sender identity,
+   * no plain-text alternative and no resemblance to the product it reports on.
+   */
+  const content = {
+    preheader: `${leads} leads · ${meetings} meetings`,
+    heading: "Friday report",
+    paragraphs: ["Where the week landed."],
+    metrics: [
+      { label: "Leads", value: String(leads) },
+      { label: "Meetings", value: String(meetings) },
+    ],
+    sections: topReferrers.length
+      ? [
+          {
+            // The network as a measurable channel (spec §4.18).
+            heading: "Top referrers",
+            rows: topReferrers.map((r) => ({
+              label: `${r.name} · ${r.won}/${r.referred} won`,
+              value: huf(r.attributedRevenue),
+            })),
+          },
+        ]
+      : [],
+    footNote: "Sent every Friday to the workspace's Owners.",
+    brand,
+  };
+  const html = brandEmail(content);
+  const text = brandEmailText(content);
   for (const owner of owners) {
     const { id } = await getMailProvider().send({
       domain: identity.domain,
@@ -54,6 +77,7 @@ export async function sendFridayReport(workspaceId: string): Promise<void> {
       replyTo: identity.replyTo || undefined,
       subject: reportTitle,
       html,
+      text,
     });
     await db.emailLog.create({
       data: { workspaceId, to: owner.user.email, subject: "Friday report", mailgunId: id, status: "QUEUED" },

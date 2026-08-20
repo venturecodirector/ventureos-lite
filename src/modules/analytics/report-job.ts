@@ -15,6 +15,7 @@ import { collectReportInput } from "./report-data";
 import { buildWeeklyReport, type WeeklyReport } from "./reports";
 import { buildReportPdfHtml } from "./report-pdf";
 import { brandFrom } from "@/modules/workspaces/brand";
+import { brandEmail, brandEmailText } from "../mail/layout";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
 
@@ -78,16 +79,66 @@ export async function generateWeeklyReport(
     where: { id: workspaceId },
     select: { mailgunConfig: true },
   });
-  const identity = resolveSendingIdentity(ws?.mailgunConfig);
+  const brand = brandFrom(brandRow?.brand);
+  const identity = resolveSendingIdentity(ws?.mailgunConfig, brand);
   const owners = await prismaUnsafe.membership.findMany({
     where: { workspaceId, role: "OWNER" },
     include: { user: { select: { email: true } } },
   });
-  const subject = `Venture OS — Friday report · ${label}`;
-  const html2 =
-    `<h2>${subject}</h2>` +
-    (commentary ? `<p><b>What worked:</b> ${commentary}</p>` : "") +
-    `<p>Full report with funnel, per-source, audit→meeting and document-chain metrics is attached.</p>`;
+  // The workspace's own name, never the product's.
+  const subject = `${brand.name} — Friday report · ${label}`;
+
+  /**
+   * The covering email carries the headline numbers.
+   *
+   * It used to say only "the full report is attached", under an `<h2>` and with
+   * no plain-text part — so the weekly report was invisible until someone
+   * downloaded a PDF on a phone. The KPIs and the funnel's ends are the two
+   * things worth reading in the notification itself; the PDF still holds
+   * everything.
+   */
+  const firstStep = report.funnel[0];
+  const lastStep = report.funnel[report.funnel.length - 1];
+  const content = {
+    preheader: commentary ?? `${label} — funnel, sources and document chains.`,
+    heading: `Friday report · ${label}`,
+    paragraphs: commentary ? [commentary] : ["The week in numbers."],
+    metrics: report.kpis.slice(0, 3).map((k) => ({
+      label: k.metric,
+      value: String(k.value),
+      hint: k.target ? `target ${k.target}` : undefined,
+    })),
+    sections: [
+      ...(firstStep && lastStep && firstStep !== lastStep
+        ? [
+            {
+              heading: "Funnel",
+              rows: report.funnel.map((f) => ({
+                label: f.stage,
+                value:
+                  f.conversion === null
+                    ? String(f.count)
+                    : `${f.count} · ${Math.round(f.conversion * 100)}%`,
+              })),
+            },
+          ]
+        : []),
+      ...(report.sources.length
+        ? [
+            {
+              heading: "By source",
+              rows: report.sources.slice(0, 6).map((r) => ({
+                label: r.source,
+                value: `${r.leads} leads · ${r.won} won · ${Math.round(r.winRate * 100)}%`,
+              })),
+            },
+          ]
+        : []),
+    ],
+    footNote:
+      "The attached PDF has the full funnel, per-source performance, audit→meeting and document-chain metrics.",
+    brand,
+  };
   for (const owner of owners) {
     const { id } = await getMailProvider().send({
       domain: identity.domain,
@@ -95,7 +146,8 @@ export async function generateWeeklyReport(
       from: identity.from,
       replyTo: identity.replyTo || undefined,
       subject,
-      html: html2,
+      html: brandEmail(content),
+      text: brandEmailText(content),
       attachments: [{ filename: `${label.replace(/\s/g, "-")}.pdf`, content: pdf, contentType: "application/pdf" }],
     });
     await db.emailLog.create({

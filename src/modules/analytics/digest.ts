@@ -9,6 +9,8 @@ import {
   type WinLossDigest,
 } from "../../lib/ai/prompts/winloss-digest";
 import { getOutcomeFacts } from "./data";
+import { brandEmail, brandEmailText, type BrandEmailOptions } from "../mail/layout";
+import { brandFrom, type WorkspaceBrand } from "@/modules/workspaces/brand";
 import { buildWhatCloses } from "./aggregate";
 
 /** Start-of-quarter (UTC) containing `ms`. */
@@ -26,20 +28,60 @@ function prevQuarterRange(nowMs: number): { sinceMs: number; untilMs: number; la
   return { sinceMs, untilMs: thisQ, label: `Q${q} ${d.getUTCFullYear()}` };
 }
 
-function renderHtml(label: string, digest: WinLossDigest | null, totalsLine: string): string {
-  if (!digest) {
-    return `<h2>Venture OS — ${label} win/loss digest</h2><p>${totalsLine}</p>`;
+/**
+ * The digest as brand email.
+ *
+ * Two things were wrong with what this used to build. It emitted bare `<h2>`,
+ * `<p>` and `<ul>` tags — unstyled browser-default text, no sender identity, no
+ * plain-text part. And it said "Venture OS" in the heading AND in the subject
+ * line of every workspace's mail, so a white-labelled deployment's Owner got a
+ * quarterly report from a company they have never heard of.
+ */
+function buildDigest(
+  label: string,
+  digest: WinLossDigest | null,
+  totals: { deals: number; won: number; lost: number; postponed: number; revenue: number },
+  brand: WorkspaceBrand,
+): BrandEmailOptions {
+  const sections = [];
+  if (digest) {
+    sections.push({ heading: "What works", bullets: digest.whatWorks });
+    if (digest.whatDrags.length) {
+      sections.push({ heading: "What drags", bullets: digest.whatDrags });
+    }
+    sections.push({
+      heading: "Next quarter",
+      paragraphs: [digest.recommendation],
+      emphasis: true,
+    });
   }
-  const works = digest.whatWorks.map((s) => `<li>${s}</li>`).join("");
-  const drags = digest.whatDrags.map((s) => `<li>${s}</li>`).join("");
-  return (
-    `<h2>Venture OS — ${label} win/loss digest</h2>` +
-    `<p><b>${digest.headline}</b></p>` +
-    `<p>${totalsLine}</p>` +
-    `<h3>What works</h3><ul>${works}</ul>` +
-    (drags ? `<h3>What drags</h3><ul>${drags}</ul>` : "") +
-    `<p><b>Next quarter:</b> ${digest.recommendation}</p>`
-  );
+  return {
+    preheader: `${totals.won} won, ${totals.lost} lost — ${label}`,
+    heading: `${label} win/loss`,
+    // Claude's one-line read of the quarter, when there is one. Without it the
+    // numbers still stand on their own, which is why the digest still sends.
+    paragraphs: digest ? [digest.headline] : ["The quarter in numbers."],
+    metrics: [
+      { label: "Deals closed", value: String(totals.deals) },
+      { label: "Won", value: String(totals.won), hint: pct(totals.won, totals.deals) },
+      { label: "Revenue", value: huf(totals.revenue) },
+    ],
+    sections,
+    rows: [
+      { label: "Lost", value: String(totals.lost) },
+      { label: "Postponed", value: String(totals.postponed) },
+    ],
+    footNote: "Sent at the start of each quarter to the workspace's Owners.",
+    brand,
+  };
+}
+
+function pct(part: number, whole: number): string {
+  return whole === 0 ? "—" : `${Math.round((part / whole) * 100)}% of closed`;
+}
+
+function huf(n: number): string {
+  return `${n.toLocaleString("en-US").replace(/,/g, " ")} Ft`;
 }
 
 /**
@@ -49,7 +91,9 @@ function renderHtml(label: string, digest: WinLossDigest | null, totalsLine: str
  */
 export async function processQuarterlyWinLoss(nowMs: number = Date.now()): Promise<number> {
   const { sinceMs, untilMs, label } = prevQuarterRange(nowMs);
-  const workspaces = await prismaUnsafe.workspace.findMany({ select: { id: true, mailgunConfig: true } });
+  const workspaces = await prismaUnsafe.workspace.findMany({
+    select: { id: true, mailgunConfig: true, brand: true },
+  });
 
   let sent = 0;
   for (const ws of workspaces) {
@@ -58,9 +102,6 @@ export async function processQuarterlyWinLoss(nowMs: number = Date.now()): Promi
     if (totals.deals === 0) continue; // nothing closed this quarter
 
     const whatCloses = buildWhatCloses(facts);
-    const totalsLine =
-      `${totals.deals} deals — ${totals.won} won, ${totals.lost} lost, ${totals.postponed} postponed. ` +
-      `Revenue ${totals.revenue.toLocaleString("en-US")} HUF.`;
 
     let digest: WinLossDigest | null = null;
     try {
@@ -78,13 +119,17 @@ export async function processQuarterlyWinLoss(nowMs: number = Date.now()): Promi
       console.error(`[digest] win/loss AI failed for ${ws.id}`, e);
     }
 
-    const identity = resolveSendingIdentity(ws.mailgunConfig);
+    const brand = brandFrom(ws.brand);
+    const identity = resolveSendingIdentity(ws.mailgunConfig, brand);
     const owners = await prismaUnsafe.membership.findMany({
       where: { workspaceId: ws.id, role: "OWNER" },
       include: { user: { select: { email: true } } },
     });
-    const html = renderHtml(label, digest, totalsLine);
-    const subject = `Venture OS — ${label} win/loss digest`;
+    const content = buildDigest(label, digest, totals, brand);
+    const html = brandEmail(content);
+    const text = brandEmailText(content);
+    // The workspace's own name, never the product's.
+    const subject = `${brand.name} — ${label} win/loss digest`;
     for (const owner of owners) {
       const { id } = await getMailProvider().send({
         domain: identity.domain,
@@ -93,6 +138,7 @@ export async function processQuarterlyWinLoss(nowMs: number = Date.now()): Promi
         replyTo: identity.replyTo || undefined,
         subject,
         html,
+        text,
       });
       await db.emailLog.create({
         data: { workspaceId: ws.id, to: owner.user.email, subject, mailgunId: id, status: "QUEUED" },

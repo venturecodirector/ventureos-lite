@@ -10,6 +10,9 @@ import {
 } from "../../lib/ai/prompts/monday-digest";
 import { collectDigestData } from "./digest-data";
 import { buildDigestModel } from "./reports";
+import { brandEmail, brandEmailText } from "../mail/layout";
+import { brandFrom } from "@/modules/workspaces/brand";
+import { appUrl } from "@/lib/env";
 
 /**
  * Monday 07:30 per-user, per-workspace digest (spec §4.22). Each membership
@@ -18,13 +21,14 @@ import { buildDigestModel } from "./reports";
  */
 export async function processMondayDigests(nowMs: number = Date.now()): Promise<number> {
   const workspaces = await prismaUnsafe.workspace.findMany({
-    select: { id: true, mailgunConfig: true },
+    select: { id: true, mailgunConfig: true, brand: true },
   });
 
   let sent = 0;
   for (const ws of workspaces) {
     const db = getWorkspaceClient(ws.id);
-    const identity = resolveSendingIdentity(ws.mailgunConfig);
+    const brand = brandFrom(ws.brand);
+    const identity = resolveSendingIdentity(ws.mailgunConfig, brand);
     const members = await prismaUnsafe.membership.findMany({
       where: { workspaceId: ws.id },
       include: { user: { select: { name: true, email: true } } },
@@ -58,16 +62,46 @@ export async function processMondayDigests(nowMs: number = Date.now()): Promise<
         console.error(`[digest] intro failed for ${m.user.email}`, e);
       }
 
-      const rows = model.sections.map((s) => `<li><b>${s.label}:</b> ${s.value}</li>`).join("");
-      const subject = "Venture OS — your Monday digest";
-      const html = `<h2>${subject}</h2><p>${intro}</p><ul>${rows}</ul>`;
+      /**
+       * The digest as brand email.
+       *
+       * It used to be `<h2>` + `<p>` + `<ul>`: unstyled browser-default text with
+       * no sender identity and no plain-text part, and headed "Venture OS" in
+       * both the heading and the subject — so every workspace's members got a
+       * Monday digest from a company that may not be theirs.
+       *
+       * The first three lines of the model become headline numbers, because a
+       * digest is read on a phone in the first minute of the week; the rest stay
+       * as a label/value list.
+       */
+      const content = {
+        preheader: model.sections
+          .slice(0, 2)
+          .map((s) => `${s.label} ${s.value}`)
+          .join(" · "),
+        heading: `Your week, ${m.user.name?.split(" ")[0] ?? "there"}`,
+        paragraphs: [intro],
+        metrics: model.sections.slice(0, 3).map((s) => ({
+          label: s.label,
+          value: String(s.value),
+        })),
+        rows: model.sections.slice(3).map((s) => ({
+          label: s.label,
+          value: String(s.value),
+        })),
+        button: appUrl() ? { label: "Open the workspace", url: appUrl() } : undefined,
+        footNote: "Sent every Monday morning. Change what you receive in Settings → Notifications.",
+        brand,
+      };
+      const subject = `${brand.name} — your Monday digest`;
       const { id } = await getMailProvider().send({
         domain: identity.domain,
         to: m.user.email,
         from: identity.from,
         replyTo: identity.replyTo || undefined,
         subject,
-        html,
+        html: brandEmail(content),
+        text: brandEmailText(content),
       });
       await db.emailLog.create({
         data: { workspaceId: ws.id, to: m.user.email, subject, mailgunId: id, status: "QUEUED" },

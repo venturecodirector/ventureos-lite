@@ -12,7 +12,7 @@ import {
   type ReplyAnalysis,
 } from "@/lib/ai/prompts/reply-analysis";
 import { getMailProvider } from "@/modules/mail/provider";
-import { brandEmail } from "@/modules/mail/layout";
+import { brandEmail, brandEmailText } from "@/modules/mail/layout";
 import { resolveSendingIdentity } from "@/modules/mail/identity";
 import {
   EMPTY_QUALIFICATION,
@@ -129,6 +129,15 @@ async function notifyOwners(workspaceId: string, leadName: string, reason: strin
     where: { workspaceId, role: "OWNER" },
     include: { user: { select: { email: true } } },
   });
+  const content = {
+    brand,
+    preheader: `${leadName} — ${reason}`,
+    heading: "A thread needs you",
+    paragraphs: [
+      `${leadName} mentioned ${reason}.`,
+      "Claude drafting is locked for this thread, so nothing will be written on your behalf. Take it over in the Inbox.",
+    ],
+  };
   for (const owner of owners) {
     await getMailProvider().send({
       domain: identity.domain,
@@ -136,16 +145,8 @@ async function notifyOwners(workspaceId: string, leadName: string, reason: strin
       from: identity.from,
       replyTo: identity.replyTo || undefined,
       subject: `Price escalation — ${leadName}`,
-      html: brandEmail({
-        brand,
-        preheader: `${leadName} — ${reason}`,
-        heading: "A thread needs you",
-        paragraphs: [
-          `${leadName} mentioned ${reason}.`,
-          "Claude drafting is locked for this thread, so nothing will be written on your behalf. Take it over in the Inbox.",
-        ],
-      }),
-      text: `${leadName} mentioned ${reason}. Money-talk drafting is locked for this thread — please take over.`,
+      html: brandEmail(content),
+      text: brandEmailText(content),
     });
   }
 }

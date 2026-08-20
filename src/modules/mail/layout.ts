@@ -101,6 +101,31 @@ export interface EmailRow {
   value: string;
 }
 
+/**
+ * One headline number. Reports live or die on these being readable at a glance,
+ * so they are laid out as a row of boxes rather than as a sentence.
+ */
+export interface EmailMetric {
+  label: string;
+  value: string;
+  /** A smaller line under the number — a comparison, a share, a unit. */
+  hint?: string;
+}
+
+/**
+ * A block within a report: a heading, then any of prose, bullets or a
+ * label/value table. Reports are made of several of these; a transactional
+ * email is made of none.
+ */
+export interface EmailSection {
+  heading: string;
+  paragraphs?: string[];
+  bullets?: string[];
+  rows?: EmailRow[];
+  /** Draw the section as a panel of its own, for a conclusion or a warning. */
+  emphasis?: boolean;
+}
+
 export interface BrandEmailOptions {
   /** Shown in the inbox preview line after the subject. Not rendered. */
   preheader: string;
@@ -110,6 +135,16 @@ export interface BrandEmailOptions {
   paragraphs: string[];
   /** Optional label/value block, e.g. When / Who / Duration. */
   rows?: EmailRow[];
+  /**
+   * Headline numbers, laid out as boxes across the panel.
+   *
+   * Two or three per row — four in a 600px email leaves each box too narrow for
+   * a thousands-separated figure, and Outlook will not wrap a table cell to
+   * rescue it.
+   */
+  metrics?: EmailMetric[];
+  /** Report body: several headed blocks, in order. */
+  sections?: EmailSection[];
   /** Optional primary call to action. */
   button?: EmailButton;
   /** Small print under the panel, above the wordmark. */
@@ -163,9 +198,23 @@ export function escapeHtml(s: string): string {
 export function brandEmailText(o: BrandEmailOptions): string {
   const lines: string[] = [o.heading, ""];
   for (const p of o.paragraphs) lines.push(p, "");
+  if (o.metrics?.length) {
+    for (const m of o.metrics) {
+      lines.push(`${m.label}: ${m.value}${m.hint ? ` (${m.hint})` : ""}`);
+    }
+    lines.push("");
+  }
   if (o.rows?.length) {
     for (const r of o.rows) lines.push(`${r.label}: ${r.value}`);
     lines.push("");
+  }
+  for (const sec of o.sections ?? []) {
+    lines.push(sec.heading.toUpperCase(), "");
+    for (const par of sec.paragraphs ?? []) lines.push(par, "");
+    for (const b of sec.bullets ?? []) lines.push(`  · ${b}`);
+    if (sec.bullets?.length) lines.push("");
+    for (const r of sec.rows ?? []) lines.push(`  ${r.label}: ${r.value}`);
+    if (sec.rows?.length) lines.push("");
   }
   if (o.button) lines.push(`${o.button.label}: ${o.button.url}`, "");
   if (o.footNote) lines.push(o.footNote, "");
@@ -203,6 +252,103 @@ export function brandEmail(o: BrandEmailOptions): string {
         .join("") +
       `</table>`
     : "";
+
+  /**
+   * Metrics as a row of boxes.
+   *
+   * Chunked into rows of at most three, each row its own table: a single table
+   * with a `colspan` juggle is where Outlook's column widths come apart, and a
+   * report that arrives with the numbers stacked on top of each other is worse
+   * than one that never had boxes.
+   */
+  const metricRows: string[] = [];
+  for (let i = 0; i < (o.metrics?.length ?? 0); i += 3) {
+    const chunk = o.metrics!.slice(i, i + 3);
+    const width = Math.floor(100 / chunk.length);
+    metricRows.push(
+      // The gap lives in the CELL's padding and the box's border on an inner
+      // div, rather than in `border-spacing`: spacing is added OUTSIDE the
+      // percentage widths, so three 33% cells plus four gaps overflow, the
+      // browser shrinks them, and the row ends short of the panel's right edge.
+      // This way the boxes line up with the panel on both sides exactly.
+      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;margin:4px 0 14px;">` +
+        `<tr>` +
+        chunk
+          .map(
+            (m, idx) =>
+              `<td width="${width}%" valign="top" style="width:${width}%;padding:0 ${idx === chunk.length - 1 ? 0 : 8}px 0 0;">` +
+              `<div style="background-color:${pal.canvas};border:1px solid ${pal.border};border-radius:11px;padding:14px 12px;">` +
+              `<div style="font-family:${font};font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:${pal.muted};padding-bottom:6px;">${escapeHtml(
+                m.label,
+              )}</div>` +
+              `<div style="font-family:${font};font-size:24px;font-weight:700;line-height:1.15;color:${pal.ink};">${escapeHtml(
+                m.value,
+              )}</div>` +
+              (m.hint
+                ? `<div style="font-family:${font};font-size:11px;line-height:1.4;color:${pal.muted};padding-top:4px;">${escapeHtml(
+                    m.hint,
+                  )}</div>`
+                : "") +
+              `</div></td>`,
+          )
+          .join("") +
+        `</tr></table>`,
+    );
+  }
+  const metrics = metricRows.join("");
+
+  const sections = (o.sections ?? [])
+    .map((sec) => {
+      const inner =
+        `<div style="font-family:${font};font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:${pal.muted};padding-bottom:8px;">` +
+        `${escapeHtml(sec.heading)}</div>` +
+        (sec.paragraphs ?? [])
+          .map(
+            (par) =>
+              `<p style="margin:0 0 10px;font-family:${font};font-size:14px;line-height:1.6;color:${pal.ink};">${escapeHtml(
+                par,
+              )}</p>`,
+          )
+          .join("") +
+        ((sec.bullets ?? []).length
+          ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">` +
+            sec
+              .bullets!.map(
+                (b) =>
+                  `<tr>` +
+                  `<td valign="top" style="padding:0 8px 7px 0;font-family:${font};font-size:14px;line-height:1.5;color:${pal.accent};">&bull;</td>` +
+                  `<td valign="top" style="padding:0 0 7px;font-family:${font};font-size:14px;line-height:1.55;color:${pal.ink};">${escapeHtml(
+                    b,
+                  )}</td>` +
+                  `</tr>`,
+              )
+              .join("") +
+            `</table>`
+          : "") +
+        ((sec.rows ?? []).length
+          ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">` +
+            sec
+              .rows!.map(
+                (r) =>
+                  `<tr>` +
+                  `<td style="padding:7px 0;border-bottom:1px solid ${pal.border};font-family:${font};font-size:13px;color:${pal.muted};">${escapeHtml(
+                    r.label,
+                  )}</td>` +
+                  `<td style="padding:7px 0 7px 16px;border-bottom:1px solid ${pal.border};font-family:${font};font-size:13px;font-weight:600;color:${pal.ink};text-align:right;white-space:nowrap;">${escapeHtml(
+                    r.value,
+                  )}</td>` +
+                  `</tr>`,
+              )
+              .join("") +
+            `</table>`
+          : "");
+      return sec.emphasis
+        ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:14px 0 4px;"><tr>` +
+            `<td style="background-color:${pal.canvas};border:1px solid ${pal.accent};border-radius:11px;padding:16px;">${inner}</td>` +
+            `</tr></table>`
+        : `<div style="margin:18px 0 4px;">${inner}</div>`;
+    })
+    .join("");
 
   // Bulletproof-ish button: a padded table cell, so it renders without relying
   // on border-radius or background-image support.
@@ -245,7 +391,9 @@ export function brandEmail(o: BrandEmailOptions): string {
           o.heading,
         )}</h1>
         ${paragraphs}
+        ${metrics}
         ${rows}
+        ${sections}
         ${button}
       </td></tr>
 
