@@ -268,11 +268,33 @@
 
     let body = null;
     let parseError = null;
+    let bodyFormat = null;
     if (typeof record.body === "string") {
       try {
         body = scrubValue(JSON.parse(record.body), "", replacer, 0);
-      } catch (e) {
-        parseError = String(e?.name ?? "Error");
+        bodyFormat = "json";
+      } catch {
+        /**
+         * NOT JSON — try the React Server Components wire format.
+         *
+         * This mattered a great deal. LinkedIn's profile moved onto RSC, whose
+         * payload is numbered rows of JSON FRAGMENTS rather than one JSON
+         * document. `JSON.parse` throws on it, and the old code stopped there:
+         * `body` stayed null and the snapshot recorded a `parseError`.
+         *
+         * That failed SAFE — nothing personal was written to a file that goes
+         * into version control, which is the property that matters most here —
+         * but it also meant the snapshot carried nothing, so the payload could
+         * not be studied or mapped. Both halves are needed: parsed enough to be
+         * useful, scrubbed enough to be committable.
+         */
+        const rows = parseFlight(record.body, replacer);
+        if (rows) {
+          body = rows;
+          bodyFormat = "rsc-flight";
+        } else {
+          parseError = "NotJsonOrFlight";
+        }
       }
     }
 
@@ -283,9 +305,56 @@
       contentType: record.contentType,
       bodySize: record.bodySize,
       truncated: !!record.truncated,
+      // Which wire format the body turned out to be. The mapping needs to know:
+      // an RSC row set is read differently from a JSON document.
+      bodyFormat,
       parseError,
       body,
     };
+  }
+
+  /**
+   * Parse an RSC flight body into scrubbed rows.
+   *
+   *     0:{"a":"$@1","b":"…"}          → { id: "0", tag: null, value: {…} }
+   *     1:I[54321,["chunk.js"],"x"]    → { id: "1", tag: "I", value: [...] }
+   *
+   * Each row's fragment is scrubbed as JSON, so identity inside it is replaced by
+   * the same referential rules as anywhere else — one human stays one human
+   * across rows, which is most of what there is to learn from a payload that
+   * cross-references itself.
+   *
+   * A row whose fragment does not parse keeps its id and tag and reports its
+   * LENGTH, never its text: an unparsed fragment is exactly where a real name
+   * would survive, and the whole point of this file is that none does.
+   *
+   * Returns null if nothing looked like a row, so the caller can say so.
+   */
+  function parseFlight(text, replacer) {
+    const lines = String(text).split("\n");
+    const rows = [];
+    let parsed = 0;
+    for (const line of lines) {
+      if (line.length === 0) continue;
+      const m = /^([0-9a-f]{1,4}):([A-Za-z]?)([\s\S]*)$/.exec(line);
+      if (!m) {
+        rows.push({ id: null, tag: null, unparsedLength: line.length });
+        continue;
+      }
+      const [, id, tag, payload] = m;
+      try {
+        rows.push({
+          id,
+          tag: tag || null,
+          value: scrubValue(JSON.parse(payload), "", replacer, 0),
+        });
+        parsed += 1;
+      } catch {
+        rows.push({ id, tag: tag || null, unparsedLength: payload.length });
+      }
+    }
+    // At least one real row, or this was not a flight body at all.
+    return parsed > 0 ? { format: "rsc-flight", rowCount: rows.length, rows } : null;
   }
 
   /** Scrub a whole page's worth of observations into one committable snapshot. */

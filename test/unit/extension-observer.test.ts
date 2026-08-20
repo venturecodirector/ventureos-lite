@@ -249,6 +249,99 @@ describe("the patched fetch is transparent", () => {
   });
 
   /**
+   * ── THE PAYLOAD THAT WAS INVISIBLE TWICE OVER ─────────────────────────────
+   *
+   * From a real capture report, after the census went in. Twelve responses were
+   * declined unread, every one of them `application/octet-stream`, and among
+   * them:
+   *
+   *   …/rsc-action/actions/component?componentId=…profile.dsl.impl.profileCardsAboveActivity
+   *   …/rsc-action/actions/navigation?screenId=…profile.ProfileContactDetailsOverlay
+   *
+   * LinkedIn moved the profile onto React Server Components. The wire format is
+   * numbered rows of JSON fragments — not JSON as a whole, so a JSON test
+   * rejects it, and served as octet-stream, so a content-type test rejects it
+   * too. Which is how "LinkedIn server-renders and there is nothing to observe"
+   * became the working theory for three rounds. It fetches everything; it just
+   * does not call it JSON.
+   */
+  it("copies an RSC flight payload served as octet-stream", async () => {
+    // The shape, verbatim in structure: a numbered row per fragment.
+    const flight = [
+      '0:{"a":"$@1","f":"","b":"development"}',
+      '1:I[54321,["static/chunks/app/profile-page.js"],"default"]',
+      '2:["$","div",null,{"className":"profile"}]',
+    ].join("\n");
+    const { win, posted } = pageWithInterceptor({
+      fetchImpl: (async () =>
+        new Response(flight, {
+          status: 200,
+          headers: { "content-type": "application/octet-stream" },
+        })) as typeof fetch,
+    });
+    await (win.fetch as typeof fetch)(
+      "https://www.linkedin.com/flagship-web/rsc-action/actions/component?componentId=x",
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    const observed = posted.filter((p) => (p as { kind?: string }).kind === "observed") as Array<{
+      record: { body: string | null; skipped?: string };
+    }>;
+    expect(observed).toHaveLength(1);
+    expect(observed[0]!.record.skipped, "the RSC payload was skipped again").toBeUndefined();
+    expect(observed[0]!.record.body).toBe(flight);
+  });
+
+  /**
+   * The other half of that change: reading MORE content types must not turn the
+   * observer into a dragnet. Markup, scripts, styles and media are never read —
+   * they cannot be a data payload, and reading them would copy the page itself.
+   */
+  it("still never reads markup, scripts, styles or media", async () => {
+    for (const type of [
+      "text/html; charset=utf-8",
+      "application/javascript",
+      "text/css",
+      "image/png",
+      "font/woff2",
+      "video/mp4",
+    ]) {
+      const { win, posted } = pageWithInterceptor({
+        fetchImpl: (async () =>
+          new Response('{"looks":"like data"}', {
+            status: 200,
+            headers: { "content-type": type },
+          })) as typeof fetch,
+      });
+      await (win.fetch as typeof fetch)("https://www.linkedin.com/thing");
+      await new Promise((r) => setTimeout(r, 10));
+      const observed = posted.filter((p) => (p as { kind?: string }).kind === "observed") as Array<{
+        record: { body: string | null; skipped?: string };
+      }>;
+      expect(observed, type).toHaveLength(1);
+      expect(observed[0]!.record.skipped, `${type} was read`).toBeTruthy();
+      expect(observed[0]!.record.body, `${type} body was copied`).toBeNull();
+    }
+  });
+
+  /** An octet-stream that is NOT structured data is recorded, not copied. */
+  it("declines an octet-stream that carries no structure", async () => {
+    const { win, posted } = pageWithInterceptor({
+      fetchImpl: (async () =>
+        new Response("just some bytes, no structure at all", {
+          status: 200,
+          headers: { "content-type": "application/octet-stream" },
+        })) as typeof fetch,
+    });
+    await (win.fetch as typeof fetch)("https://www.linkedin.com/blob");
+    await new Promise((r) => setTimeout(r, 10));
+    const observed = posted.filter((p) => (p as { kind?: string }).kind === "observed") as Array<{
+      record: { body: string | null; skipped?: string };
+    }>;
+    expect(observed[0]!.record.skipped).toBe("body_was_not_structured_data");
+    expect(observed[0]!.record.body).toBeNull();
+  });
+
+  /**
    * The census is the answer to "did the payload go past us entirely".
    *
    * A patched fetch cannot see a request issued from a Worker, or through a

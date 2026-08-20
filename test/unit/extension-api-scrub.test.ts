@@ -265,3 +265,121 @@ describe("the snapshot's own metadata", () => {
     expect(snap.records[0]!.parseError).toBeNull();
   });
 });
+
+/**
+ * ── THE RSC FLIGHT PAYLOAD ──────────────────────────────────────────────────
+ *
+ * LinkedIn's profile moved onto React Server Components, and its payload is not
+ * a JSON document — it is numbered rows, each holding a JSON fragment:
+ *
+ *     0:{"a":"$@1","b":"…"}
+ *     1:I[54321,["static/chunks/profile.js"],"default"]
+ *     2:["$","div",null,{…}]
+ *
+ * `JSON.parse` throws on the whole thing, so the scrubber used to record a
+ * `parseError` and a null body. That failed SAFE — nothing personal reached a
+ * committed file, which is the property that matters most — but it also meant
+ * the snapshot carried nothing, so the payload could not be mapped.
+ *
+ * Both halves are required, and these tests pin both.
+ */
+describe("an RSC flight body", () => {
+  const flight = [
+    '0:{"name":"Sherzod Shermatov","headline":"CTO at Realbotix","entityUrn":"urn:li:fsd_profile:ACoAAB123"}',
+    '1:I[54321,["static/chunks/app/profile-page.js"],"default"]',
+    '2:["$","section",null,{"emailAddress":"sherzod@realbotix.example","className":"pv-top-card"}]',
+    "3:not json at all, just text",
+  ].join("\n");
+
+  const scrub = () =>
+    S.scrubSnapshot({
+      slug: "sherzod-shermatov",
+      records: [
+        {
+          url: "https://www.linkedin.com/flagship-web/rsc-action/actions/component?componentId=x",
+          method: "POST",
+          status: 200,
+          contentType: "application/octet-stream",
+          bodySize: flight.length,
+          body: flight,
+        },
+      ],
+      label: "rsc-profile",
+    });
+
+  it("parses it into rows instead of giving up", () => {
+    const record = scrub().records[0]! as unknown as {
+      bodyFormat: string;
+      parseError: string | null;
+      body: { format: string; rowCount: number; rows: unknown[] };
+    };
+    expect(record.parseError).toBeNull();
+    expect(record.bodyFormat).toBe("rsc-flight");
+    expect(record.body.format).toBe("rsc-flight");
+    expect(record.body.rowCount).toBe(4);
+  });
+
+  it("keeps the row ids and tags, which are the format's structure", () => {
+    const rows = (scrub().records[0]! as unknown as {
+      body: { rows: Array<{ id: string | null; tag: string | null }> };
+    }).body.rows;
+    expect(rows.map((r) => r.id)).toEqual(["0", "1", "2", "3"]);
+    // The single-letter tag distinguishes a module row from a data row.
+    expect(rows[1]!.tag).toBe("I");
+    expect(rows[0]!.tag).toBeNull();
+  });
+
+  /** THE PROPERTY THAT MATTERS: no person survives, in any row. */
+  it("scrubs the people inside the fragments", () => {
+    const json = JSON.stringify(scrub());
+    for (const secret of [
+      "Sherzod",
+      "Shermatov",
+      "sherzod@realbotix.example",
+      "ACoAAB123",
+    ]) {
+      expect(json, `${secret} survived the scrub`).not.toContain(secret);
+    }
+  });
+
+  /**
+   * A fragment that does not parse is where a real name would survive, so it is
+   * reported by LENGTH and never by text.
+   */
+  it("reports an unparsable row by length, never by content", () => {
+    const rows = (scrub().records[0]! as unknown as {
+      body: { rows: Array<{ id: string | null; unparsedLength?: number; value?: unknown }> };
+    }).body.rows;
+    const bad = rows.find((r) => r.id === "3")!;
+    expect(bad.unparsedLength).toBeGreaterThan(0);
+    expect(bad.value).toBeUndefined();
+    expect(JSON.stringify(bad)).not.toContain("not json at all");
+  });
+
+  it("keeps the discriminators that make the payload readable", () => {
+    // The urn is replaced, but it is still a urn of the same type — that part is
+    // schema, not identity.
+    const json = JSON.stringify(scrub());
+    expect(json).toContain("urn:li:fsd_profile:");
+    expect(json).toContain("static/chunks");
+  });
+
+  it("still says so when a body is neither JSON nor flight", () => {
+    const out = S.scrubSnapshot({
+      slug: "x",
+      records: [
+        {
+          url: "https://www.linkedin.com/blob",
+          method: "POST",
+          status: 200,
+          contentType: "application/octet-stream",
+          bodySize: 5,
+          body: "opaque bytes",
+        },
+      ],
+    });
+    const record = out.records[0]! as unknown as { parseError: string | null; body: unknown };
+    expect(record.parseError).toBe("NotJsonOrFlight");
+    expect(record.body).toBeNull();
+  });
+});

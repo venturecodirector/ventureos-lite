@@ -15,7 +15,40 @@ done from a test runner, and it must not be done by asking LinkedIn for anything
 
 So this is a step you have to drive. It takes about ten minutes.
 
-## STATUS, after three attempts: the observer now tells you WHY
+## STATUS: the payload exists, and we know where it is
+
+**The "LinkedIn server-renders, there is nothing to observe" conclusion was
+wrong.** The census found the profile being fetched client-side all along. From a
+real report, twelve responses had been declined unread, every one of them
+`application/octet-stream`, and among them:
+
+```
+…/rsc-action/actions/component?componentId=…profile.dsl.impl.profileCardsAboveActivity
+…/rsc-action/actions/component?componentId=…profile.dsl.impl.profileCardsActivity
+…/rsc-action/actions/navigation?screenId=…profile.ProfileContactDetailsOverlay
+…/rsc-action/actions/server-request?sduiid=…requests.profile.profilePolicyNotice
+```
+
+LinkedIn moved the profile onto **React Server Components**. The wire format is
+numbered rows of JSON fragments — not JSON as a whole, so a JSON test rejects it,
+and served as octet-stream, so a content-type test rejects it too. It was
+invisible twice over, and the same change explains why the DOM extractor started
+returning nothing but the URL: the old markup is gone.
+
+Three things changed as a result, and this directory is no longer blocked:
+
+1. the filter reads anything that is not provably markup, script, style or media,
+   and judges the BODY (JSON, or an RSC row set) — matched by shape, never by
+   path, so it does not depend on knowing which product shipped this week;
+2. the scrubber parses RSC rows and scrubs identity inside each fragment, with an
+   unparsable fragment reported by length and never by text;
+3. `ProfileContactDetailsOverlay` is in that list — the contact panel, fetched as
+   its own response. That is the field set the DOM path has never read reliably.
+
+**So the recording procedure below now works.** What it needs is one snapshot per
+case in the table further down.
+
+## How the observer reports a failure, if one happens again
 
 Recording was attempted three times and produced telemetry only. Since none of
 the committed DOM fixtures carries a `<code>` block or a JSON script tag either,

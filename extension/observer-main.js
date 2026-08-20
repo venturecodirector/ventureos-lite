@@ -142,32 +142,64 @@
   const SKIP_OFF_SITE = "off_site";
   const SKIP_NO_TYPE = "no_content_type";
   const SKIP_NOT_JSON = "content_type_not_json";
+  const SKIP_NOT_STRUCTURED = "body_was_not_structured_data";
+
+  /**
+   * Content types that are certainly not data, and are never read.
+   *
+   * A DENY list rather than an allow list, and that is the whole change here.
+   * The allow list said "json", and the payload we exist to capture arrives as
+   * `application/octet-stream` — so twelve responses carrying the profile were
+   * declined unread, and the conclusion drawn from that was that LinkedIn
+   * server-renders and there was nothing to observe. It fetches everything; it
+   * just does not call it JSON.
+   *
+   * Markup, styles, scripts, fonts and media cannot be a data payload. Anything
+   * else is READ and judged by its body, which is the only honest test — a
+   * content-type is a claim, and this one was wrong.
+   */
+  const NOT_DATA = /^\s*(text\/(html|css|javascript)|application\/(javascript|x-javascript|wasm|zip|pdf)|image\/|font\/|audio\/|video\/)/i;
+
   const verdictFor = (url, contentType) => {
     try {
       const u = new URL(url, window.location.href);
       if (!/(^|\.)linkedin\.com$/i.test(u.hostname)) return { copy: false, reason: SKIP_OFF_SITE };
-      if (!contentType) {
-        // Sniff instead of discarding: an API that returns JSON under no
-        // content-type at all was previously invisible, and "invisible" is the
-        // one outcome that cost us weeks.
-        return { copy: true, sniff: true, reason: SKIP_NO_TYPE };
-      }
-      if (/\bjson\b/i.test(contentType)) return { copy: true, sniff: false, reason: null };
-      // text/plain is the other way an API hides. Anything else (html, images,
-      // fonts, css) is recorded as skipped and never read.
-      if (/\btext\/plain\b/i.test(contentType)) {
-        return { copy: true, sniff: true, reason: SKIP_NOT_JSON };
-      }
-      return { copy: false, reason: SKIP_NOT_JSON };
+      if (/\bjson\b/i.test(contentType ?? "")) return { copy: true, sniff: false, reason: null };
+      if (!contentType) return { copy: true, sniff: true, reason: SKIP_NO_TYPE };
+      if (NOT_DATA.test(contentType)) return { copy: false, reason: SKIP_NOT_JSON };
+      // octet-stream, text/plain, and anything else that might be data: read it
+      // and let the body decide.
+      return { copy: true, sniff: true, reason: SKIP_NOT_STRUCTURED };
     } catch {
       return { copy: false, reason: SKIP_OFF_SITE };
     }
   };
 
-  /** Does this text look like a JSON document? Cheap, and never throws. */
-  const looksLikeJson = (text) => {
-    const head = text.slice(0, 200).trimStart();
-    return head.startsWith("{") || head.startsWith("[");
+  /**
+   * Does this body carry structured data? Cheap, shape-only, never throws.
+   *
+   * Two shapes, and the second one is why this exists:
+   *
+   *   JSON        starts with `{` or `[`.
+   *   RSC FLIGHT  the React Server Components wire format — numbered rows, each
+   *               holding a JSON fragment:
+   *
+   *                   0:{"a":"$@1","b":"…"}
+   *                   1:I[12345,["static/chunks/…"],"default"]
+   *                   2:["$","div",null,{…}]
+   *
+   *               It is not JSON as a whole, so a JSON test rejects it, and it
+   *               arrives as `application/octet-stream`, so a content-type test
+   *               rejects it too. It was invisible twice over.
+   *
+   * Matched by SHAPE, deliberately: no path, no host, no endpoint name. What we
+   * copy must not depend on knowing which product LinkedIn shipped this week.
+   */
+  const looksLikeStructuredData = (text) => {
+    const head = text.slice(0, 400).trimStart();
+    if (head.startsWith("{") || head.startsWith("[")) return true;
+    // A numbered row followed by a JSON fragment, at the start of any early line.
+    return /^[0-9a-f]{1,4}:\s*[[{"IHE]/m.test(head);
   };
 
   const announce = (record) => {
@@ -282,7 +314,7 @@
           // Sniffed candidates (no content type, or text/plain) are kept only if
           // they actually look like JSON. Everything else is recorded as skipped,
           // so the census still shows it was there.
-          if (verdict.sniff && !looksLikeJson(text)) {
+          if (verdict.sniff && !looksLikeStructuredData(text)) {
             announce({
               url,
               method,
@@ -395,7 +427,7 @@
                   })()
                 : this.responseText;
             if (typeof text !== "string" || text.length === 0) return;
-            if (verdict.sniff && !looksLikeJson(text)) {
+            if (verdict.sniff && !looksLikeStructuredData(text)) {
               announce({
                 url,
                 method: this.__ventureMethod ?? "GET",

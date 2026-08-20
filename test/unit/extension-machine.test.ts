@@ -1104,14 +1104,14 @@ describe("the observation path runs first, and the DOM is the fallback", () => {
     );
   });
 
-  it("blames the filter when responses arrived and none were JSON", async () => {
+  it("blames the filter when responses arrived and none carried data", async () => {
     expect(
       await reasonWhenEmpty({
         installed: true,
         records: [],
         skippedByReason: { content_type_not_json: 7 },
       }),
-    ).toBe("responses_arrived_but_none_were_json");
+    ).toBe("responses_arrived_but_none_carried_data");
   });
 
   it("blames the interception point when the document loaded what we never saw", async () => {
@@ -1123,9 +1123,14 @@ describe("the observation path runs first, and the DOM is the fallback", () => {
     );
   });
 
-  it("blames a replaced patch above everything else", async () => {
-    // Highest priority: if our patch is gone, every other signal is downstream
-    // of that and would send the reader after the wrong thing.
+  /**
+   * A REAL report had `fetchPatched: false` while fifteen responses had been
+   * observed through that patch — the page WRAPPED our function rather than
+   * replacing it, and a wrapper calls through. So evidence that responses
+   * arrived outranks it; "no longer ours" only means we are blind if we also saw
+   * nothing.
+   */
+  it("does not blame the patch when responses demonstrably arrived", async () => {
     expect(
       await reasonWhenEmpty({
         installed: true,
@@ -1134,7 +1139,18 @@ describe("the observation path runs first, and the DOM is the fallback", () => {
         skippedByReason: { content_type_not_json: 3 },
         patchHealth: { fetchPatched: false },
       }),
-    ).toBe("our_fetch_patch_was_replaced");
+    ).toBe("responses_arrived_but_none_carried_data");
+  });
+
+  it("blames the patch only when nothing was seen but the document loaded", async () => {
+    expect(
+      await reasonWhenEmpty({
+        installed: true,
+        records: [],
+        censusCount: 12,
+        patchHealth: { fetchPatched: false },
+      }),
+    ).toBe("our_fetch_patch_is_no_longer_the_installed_one");
   });
 
   it("says the observer is not installed when the bridge never announced", async () => {

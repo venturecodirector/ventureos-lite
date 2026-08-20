@@ -429,14 +429,26 @@
          */
         const diag = typeof O.diagnostics === "function" ? O.diagnostics() : null;
         gathered.observerDiagnostics = diag;
+        /**
+         * Ordered by what the evidence can actually establish.
+         *
+         * `fetchPatched: false` used to come first, and that was wrong. A real
+         * report showed it false while fifteen responses had been observed
+         * through that very patch — because the page WRAPPED our function rather
+         * than replacing it, and a wrapper still calls through. So "no longer
+         * ours" only means we are blind if we also saw nothing, and it is the
+         * last thing checked rather than the first.
+         */
+        const skipped = status.skippedCount ?? 0;
+        const censused = status.censusCount ?? 0;
         const reason =
-          diag && diag.health && diag.health.fetchPatched === false
-            ? "our_fetch_patch_was_replaced"
-            : (status.skippedCount ?? 0) > 0
-              ? "responses_arrived_but_none_were_json"
-              : (status.censusCount ?? 0) > 0
-                ? "document_loaded_resources_our_patches_never_saw"
-                : "page_fetched_nothing_server_rendered";
+          skipped > 0
+            ? "responses_arrived_but_none_carried_data"
+            : censused > 0
+              ? diag && diag.health && diag.health.fetchPatched === false
+                ? "our_fetch_patch_is_no_longer_the_installed_one"
+                : "document_loaded_resources_our_patches_never_saw"
+              : "page_fetched_nothing_server_rendered";
         return {
           ok: false,
           reason,
