@@ -383,3 +383,99 @@ describe("an RSC flight body", () => {
     expect(record.body).toBeNull();
   });
 });
+
+/**
+ * ── THE TWO THINGS A SYNTHETIC FIXTURE DID NOT CATCH ────────────────────────
+ *
+ * The RSC tests above used a fragment shaped like `{"name":"…","emailAddress":"…"}`
+ * — an object with meaningful keys. Real flight rows do not look like that, and
+ * the first real snapshot went through a "working" scrubber carrying 52
+ * strangers' slugs, 126 member ids, a live email address, a mobile number and
+ * 1351 name occurrences.
+ *
+ * These use the shapes that actually occur. Both were live leaks.
+ */
+describe("the shapes that leaked from a real payload", () => {
+  const scrubOne = (body: string) =>
+    JSON.stringify(
+      S.scrubSnapshot({
+        slug: "tom-vechy-vecsernyes",
+        records: [
+          {
+            url: "https://www.linkedin.com/flagship-web/in/tom-vechy-vecsernyes/",
+            method: "POST",
+            status: 200,
+            contentType: "application/octet-stream",
+            bodySize: body.length,
+            body,
+          },
+        ],
+        label: "regression",
+      }),
+    );
+
+  /**
+   * LEAK 1: a first name alone is shape-identical to a component name.
+   *
+   * `"Tom"` matched the PascalCase rule and was kept as structure, 1351 times
+   * over. It is only recoverable because the SLUG is in the payload and spells
+   * out its own tokens — so the slug's parts became redaction targets.
+   */
+  it("redacts a first name that looks exactly like a PascalCase token", () => {
+    const out = scrubOne(
+      '0:["$","div",null,{"modelStates":[{"value":{"stringValue":"Tom"}},' +
+        '{"value":{"stringValue":"Vecsernyes"}}],"componentName":"ProfileTopCard"}]',
+    );
+    expect(out).not.toMatch(/\bTom\b/);
+    expect(out).not.toMatch(/Vecsernyes/i);
+    // And a real component name of the same shape is untouched.
+    expect(out).toContain("ProfileTopCard");
+  });
+
+  /**
+   * LEAK 2: a phone number is "just digits and punctuation".
+   *
+   * The structural rule for numeric strings had no length bound, so a Hungarian
+   * mobile came through intact while every short layout value ("0.5x", "1:1")
+   * needed to be kept.
+   */
+  it("redacts a phone number but keeps short numeric layout values", () => {
+    const out = scrubOne(
+      '0:["$","span",null,{"phone":"+36308902438","scale":"0.5x","ratio":"1:1","span":"12"}]',
+    );
+    expect(out).not.toContain("36308902438");
+    expect(out).toContain("0.5x");
+    expect(out).toContain("1:1");
+  });
+
+  /** LEAK 3: the slug in the URL PATH — only the query string was scrubbed. */
+  it("scrubs the profile slug out of the record's own url", () => {
+    const out = scrubOne('0:{"a":1}');
+    expect(out).not.toContain("tom-vechy-vecsernyes");
+    expect(out).toContain("/in/");
+  });
+
+  /** LEAK 4: a member id concatenated onto a structural name. */
+  it("strips a member id even when it is glued to something structural", () => {
+    const out = scrubOne(
+      '0:{"key":"ACoAACSmga4B13yH9cuPcCC2w4f4dcEC22p95XkContactInfoDetailSection"}',
+    );
+    expect(out).not.toContain("ACoAACSmga4B");
+    // The structural half survives, because that part is schema.
+    expect(out).toContain("ContactInfoDetailSection");
+  });
+
+  /**
+   * And the other half: a discriminator the mapping needs must NOT be redacted.
+   * A fixture can be perfectly clean and completely useless.
+   */
+  it("keeps the viewName that says which contact field a subtree is", () => {
+    const out = scrubOne(
+      '0:["$","div",null,{"viewTrackingSpecs":{"viewName":"contact-email"},' +
+        '"children":"tom.vechy@seyu.hu"}]',
+    );
+    expect(out).toContain("contact-email");
+    expect(out).not.toContain("tom.vechy@seyu.hu");
+    expect(out).toContain("<email>");
+  });
+});

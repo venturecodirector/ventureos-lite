@@ -256,7 +256,7 @@
    * string reduced to parameter names. A query can carry a member id, and the
    * parameter names are the part that matters for recognising an endpoint.
    */
-  function scrubRecord(record, replacer) {
+  function scrubRecord(record, replacer, knownSlugs = []) {
     let url = record.url;
     try {
       const u = new URL(record.url);
@@ -265,6 +265,15 @@
     } catch {
       url = String(record.url).split("?")[0];
     }
+    /**
+     * The PATH is identity too. `…/flagship-web/in/tom-vechy-vecsernyes/` came
+     * through the first real snapshot untouched, because only the query string
+     * was being scrubbed. The whole point of the file is that no person survives
+     * it, and a slug is a person.
+     */
+    url = url
+      .replace(MEMBER_ID, (m) => replacer.id(m))
+      .replace(SLUG_IN_PATH, (_m, slug) => `/in/${replacer.person(`slug::${slug}`, "vanity")}`);
 
     let body = null;
     let parseError = null;
@@ -288,7 +297,7 @@
          * not be studied or mapped. Both halves are needed: parsed enough to be
          * useful, scrubbed enough to be committable.
          */
-        const rows = parseFlight(record.body, replacer);
+        const rows = parseFlight(record.body, replacer, knownSlugs);
         if (rows) {
           body = rows;
           bodyFormat = "rsc-flight";
@@ -314,6 +323,241 @@
   }
 
   /**
+   * ── SCRUBBING AN RSC FLIGHT BODY: THE RULE IS INVERTED ──────────────────────
+   *
+   * Everywhere else in this file, identity is found by KEY — `firstName`,
+   * `entityUrn`, `emailAddress`. On a flight body that does not work, and the
+   * first real snapshot proved it beyond argument: 52 strangers' profile slugs,
+   * 126 member ids, a live email address and 1351 name occurrences came through
+   * a scrubber that was "working". The payload is React elements, so the keys are
+   * `children`, `id` and `value`, and a person's name is a bare string sitting in
+   * an array position:
+   *
+   *     row0[3].children[1][2][3].children[3]…children[1]  →  "/in/tom-…-…/overlay/"
+   *     row0[3].children[1][0][0][3].modelStates[0].key.key.value.id
+   *                                                    →  "profile-activity-load-tom-…"
+   *
+   * There is no key to key off. So for flight bodies the default flips: EVERY
+   * string is redacted unless it matches a shape that is provably structure. A
+   * census of a real 72 KB component response says what those shapes are —
+   * 68% of its strings are structural, and none of them is a person:
+   *
+   *     React refs ($…)          359      camelCase tokens        477
+   *     PascalCase tokens        102      kebab class names        52
+   *     chunk hashes (32 hex)     11      com.linkedin.… ids        6
+   *     urns                      15      numbers/punctuation      35
+   *
+   * The remaining 495 free-text strings are the names, headlines and signed
+   * image paths. They become shape placeholders: `<text:12>`, `<email>`,
+   * `<image:2>`. A field mapping needs to learn WHERE a value sits in the
+   * structure, not what it said — and the path is preserved exactly.
+   *
+   * Erring toward redaction is the only defensible direction for a file that goes
+   * into version control.
+   */
+  /**
+   * A member id, bounded to its ACTUAL length.
+   *
+   * Measured, not guessed: in the first two real snapshots every id is exactly
+   * 39 characters — `ACoAA` plus 34 — 156 occurrences of it, and every longer
+   * match is that id with something glued on (`…95XkAbout`, `…95Xk_show_first`,
+   * `…95XkContactInfoDetailSection`). An open-ended `{5,}` swallowed the suffix
+   * too, which is safe but destroys a discriminator the mapping needs. Bounded,
+   * the id goes and `ContactInfoDetailSection` stays.
+   */
+  const MEMBER_ID = /ACoAA[A-Za-z0-9_-]{34}/g;
+  const SLUG_IN_PATH = /\/in\/([A-Za-z0-9][A-Za-z0-9%_-]{2,})/g;
+
+  /** Shapes that are structure, established from a real payload's census. */
+  const STRUCTURAL = [
+    /^\$/, // React reference or element marker
+    /^[0-9a-f]{32}$/, // webpack chunk hash
+    /^com\.linkedin\.[\w.$]+$/, // sdui component and request ids
+    // Up to 60, not 30: stripping a member id leaves its PLACEHOLDER glued to
+    // the name it was concatenated with (`AAAAAAAA001ContactInfoDetailSection`),
+    // and at 30 that came out as redacted text. Nothing 60 characters long and
+    // camelCased is a person.
+    /^[a-z][a-zA-Z0-9]{0,59}$/, // camelCase prop or enum value
+    /^[A-Z][a-zA-Z0-9]{0,59}$/, // PascalCase component name
+    // Numbers and punctuation — but SHORT ones only. "0.5x", "12", "1:1" are prop
+    // values; `+36308902438` is a person's mobile, and it got through the first
+    // version of this list because a phone number is also just digits and
+    // punctuation. Seven digits is the line: below it there is no phone number,
+    // and above it there is nothing a layout prop needs.
+    /^(?=(?:\D*\d){0,6}\D*$)[\d.,%+\-: ]+$/,
+    /^(static\/)?chunks?\/[\w./-]+$/, // build asset paths
+  ];
+
+  /**
+   * Every string that SURVIVES still goes through this.
+   *
+   * A structural shape is not a promise of innocence: `profile-activity-load-tom-
+   * vechy-vecsernyes` is a perfectly ordinary kebab token with a person's name
+   * inside it, and a member id can be concatenated onto a component name
+   * (`ACoAA…About` appeared in the real data). So slugs and member ids are
+   * replaced inside anything we keep, by the same referential map, before the
+   * shape test even runs.
+   */
+  function sanitiseKept(text, replacer, ident) {
+    /**
+     * The replacement is alphanumeric on purpose.
+     *
+     * `replacer.id()` yields `scrubbed-id-001`, and a member id is routinely
+     * concatenated with a component name (`…95XkContactInfoDetailSection`). With
+     * the hyphenated form spliced in, the result matched no structural shape and
+     * the component name was redacted with it — a discriminator lost to the
+     * SHAPE of a placeholder. `SCRUBBEDID001Contact…` still reads as one token.
+     */
+    let out = String(text).replace(MEMBER_ID, (m) =>
+      replacer.id(m).replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
+    );
+    for (const [slug, placeholder] of ident.slugs) {
+      if (out.includes(slug)) out = out.split(slug).join(placeholder);
+    }
+    /**
+     * A FIRST NAME ON ITS OWN.
+     *
+     * The real snapshot ended with `modelStates[7].value.stringValue: "Tom"`
+     * surviving, because `Tom` is indistinguishable BY SHAPE from `Icon` or
+     * `Header` — a short capitalised word. Shape-based scrubbing cannot tell
+     * those apart, and that is a genuine limit of it.
+     *
+     * What saves it is that the name is DERIVABLE: the slug is in the payload,
+     * and `tom-vechy-vecsernyes` spells out its own tokens. So each slug's parts
+     * become redaction targets, matched as a whole string only — a class name
+     * that merely contains one is handled by the slug replacement above.
+     */
+    const token = ident.tokens.get(out.trim().toLowerCase());
+    return token ?? out;
+  }
+
+  /** A shape placeholder for text we will not keep. Says the kind and the size. */
+  function placeholderFor(text) {
+    if (text.length === 0) return "";
+    /**
+     * A `mailto:` or `tel:` URL keeps its scheme.
+     *
+     * The real contact panel carries the address inside a navigate action as
+     * `mailto:someone@example.com`, not as a bare address — and without the
+     * scheme surviving, the fixture showed `<text:24>` at that position and told
+     * a reader nothing about what belongs there. The scheme is schema; the
+     * address is the person.
+     */
+    const scheme = /^(mailto|tel):(.*)$/i.exec(text);
+    if (scheme) return `${scheme[1].toLowerCase()}:<${scheme[1].toLowerCase() === "tel" ? "phone" : "email"}>`;
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return "<email>";
+    // Character class ordered so `d` is never followed by `(`: the extension's
+    // static checker reads that as a call to an undefined function `d`, and a
+    // regex literal is not a call site.
+    if (/^\+?\d[()\d \/-]{7,}$/.test(text)) return "<phone>";
+    // Image paths keep their directory depth: the mapping has to learn how a root
+    // and a path segment are joined to make a usable URL.
+    if (/^[\w.-]+\/[\w./-]+\?/.test(text) || /displayphoto|profile-framedphoto|company-logo/.test(text)) {
+      return `<image:${text.split("/").length}>`;
+    }
+    if (/^https?:\/\//.test(text)) return "<url>";
+    if (text.startsWith("/")) return `<path:${text.split("/").filter(Boolean).length}>`;
+    return `<text:${text.length}>`;
+  }
+
+  function scrubFlightValue(value, replacer, ident, depth = 0) {
+    if (depth > 60) return "<depth-limit>";
+    if (value === null || value === undefined) return value;
+    if (Array.isArray(value)) {
+      return value.map((v) => scrubFlightValue(v, replacer, ident, depth + 1));
+    }
+    if (typeof value === "object") {
+      const out = {};
+      for (const [k, v] of Object.entries(value)) {
+        // The KEY is schema and is kept — but a key can carry a slug too.
+        const key = sanitiseKept(k, replacer, ident);
+        /**
+         * A NUMERIC id is still an id.
+         *
+         * Numbers are otherwise kept untouched, because a number cannot be a
+         * name — but `breadcrumbs[0].content.entityView.targetId: 614891950`
+         * points at an entity as surely as a urn does. Here the key IS
+         * meaningful (these are object properties, not React children), so a
+         * key-based rule works where it could not for the strings.
+         *
+         * Small numbers are left alone: a `tabId: 3` or `columnId: 1` is layout.
+         */
+        if (typeof v === "number" && /(^|[a-z])(id|ids|urn|urns)$/i.test(key) && Math.abs(v) >= 10000) {
+          out[key] = Number(replacer.id(String(v)).replace(/\D+/g, "") || 1);
+          continue;
+        }
+        out[key] = scrubFlightValue(v, replacer, ident, depth + 1);
+      }
+      return out;
+    }
+    if (typeof value !== "string") return value;
+
+    const clean = sanitiseKept(value, replacer, ident);
+    if (URN_SHAPED.test(clean)) return replacer.urn(clean);
+    for (const shape of STRUCTURAL) {
+      if (shape.test(clean)) return clean;
+    }
+    // A kebab token is structure only while it is short: class names are, and a
+    // three-word name joined by dashes is not.
+    if (/^[a-z0-9]+(-[a-z0-9]+)+$/.test(clean) && clean.length <= 40) return clean;
+    /**
+     * A short token CONTAINING A DIGIT is a layout value — `0.5x`, `1:1`, `2x`,
+     * `1a`. The digit is what makes this safe: a name does not have one, so this
+     * rule cannot keep a `Tom` by accident. Without it these were redacted, which
+     * cost the fixture its scale and ratio props for no gain.
+     */
+    if (clean.length <= 8 && /\d/.test(clean) && /^[\w.:%+-]+$/.test(clean)) return clean;
+    return placeholderFor(clean);
+  }
+
+  /**
+   * Every profile slug the body mentions, and the name tokens inside them.
+   *
+   * `slugs` replaces the slug wherever it appears, including inside a longer
+   * composite string. `tokens` catches a name standing alone, which the slug
+   * replacement cannot see and shape cannot judge.
+   */
+  function identityMapFor(text, replacer, extraSlugs = []) {
+    const slugs = new Map();
+    const tokens = new Map();
+    /**
+     * The body's own `/in/` paths, PLUS the slugs the caller already knows: the
+     * record's url and the snapshot's subject.
+     *
+     * A regression test caught this. A body that never mentions a profile path
+     * yielded no tokens at all, so a bare first name in a `stringValue` had
+     * nothing to match against — and the name is only recoverable BECAUSE the
+     * slug spells it out. Taking the slug from the url and the snapshot as well
+     * means the tokens exist even when the body is a fragment.
+     */
+    const candidates = [
+      ...[...String(text).matchAll(SLUG_IN_PATH)].map((m) => m[1]),
+      ...extraSlugs,
+    ];
+    for (const slug of candidates) {
+      if (!slug || slugs.has(slug)) continue;
+      // "vanity" is the hint that asks for the slug FORM of a name, which is
+      // exactly what a slug is — so a person's placeholder slug matches their
+      // placeholder name elsewhere in the same snapshot.
+      const placeholder = replacer.person(`slug::${slug}`, "vanity");
+      slugs.set(slug, placeholder);
+      const parts = placeholder.split("-");
+      let i = 0;
+      for (const part of decodeURIComponent(slug).split("-")) {
+        // Two-letter fragments are initials and abbreviations, not names, and
+        // redacting them would eat half the enum values in the payload.
+        if (part.length >= 3) tokens.set(part.toLowerCase(), parts[i] ?? "<name>");
+        i += 1;
+      }
+    }
+    return {
+      // Longest first, so a slug that is a prefix of another cannot half-replace it.
+      slugs: new Map([...slugs.entries()].sort((a, b) => b[0].length - a[0].length)),
+      tokens,
+    };
+  }
+
+  /**
    * Parse an RSC flight body into scrubbed rows.
    *
    *     0:{"a":"$@1","b":"…"}          → { id: "0", tag: null, value: {…} }
@@ -330,8 +574,11 @@
    *
    * Returns null if nothing looked like a row, so the caller can say so.
    */
-  function parseFlight(text, replacer) {
+  function parseFlight(text, replacer, knownSlugs = []) {
     const lines = String(text).split("\n");
+    // Every slug in the WHOLE body first, so one person keeps one placeholder
+    // across every row that mentions them.
+    const ident = identityMapFor(text, replacer, knownSlugs);
     const rows = [];
     let parsed = 0;
     for (const line of lines) {
@@ -346,7 +593,8 @@
         rows.push({
           id,
           tag: tag || null,
-          value: scrubValue(JSON.parse(payload), "", replacer, 0),
+          // The flight walker, NOT the key-based one: see the long note above.
+          value: scrubFlightValue(JSON.parse(payload), replacer, ident, 0),
         });
         parsed += 1;
       } catch {
@@ -354,7 +602,9 @@
       }
     }
     // At least one real row, or this was not a flight body at all.
-    return parsed > 0 ? { format: "rsc-flight", rowCount: rows.length, rows } : null;
+    return parsed > 0
+      ? { format: "rsc-flight", rowCount: rows.length, slugsSeen: ident.slugs.size, rows }
+      : null;
   }
 
   /** Scrub a whole page's worth of observations into one committable snapshot. */
@@ -371,7 +621,20 @@
       label: label ?? null,
       note: note ?? null,
       recordCount: records.length,
-      records: records.map((r) => scrubRecord(r, replacer)),
+      /**
+       * The slugs we already know, handed to every record.
+       *
+       * The subject of the snapshot, and whatever each record's own url names.
+       * A name is only recoverable from a payload because the slug spells it
+       * out, so the tokens have to exist even for a body that mentions no
+       * profile path at all.
+       */
+      records: records.map((r) =>
+        scrubRecord(r, replacer, [
+          ...(slug ? [String(slug)] : []),
+          ...[...String(r?.url ?? "").matchAll(SLUG_IN_PATH)].map((m) => m[1]),
+        ]),
+      ),
     };
   }
 

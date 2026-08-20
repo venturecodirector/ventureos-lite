@@ -15,7 +15,82 @@ done from a test runner, and it must not be done by asking LinkedIn for anything
 
 So this is a step you have to drive. It takes about ten minutes.
 
-## STATUS: the payload exists, and we know where it is
+## STATUS: two snapshots recorded, the first mapping derived from them
+
+`rsc-profile.json` (10 records) and `contact-overlay.json` (2 records — only what
+the profile snapshot does not already hold). What they taught, all of it from the
+files rather than from the brief:
+
+**The payload is React Server Components, not Voyager.** There is no `included`
+array and no `$type` entity anywhere. `PROFILE_MAPPING` therefore stays empty and
+a test now pins that as a FINDING — if a Voyager-shaped response ever appears in a
+snapshot, the test starts failing and asks for the rules.
+
+**Fields are found by tracking discriminator, not by label.** Each contact row
+carries two, neither localised:
+
+```
+viewTrackingSpecs.viewName            contact-email  contact-phone  contact-website
+viewTrackingSpecs.legacyControlName   contact_email  contact_call   contact_website
+```
+
+That matters: this account's visible labels are Hungarian, so a mapping keyed on
+label text would have worked on an English profile and failed silently here.
+
+**The value is in a DIFFERENT ROW from the discriminator.** `contact-email` sits
+in row `19`; the address is in row `1b`, as `mailto:…` inside a navigate action,
+reached by the string `"$L1b"`. The first run of the mapping against the fixture
+returned nothing at all because of this — following row references is not an
+optimisation, it is the difference between a mapping that works and one that
+quietly returns empty.
+
+**What is mapped, and what is not.** `email` and `phone` are in, each citing
+`contact-overlay.json`, and a test runs the extractor against the committed file.
+`websiteUrl` is NOT: the `contact-website` node exists, so the discriminator is
+witnessed, but this person has no website, so the only http url in the record is
+their own profile link — the shape a real website value arrives in has not been
+seen. One snapshot from a profile that HAS a website closes that.
+
+**Still needed**, in the order they would pay off:
+
+| label | what to open | what it unlocks |
+|---|---|---|
+| `with-website` | a profile with a website in Contact info | the `websiteUrl` rule |
+| `name-headline` | any profile — the top card | name, headline, location: the fields the DOM path just lost |
+| `experience` | a profile with positions | company and job title |
+| `no-experience` | a profile with none | proof the absence is reported, not guessed |
+
+## What the scrubber does to these files, and why it is not optional
+
+The first pair went through a scrubber that was "working" and carried **52
+strangers' profile slugs, 126 member ids, a live email address, a mobile number
+and 1351 name occurrences**. None of it was committed, because the check ran
+before the commit — but it was one `git add` away.
+
+The reason it failed is worth knowing before you record the next one. Everywhere
+else in that file identity is found by KEY (`firstName`, `entityUrn`,
+`emailAddress`). A flight body is React elements, so the keys are `children`,
+`id` and `value`, and a name is a bare string in an array position. There is no
+key to key off.
+
+So for these bodies the rule is inverted: **every string is redacted unless its
+shape is provably structure** — React refs, chunk hashes, `com.linkedin.…` ids,
+camelCase and PascalCase tokens, short numeric layout values, urns. Everything
+else becomes `<text:12>`, `<email>`, `mailto:<email>`, `https://<host>/<path:2>`.
+A mapping needs to learn WHERE a value sits, not what it said.
+
+Three shapes got through even that, and each is now a regression test:
+
+- **a first name alone** (`"Tom"`) is shape-identical to a component name. It is
+  only recoverable because the SLUG spells out its own tokens, so the slug's parts
+  become redaction targets.
+- **a phone number** is "just digits and punctuation". Numeric strings are
+  structural only below seven digits.
+- **a member id glued to a component name** (`…95XkContactInfoDetailSection`).
+  The id is exactly 39 characters — measured across 156 occurrences, not guessed —
+  so a bounded match takes the id and leaves the name.
+
+## How the observer reports a failure, if one happens again
 
 **The "LinkedIn server-renders, there is nothing to observe" conclusion was
 wrong.** The census found the profile being fetched client-side all along. From a

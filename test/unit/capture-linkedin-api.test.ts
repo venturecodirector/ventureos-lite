@@ -8,6 +8,7 @@ import {
   describeSnapshot,
   unmatchedProfileShaped,
   PROFILE_MAPPING,
+  FLIGHT_MAPPING,
   type ApiSnapshot,
   type FieldRule,
 } from "../../src/modules/capture/linkedin-api";
@@ -276,23 +277,56 @@ describe("recorded snapshots drive the mapping", () => {
     expect(existsSync(join(SNAPSHOT_DIR, "README.md"))).toBe(true);
   });
 
+  /**
+   * ── WHAT THE RECORDING CHANGED ABOUT THIS GATE ────────────────────────────
+   *
+   * The gate was written expecting the Voyager convention — `included`, `$type`,
+   * urns — because that is what the brief described. The recording showed
+   * something else entirely: the profile is React Server Components, numbered
+   * rows of React trees with no `$type` entities anywhere. So `PROFILE_MAPPING`
+   * stays empty, and that is now a FINDING rather than an omission: the shape it
+   * describes does not occur on this account.
+   *
+   * The gate's intent is unchanged and still enforced — plumbing must not ship
+   * without a mapping derived from evidence. It is `FLIGHT_MAPPING` that has to
+   * be non-empty, because that is the shape the snapshots actually contain.
+   */
   it("derives a mapping rule from every recorded snapshot, citing it", () => {
+    const voyagerRules = Object.values(PROFILE_MAPPING).flat();
+    const flightRules = Object.values(FLIGHT_MAPPING).flat();
+
     if (files.length === 0) {
-      // Nothing recorded yet. The mapping is correctly empty and the DOM path is
-      // correctly still in charge.
-      expect(Object.values(PROFILE_MAPPING).every((r) => r.length === 0)).toBe(true);
+      // Nothing recorded yet. Both mappings are correctly empty and the DOM path
+      // is correctly still in charge.
+      expect(voyagerRules).toHaveLength(0);
+      expect(flightRules).toHaveLength(0);
       return;
     }
-    // Snapshots exist: the mapping must no longer be empty, and every rule must
-    // name the file that justifies it.
-    const rules = Object.values(PROFILE_MAPPING).flat();
+
+    // Snapshots exist, so SOMETHING must be mapped from them.
     expect(
-      rules.length,
-      `${files.length} snapshot(s) recorded but PROFILE_MAPPING is still empty`,
+      voyagerRules.length + flightRules.length,
+      `${files.length} snapshot(s) recorded but nothing is mapped from them`,
     ).toBeGreaterThan(0);
-    for (const rule of rules) {
+
+    for (const rule of [...voyagerRules, ...flightRules]) {
       expect(files, `rule cites "${rule.evidence}", which is not a recorded snapshot`).toContain(
         rule.evidence,
+      );
+    }
+  });
+
+  /**
+   * And the finding itself, pinned: if a Voyager-shaped response ever DOES turn
+   * up in a snapshot, this test starts failing and asks for the rules that go
+   * with it. An empty mapping should be a statement, not a gap nobody revisits.
+   */
+  it("records WHY the voyager mapping is empty: no snapshot has that shape", () => {
+    expect(Object.values(PROFILE_MAPPING).flat()).toHaveLength(0);
+    for (const file of files) {
+      const raw = readFileSync(join(SNAPSHOT_DIR, file), "utf8");
+      expect(raw, `${file} carries $type entities — the voyager mapping owes rules`).not.toContain(
+        '"included"',
       );
     }
   });

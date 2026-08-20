@@ -407,3 +407,275 @@ export function unmatchedProfileShaped(
     entities: parsed.entities.filter((e) => e.recordUrl === url).length,
   }));
 }
+
+// ---------------------------------------------------------------------------
+// The RSC flight mapping — DERIVED FROM RECORDED SNAPSHOTS
+// ---------------------------------------------------------------------------
+
+/**
+ * ── WHAT THE RECORDING ACTUALLY SHOWED ──────────────────────────────────────
+ *
+ * Everything above assumes the Voyager convention: a flat `included` array of
+ * entities, each tagged with a `$type`, referring to one another by urn. The
+ * first two recorded snapshots contain none of that.
+ *
+ * LinkedIn's profile is React Server Components. The payload is numbered rows of
+ * JSON fragments, each row a React element tree, and there are no `$type`
+ * entities to key off. What there IS — and this is what makes a mapping possible
+ * at all — is a stable tracking discriminator on each meaningful subtree:
+ *
+ *     viewTrackingSpecs.viewName        "contact-email"  "contact-phone"  "contact-website"
+ *     viewTrackingSpecs.legacyControlName  "contact_email"  "contact_call"   "contact_website"
+ *
+ * Two independent names for the same node, neither of them localised — which
+ * matters, because the visible labels on this account are Hungarian and a mapping
+ * keyed on label text would work in one language and silently fail in the other.
+ *
+ * The values sit in different shapes per field, and that is not a guess either:
+ *
+ *     email    a navigate action's url:  "mailto:<address>"
+ *     phone    a text child of the row:  ["+36…"]
+ *     website  a navigate action's url:  "https://…"
+ *
+ * Every rule below cites the snapshot it was read out of. A rule with no
+ * evidence is the guess this whole re-architecture exists to stop making.
+ */
+
+export interface FlightRule {
+  /** Dotted path, within a candidate node, to the discriminating value. */
+  discriminatorPath: string;
+  /** The value that path must hold for the node to be the one we want. */
+  discriminator: string;
+  /**
+   * How the value is carried inside the node.
+   *
+   *   mailto  the address inside a `mailto:` url, anywhere below
+   *   url     the first http(s) url below
+   *   text    the first text child that is not layout scaffolding
+   */
+  extract: "mailto" | "url" | "text";
+  confidence: "high" | "medium";
+  /** The recorded snapshot that justifies this rule. Never blank. */
+  evidence: string;
+}
+
+export const FLIGHT_MAPPING: Record<string, FlightRule[]> = {
+  email: [
+    {
+      discriminatorPath: "viewTrackingSpecs.viewName",
+      discriminator: "contact-email",
+      extract: "mailto",
+      confidence: "high",
+      evidence: "contact-overlay.json",
+    },
+    {
+      // The same node, by its other name. Kept as a second rule rather than an
+      // either/or inside the first, so that if LinkedIn drops one of the two the
+      // diagnostics say which one went.
+      discriminatorPath: "viewTrackingSpecs.legacyControlName",
+      discriminator: "contact_email",
+      extract: "mailto",
+      confidence: "medium",
+      evidence: "contact-overlay.json",
+    },
+  ],
+  phone: [
+    {
+      discriminatorPath: "viewTrackingSpecs.viewName",
+      discriminator: "contact-phone",
+      extract: "text",
+      confidence: "high",
+      evidence: "contact-overlay.json",
+    },
+    {
+      discriminatorPath: "viewTrackingSpecs.legacyControlName",
+      discriminator: "contact_call",
+      extract: "text",
+      confidence: "medium",
+      evidence: "contact-overlay.json",
+    },
+  ],
+  /**
+   * NOT MAPPED YET, and deliberately so.
+   *
+   * The recorded overlay HAS a `contact-website` node — the discriminator is
+   * witnessed — but this person has no website on their panel, so the only
+   * http url in the whole record is their own LinkedIn profile link. That means
+   * the shape a real website value arrives in is NOT witnessed, and writing the
+   * rule from the two that are would be exactly the guess this module refuses to
+   * make. It needs one snapshot from a profile that has a website.
+   */
+  websiteUrl: [],
+};
+
+/** A parsed flight body, as the scrubber and the observer both produce it. */
+export interface FlightBody {
+  format: string;
+  rows: Array<{ id: string | null; tag: string | null; value?: unknown }>;
+}
+
+/** Depth-limited walk over a React element tree. */
+function* walkNodes(value: unknown, path = "", depth = 0): Generator<[string, Record<string, unknown>]> {
+  if (depth > 60 || value === null || value === undefined) return;
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i += 1) {
+      yield* walkNodes(value[i], `${path}/${i}`, depth + 1);
+    }
+    return;
+  }
+  if (typeof value === "object") {
+    yield [path, value as Record<string, unknown>];
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      yield* walkNodes(v, `${path}/${k}`, depth + 1);
+    }
+  }
+}
+
+function at(node: Record<string, unknown>, dotted: string): unknown {
+  let cursor: unknown = node;
+  for (const key of dotted.split(".")) {
+    if (cursor === null || typeof cursor !== "object") return undefined;
+    cursor = (cursor as Record<string, unknown>)[key];
+  }
+  return cursor;
+}
+
+/**
+ * A reference to another row: `$L1b`, `$1b`, `$Lf`.
+ *
+ * ── THE PIECE WITHOUT WHICH NONE OF THIS WORKS ──────────────────────────────
+ *
+ * The recorded payload put the discriminator and the value in DIFFERENT ROWS.
+ * `contact-email` sits in row 19; the address it belongs to is in row 1b, as
+ * `mailto:…` inside a navigate action. Row 19 reaches it by the string `"$L1b"`.
+ *
+ * A plain subtree walk from the discriminator therefore finds nothing — which it
+ * did, on the first run of the mapping against the real fixture. Following the
+ * references is not an optimisation; it is the difference between a mapping that
+ * works and one that silently returns empty.
+ */
+const ROW_REF = /^\$L?([0-9a-f]{1,4})$/;
+
+/**
+ * Every string below a node, in document order, following row references.
+ *
+ * Bounded three ways, because a payload we do not control must not be able to
+ * hang a capture: a depth limit, a visited set for the rows (references can form
+ * cycles), and a cap on how many strings are yielded at all.
+ */
+function* stringsUnder(
+  value: unknown,
+  rows?: Map<string, unknown>,
+  depth = 0,
+  seen: Set<string> = new Set(),
+  budget = { left: 4000 },
+): Generator<string> {
+  if (depth > 60 || budget.left <= 0 || value === null || value === undefined) return;
+  if (typeof value === "string") {
+    budget.left -= 1;
+    const ref = rows ? ROW_REF.exec(value) : null;
+    if (ref) {
+      const id = ref[1]!;
+      // A row is followed once per walk. Twice would be a cycle.
+      if (!seen.has(id) && rows!.has(id)) {
+        seen.add(id);
+        yield* stringsUnder(rows!.get(id), rows, depth + 1, seen, budget);
+      }
+      return;
+    }
+    yield value;
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) yield* stringsUnder(v, rows, depth + 1, seen, budget);
+    return;
+  }
+  if (typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      yield* stringsUnder(v, rows, depth + 1, seen, budget);
+    }
+  }
+}
+
+/**
+ * Layout scaffolding, which is most of what a React tree's strings are.
+ *
+ * Recognised by shape, from the census of a real payload: element names, class
+ * name bundles, enum-ish props, references, and the framework's `$undefined`.
+ */
+function isScaffolding(text: string): boolean {
+  if (text.length === 0) return true;
+  if (text.startsWith("$")) return true;
+  if (/^[a-z]+(-[a-z0-9]+)*$/.test(text) && text.length <= 24) return true;
+  if (/^_?[0-9a-f]{6,}( _?[0-9a-f]{4,})*$/.test(text)) return true; // class bundles
+  if (/^(div|span|section|a|p|ul|li|img|button|h[1-6])$/.test(text)) return true;
+  if (/^[A-Z][A-Z_]+$/.test(text)) return true; // SHORT_PRESS, NONE
+  // A componentKey. The first run of the mapping returned one of these as the
+  // phone number, which is exactly the kind of plausible-looking wrong answer
+  // this module is built to avoid.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(text)) return true;
+  return false;
+}
+
+export interface FlightField {
+  value: string;
+  source: "api";
+  confidence: "high" | "medium";
+  /** Where it was found, for the diagnostics. */
+  path: string;
+  /** Which discriminator matched, so a failure names the rule that stopped working. */
+  via: string;
+}
+
+/**
+ * Read the fields the mapping knows about out of a set of flight bodies.
+ *
+ * Returns only what it FOUND. A field with no rule, or a rule whose
+ * discriminator is absent, is simply missing — never a guess, and never a throw.
+ */
+export function normalizeFlight(bodies: FlightBody[]): Record<string, FlightField> {
+  const out: Record<string, FlightField> = {};
+
+  for (const [field, rules] of Object.entries(FLIGHT_MAPPING)) {
+    for (const rule of rules) {
+      if (out[field]) break;
+      for (const body of bodies) {
+        if (out[field]) break;
+        // Row id → value, so a reference can be followed to the row it names.
+        const rowsById = new Map<string, unknown>(
+          (body?.rows ?? [])
+            .filter((r) => r.id !== null && r.value !== undefined)
+            .map((r) => [String(r.id), r.value]),
+        );
+        for (const row of body?.rows ?? []) {
+          if (out[field]) break;
+          for (const [path, node] of walkNodes(row.value, `/rows/${row.id}`)) {
+            if (at(node, rule.discriminatorPath) !== rule.discriminator) continue;
+
+            const strings = [...stringsUnder(node, rowsById)];
+            let value: string | null = null;
+            if (rule.extract === "mailto") {
+              const hit = strings.find((s) => /^mailto:/i.test(s));
+              value = hit ? hit.slice("mailto:".length) : null;
+            } else if (rule.extract === "url") {
+              value = strings.find((s) => /^https?:\/\//i.test(s)) ?? null;
+            } else {
+              value = strings.find((s) => !isScaffolding(s)) ?? null;
+            }
+            if (!value) continue;
+
+            out[field] = {
+              value,
+              source: "api",
+              confidence: rule.confidence,
+              path: `${path}`,
+              via: `${rule.discriminatorPath}=${rule.discriminator}`,
+            };
+            break;
+          }
+        }
+      }
+    }
+  }
+  return out;
+}

@@ -1,0 +1,2357 @@
+{
+  "snapshotVersion": 1,
+  "slugShape": {
+    "tokens": 1,
+    "abbreviated": false
+  },
+  "label": "contact-overlay",
+  "note": "Only the records the profile snapshot does not already hold: opening the Contact info panel fetches ONE further response, and that is the one worth keeping.",
+  "recordCount": 2,
+  "records": [
+    {
+      "url": "https://www.linkedin.com/flagship-web/rsc-action/actions/navigation?screenId=<scrubbed>&sduiid=<scrubbed>",
+      "method": "POST",
+      "status": 200,
+      "contentType": "application/octet-stream",
+      "bodySize": 27485,
+      "truncated": false,
+      "bodyFormat": "rsc-flight",
+      "parseError": null,
+      "body": {
+        "format": "rsc-flight",
+        "rowCount": 35,
+        "slugsSeen": 2,
+        "rows": [
+          {
+            "id": "1",
+            "tag": "I",
+            "value": [
+              "2ad3ea7278caf3e388ff36e545132f6c",
+              [],
+              "DestinationReporter"
+            ]
+          },
+          {
+            "id": "2",
+            "tag": "I",
+            "value": [
+              "9572b44cf39ab2b79fb58e1626297543",
+              [],
+              "PageLoadTracingProvider"
+            ]
+          },
+          {
+            "id": "3",
+            "tag": "I",
+            "value": [
+              "b504387ed30037fe9de70d9f213a91ce",
+              [],
+              "ModalTitleUpdater"
+            ]
+          },
+          {
+            "id": "4",
+            "tag": "I",
+            "value": [
+              "030d6035cb3a997efb1cff7a008d2f89",
+              [],
+              "default"
+            ]
+          },
+          {
+            "id": "6",
+            "tag": "I",
+            "value": [
+              "fd2b16812951515b4d86acc527dbc1f1",
+              [],
+              "Screen"
+            ]
+          },
+          {
+            "id": "7",
+            "tag": "I",
+            "value": [
+              "f54a4d9f94904eb227a6c1307124edd6",
+              [],
+              "ClientComponent"
+            ]
+          },
+          {
+            "id": "8",
+            "tag": "I",
+            "value": [
+              "e9e5744c902fddb98f0eb62aee5d400a",
+              [],
+              "TracedComponent"
+            ]
+          },
+          {
+            "id": "9",
+            "tag": "I",
+            "value": [
+              "621c913cba38dd3c27c9f4d2692a01a9",
+              [],
+              "ReplaceableComponent"
+            ]
+          },
+          {
+            "id": "b",
+            "tag": "I",
+            "value": [
+              "ac9f789664089d7af150a9a8b58e69ff",
+              [],
+              "RealtimeActionRunner"
+            ]
+          },
+          {
+            "id": "d",
+            "tag": "I",
+            "value": [
+              "94d25027c4e1f190ed719df172a6543f",
+              [],
+              "ImpressionCacheProvider"
+            ]
+          },
+          {
+            "id": "e",
+            "tag": "I",
+            "value": [
+              "b23b58e6b9a883505149206f96c3bb0b",
+              [],
+              "ListImpressionTrackerProvider"
+            ]
+          },
+          {
+            "id": "f",
+            "tag": "I",
+            "value": [
+              "b55b61101826bcdf8a734370f7480e4e",
+              [],
+              "VisibleItemsProvider"
+            ]
+          },
+          {
+            "id": "1f",
+            "tag": "I",
+            "value": [
+              "85b20fca39223dffe536dd03122e5f56",
+              [],
+              "default"
+            ]
+          },
+          {
+            "id": "20",
+            "tag": "I",
+            "value": [
+              "bc12b55b17a9307d0453b2c742c2eca4",
+              [],
+              "default"
+            ]
+          },
+          {
+            "id": "21",
+            "tag": null,
+            "value": "$Sreact.fragment"
+          },
+          {
+            "id": "22",
+            "tag": "I",
+            "value": [
+              "751254b78322ecbca05b8b812421de5e",
+              [],
+              "DesignSystemImage"
+            ]
+          },
+          {
+            "id": "0",
+            "tag": null,
+            "value": [
+              "$",
+              "div",
+              null,
+              {
+                "className": "<text:19>",
+                "data-sdui-screen": "com.linkedin.sdui.flagshipnav.profile.ProfileContactDetailsOverlay",
+                "children": [
+                  [
+                    "$",
+                    "$L1",
+                    null,
+                    {
+                      "isOops": false,
+                      "errorMessage": "<text:24>",
+                      "screenId": "com.linkedin.sdui.flagshipnav.profile.ProfileContactDetailsOverlay",
+                      "sduiProductUsecase": "",
+                      "treeId": "<text:24>",
+                      "legacyPemRatio": "<text:14>",
+                      "dataFetchMeta": {
+                        "startTime": 1787256935585,
+                        "responseCode": 200
+                      }
+                    }
+                  ],
+                  [
+                    "$",
+                    "$L2",
+                    null,
+                    {
+                      "children": [
+                        [
+                          "$",
+                          "$L3",
+                          null,
+                          {
+                            "titleText": "<text:12>",
+                            "renderedTitle": [
+                              "<text:12>"
+                            ]
+                          }
+                        ],
+                        [
+                          [
+                            [
+                              "$",
+                              "$L4",
+                              null,
+                              {
+                                "modelStates": [
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:74>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": "MainContent"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "urn:li:fsd_followingState:SCRUBBED001:p1:p2:p3"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": "Following"
+                                    },
+                                    "persistence": {
+                                      "$type": "<text:27>",
+                                      "clientTtlDuration": {
+                                        "$type": "<text:24>",
+                                        "seconds": "$n900",
+                                        "nanos": 0
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:38>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": "Distance1"
+                                    },
+                                    "persistence": {
+                                      "$type": "<text:27>",
+                                      "clientTtlDuration": {
+                                        "$type": "<text:24>",
+                                        "seconds": "$n20",
+                                        "nanos": 0
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:38>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": "Remove"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:79>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": ""
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "sponsoredCreativeUrn"
+                                        }
+                                      },
+                                      "namespace": "Ad"
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": ""
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "disinterestReason"
+                                        }
+                                      },
+                                      "namespace": "Ad"
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": ""
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:61>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": "odon"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:61>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": "odon"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:61>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": "odon"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:61>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": "odon"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:61>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": "odon"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:61>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringValue",
+                                      "stringValue": "odon"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "profile-activity-load-odon-anonimizalt"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:72>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:77>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:87>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:83>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:86>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:87>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:98>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:99>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:100>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:95>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:100>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:90>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:87>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:88>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:89>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:90>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:101>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:95>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:92>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:97>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:81>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:54>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:53>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:49>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "PROFILEshouldShowVerificationPromoCard"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "isActiveProfileFormHasChangesProfileEditForm"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "isActiveProfileFormLoadingProfileEditForm"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "profileFormShouldNavigateBack"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": false
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:71>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:71>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:71>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:71>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:71>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:71>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "booleanValue",
+                                      "booleanValue": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:79>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "stringListValue",
+                                      "stringListValue": {
+                                        "$type": "<text:21>",
+                                        "stringValues": []
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:66>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "floatValue",
+                                      "floatValue": 1
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:79>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "expression",
+                                      "expression": {
+                                        "expression": {
+                                          "$case": "booleanExpression",
+                                          "booleanExpression": {
+                                            "expression": {
+                                              "$case": "bindableBoolean",
+                                              "bindableBoolean": {
+                                                "$type": "<text:33>",
+                                                "key": {
+                                                  "key": {
+                                                    "value": {
+                                                      "$case": "id",
+                                                      "id": "<text:79>"
+                                                    }
+                                                  }
+                                                },
+                                                "content": {
+                                                  "$case": "booleanBinding",
+                                                  "booleanBinding": {}
+                                                }
+                                              }
+                                            },
+                                            "isReactive": true
+                                          }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:49>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "expression",
+                                      "expression": {
+                                        "isReactive": true,
+                                        "expression": {
+                                          "$case": "booleanExpression",
+                                          "booleanExpression": {
+                                            "expression": {
+                                              "$case": "stringEqualsExpression",
+                                              "stringEqualsExpression": {
+                                                "ignoreCase": false,
+                                                "a": {
+                                                  "expression": {
+                                                    "$case": "bindableString",
+                                                    "bindableString": {
+                                                      "$type": "<text:33>",
+                                                      "key": {
+                                                        "key": {
+                                                          "value": {
+                                                            "$case": "id",
+                                                            "id": "urn:li:fsd_followingState:SCRUBBED001:p1:p2:p3"
+                                                          }
+                                                        }
+                                                      },
+                                                      "content": {
+                                                        "$case": "stringBinding",
+                                                        "stringBinding": {}
+                                                      }
+                                                    }
+                                                  },
+                                                  "isReactive": true
+                                                },
+                                                "b": {
+                                                  "expression": {
+                                                    "$case": "stringValue",
+                                                    "stringValue": "Following"
+                                                  },
+                                                  "isReactive": false
+                                                }
+                                              }
+                                            },
+                                            "isReactive": true
+                                          }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:24>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "expression",
+                                      "expression": {
+                                        "isReactive": true,
+                                        "expression": {
+                                          "$case": "booleanExpression",
+                                          "booleanExpression": {
+                                            "expression": {
+                                              "$case": "stringEqualsExpression",
+                                              "stringEqualsExpression": {
+                                                "ignoreCase": false,
+                                                "a": {
+                                                  "expression": {
+                                                    "$case": "bindableString",
+                                                    "bindableString": {
+                                                      "$type": "<text:33>",
+                                                      "key": {
+                                                        "key": {
+                                                          "value": {
+                                                            "$case": "id",
+                                                            "id": "<text:38>"
+                                                          }
+                                                        }
+                                                      },
+                                                      "content": {
+                                                        "$case": "stringBinding",
+                                                        "stringBinding": {}
+                                                      }
+                                                    }
+                                                  },
+                                                  "isReactive": true
+                                                },
+                                                "b": {
+                                                  "expression": {
+                                                    "$case": "stringValue",
+                                                    "stringValue": "Distance1"
+                                                  },
+                                                  "isReactive": false
+                                                }
+                                              }
+                                            },
+                                            "isReactive": true
+                                          }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:25>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "expression",
+                                      "expression": {
+                                        "isReactive": true,
+                                        "expression": {
+                                          "$case": "booleanExpression",
+                                          "booleanExpression": {
+                                            "expression": {
+                                              "$case": "notExpression",
+                                              "notExpression": {
+                                                "a": {
+                                                  "expression": {
+                                                    "$case": "stringEqualsExpression",
+                                                    "stringEqualsExpression": {
+                                                      "ignoreCase": false,
+                                                      "a": {
+                                                        "expression": {
+                                                          "$case": "bindableString",
+                                                          "bindableString": {
+                                                            "$type": "<text:33>",
+                                                            "key": {
+                                                              "key": {
+                                                                "value": {
+                                                                  "$case": "id",
+                                                                  "id": "<text:38>"
+                                                                }
+                                                              }
+                                                            },
+                                                            "content": {
+                                                              "$case": "stringBinding",
+                                                              "stringBinding": {}
+                                                            }
+                                                          }
+                                                        },
+                                                        "isReactive": true
+                                                      },
+                                                      "b": {
+                                                        "expression": {
+                                                          "$case": "stringValue",
+                                                          "stringValue": "Distance1"
+                                                        },
+                                                        "isReactive": false
+                                                      }
+                                                    }
+                                                  },
+                                                  "isReactive": true
+                                                }
+                                              }
+                                            },
+                                            "isReactive": true
+                                          }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "key": {
+                                        "value": {
+                                          "$case": "id",
+                                          "id": "<text:80>"
+                                        }
+                                      }
+                                    },
+                                    "value": {
+                                      "$case": "expression",
+                                      "expression": {
+                                        "expression": {
+                                          "$case": "stringExpression",
+                                          "stringExpression": {
+                                            "expression": {
+                                              "$case": "bindableString",
+                                              "bindableString": {
+                                                "$type": "<text:33>",
+                                                "key": {
+                                                  "key": {
+                                                    "value": {
+                                                      "$case": "id",
+                                                      "id": "<text:80>"
+                                                    }
+                                                  }
+                                                },
+                                                "content": {
+                                                  "$case": "stringBinding",
+                                                  "stringBinding": {}
+                                                }
+                                              }
+                                            },
+                                            "isReactive": true
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                ],
+                                "screenHash": "<text:75>",
+                                "canLoadFromCache": "$undefined",
+                                "cacheDelayMilliSecs": "$undefined"
+                              }
+                            ],
+                            "$undefined"
+                          ],
+                          "$L5",
+                          [
+                            "$",
+                            "$L6",
+                            "<text:75>",
+                            {
+                              "screenHash": "<text:75>",
+                              "screenId": "com.linkedin.sdui.flagshipnav.profile.ProfileContactDetailsOverlay",
+                              "onAppear": {
+                                "actions": [
+                                  {
+                                    "$type": "<text:41>",
+                                    "value": {
+                                      "expression": {
+                                        "$type": "<text:40>",
+                                        "expression": {
+                                          "$case": "notExpression",
+                                          "notExpression": {
+                                            "$type": "<text:36>",
+                                            "a": {
+                                              "$type": "<text:40>",
+                                              "expression": {
+                                                "$case": "bindableBoolean",
+                                                "bindableBoolean": {
+                                                  "$type": "<text:33>",
+                                                  "key": {
+                                                    "key": {
+                                                      "value": {
+                                                        "$case": "id",
+                                                        "id": "<text:29>"
+                                                      }
+                                                    }
+                                                  },
+                                                  "content": {
+                                                    "$case": "booleanBinding",
+                                                    "booleanBinding": {}
+                                                  }
+                                                }
+                                              },
+                                              "isReactive": true
+                                            }
+                                          }
+                                        },
+                                        "isReactive": true
+                                      },
+                                      "whenTrue": {
+                                        "actions": [
+                                          {
+                                            "$type": "<text:32>",
+                                            "value": {
+                                              "state": {
+                                                "key": {
+                                                  "key": {
+                                                    "value": {
+                                                      "$case": "id",
+                                                      "id": "<text:29>"
+                                                    }
+                                                  }
+                                                },
+                                                "value": {
+                                                  "$case": "booleanValue",
+                                                  "booleanValue": true
+                                                }
+                                              }
+                                            }
+                                          },
+                                          {
+                                            "$type": "<text:32>",
+                                            "value": {
+                                              "state": {
+                                                "key": {
+                                                  "key": {
+                                                    "value": {
+                                                      "$case": "id",
+                                                      "id": "<text:28>"
+                                                    }
+                                                  }
+                                                },
+                                                "value": {
+                                                  "$case": "signedLongValue",
+                                                  "signedLongValue": "$n1787256935602"
+                                                }
+                                              }
+                                            }
+                                          },
+                                          {
+                                            "$type": "<text:32>",
+                                            "value": {
+                                              "state": {
+                                                "key": {
+                                                  "key": {
+                                                    "value": {
+                                                      "$case": "id",
+                                                      "id": "<text:24>"
+                                                    }
+                                                  }
+                                                },
+                                                "value": {
+                                                  "$case": "stringValue",
+                                                  "stringValue": "<text:33>"
+                                                }
+                                              }
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "$type": "<text:44>",
+                                    "value": {
+                                      "pageKey": "<text:28>"
+                                    }
+                                  }
+                                ]
+                              },
+                              "onReappear": {
+                                "actions": [
+                                  {
+                                    "$type": "<text:44>",
+                                    "value": {
+                                      "pageKey": "<text:28>"
+                                    }
+                                  }
+                                ]
+                              },
+                              "onDisappear": "$undefined",
+                              "onBackOverride": "$undefined",
+                              "shouldOverrideBack": "$undefined",
+                              "disableDefaultDismiss": "$undefined",
+                              "shouldFireReappearOnAppForeground": false,
+                              "shouldFireReappearOnModalClose": true,
+                              "oopsTrackingViewNames": "$undefined",
+                              "oopsPageKey": "$undefined",
+                              "children": [
+                                "$undefined",
+                                [
+                                  "$",
+                                  "$L7",
+                                  null,
+                                  {
+                                    "componentKey": "2068093b-2042-4582-8e5c-4925a3f802da",
+                                    "viewTrackingSpecs": {
+                                      "viewName": "profile-contact-info-details-view",
+                                      "impressionThresholds": [
+                                        {
+                                          "minDurationMs": 300,
+                                          "minVisibilityPercentage": 0.009999999776482582,
+                                          "triggerOnStart": false
+                                        }
+                                      ],
+                                      "contentTrackingId": "<text:24>",
+                                      "trackingScope": [
+                                        {
+                                          "contentTrackingId": "<text:24>",
+                                          "topicName": "FrontendProfileServedEvent",
+                                          "breadcrumb": "$undefined",
+                                          "transporterKeys": [
+                                            "default"
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    "children": [
+                                      "$",
+                                      "div",
+                                      null,
+                                      {
+                                        "className": "<text:77>",
+                                        "componentkey": "2068093b-2042-4582-8e5c-4925a3f802da",
+                                        "children": [
+                                          [
+                                            "$",
+                                            "$L8",
+                                            null,
+                                            {
+                                              "observabilityIdentifier": "com.linkedin.sdui.impl.profile.components.detailscreens.replaceableContactInfoComponent",
+                                              "children": [
+                                                "$",
+                                                "$L7",
+                                                null,
+                                                {
+                                                  "componentKey": "com.linkedin.sdui.profile.card.refSCRUBBEDID001ContactInfoDetailSection",
+                                                  "children": [
+                                                    "$",
+                                                    "$L9",
+                                                    "com.linkedin.sdui.profile.card.refSCRUBBEDID001ContactInfoDetailSection",
+                                                    {
+                                                      "componentKey": "com.linkedin.sdui.profile.card.refSCRUBBEDID001ContactInfoDetailSection",
+                                                      "initialContent": "$La",
+                                                      "componentkey": "com.linkedin.sdui.profile.card.refSCRUBBEDID001ContactInfoDetailSection",
+                                                      "renderWithoutWrapper": false
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ],
+                        [
+                          "$",
+                          "$Lb",
+                          null,
+                          {
+                            "actions": {
+                              "actions": [
+                                {
+                                  "$type": "<text:37>",
+                                  "value": {
+                                    "requestId": "com.linkedin.sdui.realtimeDefaultHandler",
+                                    "requestedArguments": {
+                                      "$type": "<text:46>",
+                                      "requestedStateKeys": [
+                                        {
+                                          "key": {
+                                            "value": {
+                                              "$case": "id",
+                                              "id": "realtimeSessionId"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "key": {
+                                            "value": {
+                                              "$case": "id",
+                                              "id": "realtimeHeartbeat"
+                                            }
+                                          }
+                                        }
+                                      ],
+                                      "payload": {
+                                        "sessionId": {
+                                          "key": "realtimeSessionId",
+                                          "namespace": "MemoryNamespace"
+                                        },
+                                        "lastHeartbeatTimestamp": {
+                                          "key": "realtimeHeartbeat",
+                                          "namespace": "MemoryNamespace"
+                                        }
+                                      },
+                                      "requestMetadata": {
+                                        "$type": "<text:33>"
+                                      }
+                                    },
+                                    "isApfcEnabled": false,
+                                    "isStreaming": true,
+                                    "rumPageKey": "",
+                                    "maxRetries": 0,
+                                    "backOffMultiplier": 0,
+                                    "maxSeconds": 0,
+                                    "onClientRequestFailureAction": "$undefined"
+                                  }
+                                }
+                              ]
+                            },
+                            "useCollectionKey": false
+                          }
+                        ]
+                      ]
+                    }
+                  ]
+                ]
+              }
+            ]
+          },
+          {
+            "id": "5",
+            "tag": null,
+            "unparsedLength": 0
+          },
+          {
+            "id": "a",
+            "tag": null,
+            "value": [
+              "$",
+              "$L7",
+              null,
+              {
+                "componentKey": "com.linkedin.sdui.profile.card.refSCRUBBEDID001ContactInfoDetailSection",
+                "children": [
+                  "$",
+                  "div",
+                  null,
+                  {
+                    "className": "<text:97>",
+                    "componentkey": "com.linkedin.sdui.profile.card.refSCRUBBEDID001ContactInfoDetailSection",
+                    "children": [
+                      "$Lc"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "c",
+            "tag": null,
+            "value": [
+              "$",
+              "div",
+              null,
+              {
+                "className": "<text:136>",
+                "data-testid": "lazy-column",
+                "data-component-type": "LazyColumn",
+                "children": [
+                  "$undefined",
+                  [
+                    "$",
+                    "$Ld",
+                    null,
+                    {
+                      "children": [
+                        "$",
+                        "$Le",
+                        null,
+                        {
+                          "paginationPageKey": "$undefined",
+                          "paginationPageSize": "$undefined",
+                          "paginationNeeded": true,
+                          "children": [
+                            [
+                              "$",
+                              "$L7",
+                              null,
+                              {
+                                "componentKey": "de7e633d-3250-4861-9327-4cc0dd8cc731",
+                                "viewTrackingSpecs": {
+                                  "viewName": "contact-your-profile",
+                                  "interactionTypes": [
+                                    "<text:11>"
+                                  ],
+                                  "contentTrackingId": "<text:24>",
+                                  "legacyControlName": "<text:21>"
+                                },
+                                "children": [
+                                  "$",
+                                  "div",
+                                  null,
+                                  {
+                                    "className": "<text:76>",
+                                    "componentkey": "de7e633d-3250-4861-9327-4cc0dd8cc731",
+                                    "children": [
+                                      "$",
+                                      "$Lf",
+                                      null,
+                                      {
+                                        "direction": "horizontal",
+                                        "children": [
+                                          "$L10",
+                                          [
+                                            "$",
+                                            "div",
+                                            null,
+                                            {
+                                              "className": "<text:77>",
+                                              "children": [
+                                                "$L11",
+                                                "$L12"
+                                              ]
+                                            }
+                                          ]
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ],
+                            [
+                              "$",
+                              "$L7",
+                              null,
+                              {
+                                "componentKey": "5c51f6c7-3b07-4723-8f41-740cfd755df1",
+                                "viewTrackingSpecs": {
+                                  "viewName": "contact-website",
+                                  "interactionTypes": [
+                                    "<text:11>"
+                                  ],
+                                  "contentTrackingId": "<text:24>",
+                                  "legacyControlName": "<text:15>"
+                                },
+                                "children": [
+                                  "$",
+                                  "div",
+                                  null,
+                                  {
+                                    "className": "<text:76>",
+                                    "componentkey": "5c51f6c7-3b07-4723-8f41-740cfd755df1",
+                                    "children": [
+                                      "$",
+                                      "$Lf",
+                                      null,
+                                      {
+                                        "direction": "horizontal",
+                                        "children": [
+                                          "$L13",
+                                          [
+                                            "$",
+                                            "div",
+                                            null,
+                                            {
+                                              "className": "<text:77>",
+                                              "children": [
+                                                "$L14",
+                                                "$L15"
+                                              ]
+                                            }
+                                          ]
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ],
+                            [
+                              "$",
+                              "$L7",
+                              null,
+                              {
+                                "componentKey": "04d0d858-89c1-4abd-abce-9cf50c0ab4ac",
+                                "viewTrackingSpecs": {
+                                  "viewName": "contact-phone",
+                                  "interactionTypes": [
+                                    "<text:11>"
+                                  ],
+                                  "contentTrackingId": "<text:24>",
+                                  "legacyControlName": "<text:12>"
+                                },
+                                "children": [
+                                  "$",
+                                  "div",
+                                  null,
+                                  {
+                                    "className": "<text:76>",
+                                    "componentkey": "04d0d858-89c1-4abd-abce-9cf50c0ab4ac",
+                                    "children": [
+                                      "$",
+                                      "$Lf",
+                                      null,
+                                      {
+                                        "direction": "horizontal",
+                                        "children": [
+                                          "$L16",
+                                          [
+                                            "$",
+                                            "div",
+                                            null,
+                                            {
+                                              "className": "<text:77>",
+                                              "children": [
+                                                "$L17",
+                                                "$L18"
+                                              ]
+                                            }
+                                          ]
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ],
+                            [
+                              "$",
+                              "$L7",
+                              null,
+                              {
+                                "componentKey": "c68a0101-bd9f-43d4-a6e4-5629aae1f36a",
+                                "viewTrackingSpecs": {
+                                  "viewName": "contact-email",
+                                  "interactionTypes": [
+                                    "<text:11>"
+                                  ],
+                                  "contentTrackingId": "<text:24>",
+                                  "legacyControlName": "<text:13>"
+                                },
+                                "children": [
+                                  "$",
+                                  "div",
+                                  null,
+                                  {
+                                    "className": "<text:76>",
+                                    "componentkey": "c68a0101-bd9f-43d4-a6e4-5629aae1f36a",
+                                    "children": [
+                                      "$",
+                                      "$Lf",
+                                      null,
+                                      {
+                                        "direction": "horizontal",
+                                        "children": [
+                                          "$L19",
+                                          [
+                                            "$",
+                                            "div",
+                                            null,
+                                            {
+                                              "className": "<text:77>",
+                                              "children": [
+                                                "$L1a",
+                                                "$L1b"
+                                              ]
+                                            }
+                                          ]
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ],
+                            [
+                              "$",
+                              "div",
+                              null,
+                              {
+                                "className": "<text:76>",
+                                "children": [
+                                  "$",
+                                  "$Lf",
+                                  null,
+                                  {
+                                    "direction": "horizontal",
+                                    "children": [
+                                      "$L1c",
+                                      [
+                                        "$",
+                                        "div",
+                                        null,
+                                        {
+                                          "className": "<text:77>",
+                                          "children": [
+                                            "$L1d",
+                                            "$L1e"
+                                          ]
+                                        }
+                                      ]
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "$undefined",
+                  "$undefined"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "11",
+            "tag": null,
+            "value": [
+              "$",
+              "p",
+              null,
+              {
+                "className": "<text:95>",
+                "children": [
+                  "<text:13>"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "12",
+            "tag": null,
+            "value": [
+              "$",
+              "$L1f",
+              null,
+              {
+                "maxLineCountExpression": 0,
+                "textColorExpression": 169,
+                "textProps": {
+                  "fontFamily": "sans",
+                  "fontSize": "small",
+                  "fontStyle": "normal",
+                  "fontWeight": "bold",
+                  "lineHeight": "default",
+                  "textAlign": "start",
+                  "children": [
+                    [
+                      "$",
+                      "$L20",
+                      "text-attr-0",
+                      {
+                        "action": {
+                          "actions": [
+                            {
+                              "$type": "<text:32>",
+                              "value": {
+                                "content": {
+                                  "$case": "url",
+                                  "url": {
+                                    "$type": "<text:37>",
+                                    "urlValue": {
+                                      "$case": "url",
+                                      "url": "<url>"
+                                    },
+                                    "openInNewTab": false,
+                                    "interop": false,
+                                    "urlType": "$undefined",
+                                    "clearBackStack": false,
+                                    "openBehaviorConfig": "$undefined"
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        "viewTrackingSpecs": "$undefined",
+                        "linkStyle": "$undefined",
+                        "children": [
+                          "<text:32>"
+                        ]
+                      }
+                    ]
+                  ],
+                  "linkColorTokens": "$undefined",
+                  "linkHoverDecoration": "underline"
+                }
+              }
+            ]
+          },
+          {
+            "id": "14",
+            "tag": null,
+            "value": [
+              "$",
+              "p",
+              null,
+              {
+                "className": "<text:95>",
+                "children": [
+                  "Website"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "15",
+            "tag": null,
+            "value": [
+              "$",
+              "$L1f",
+              null,
+              {
+                "maxLineCountExpression": 0,
+                "textColorExpression": 179,
+                "textProps": {
+                  "fontFamily": "sans",
+                  "fontSize": "small",
+                  "fontStyle": "normal",
+                  "fontWeight": "normal",
+                  "lineHeight": "default",
+                  "textAlign": "start",
+                  "children": [
+                    [
+                      "$",
+                      "$21",
+                      "text-attr-0",
+                      {
+                        "children": [
+                          "$undefined",
+                          [
+                            "$",
+                            "span",
+                            null,
+                            {
+                              "className": "<text:18>",
+                              "children": [
+                                [
+                                  "$",
+                                  "$L20",
+                                  "text-attr-0",
+                                  {
+                                    "action": {
+                                      "actions": [
+                                        {
+                                          "$type": "<text:32>",
+                                          "value": {
+                                            "content": {
+                                              "$case": "url",
+                                              "url": {
+                                                "$type": "<text:37>",
+                                                "urlValue": {
+                                                  "$case": "url",
+                                                  "url": "<url>"
+                                                },
+                                                "openInNewTab": true,
+                                                "interop": false,
+                                                "urlType": "$undefined",
+                                                "clearBackStack": false,
+                                                "openBehaviorConfig": {
+                                                  "$case": "openInNewTabOrWindow",
+                                                  "openInNewTabOrWindow": {
+                                                    "$type": "<text:21>"
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "viewTrackingSpecs": "$undefined",
+                                    "linkStyle": "$undefined",
+                                    "children": [
+                                      [
+                                        "$",
+                                        "strong",
+                                        "text-attr-0",
+                                        {
+                                          "children": [
+                                            "<text:15>"
+                                          ]
+                                        }
+                                      ]
+                                    ]
+                                  }
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            [
+                              "$",
+                              "span",
+                              null,
+                              {
+                                "className": "<text:19>",
+                                "children": " "
+                              }
+                            ],
+                            "<text:10>",
+                            null
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "linkColorTokens": "$undefined",
+                  "linkHoverDecoration": "underline"
+                }
+              }
+            ]
+          },
+          {
+            "id": "17",
+            "tag": null,
+            "value": [
+              "$",
+              "p",
+              null,
+              {
+                "className": "<text:95>",
+                "children": [
+                  "Phone"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "18",
+            "tag": null,
+            "value": [
+              "$",
+              "$L1f",
+              null,
+              {
+                "maxLineCountExpression": 0,
+                "textColorExpression": 179,
+                "textProps": {
+                  "fontFamily": "sans",
+                  "fontSize": "small",
+                  "fontStyle": "normal",
+                  "fontWeight": "normal",
+                  "lineHeight": "default",
+                  "textAlign": "start",
+                  "children": [
+                    [
+                      "$",
+                      "$21",
+                      "text-attr-0",
+                      {
+                        "children": [
+                          "$undefined",
+                          [
+                            "$",
+                            "span",
+                            null,
+                            {
+                              "className": "<text:19>",
+                              "children": [
+                                "<phone>"
+                              ]
+                            }
+                          ],
+                          [
+                            [
+                              "$",
+                              "span",
+                              null,
+                              {
+                                "className": "<text:19>",
+                                "children": " "
+                              }
+                            ],
+                            "<text:6>",
+                            null
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "linkColorTokens": "$undefined",
+                  "linkHoverDecoration": "underline"
+                }
+              }
+            ]
+          },
+          {
+            "id": "1a",
+            "tag": null,
+            "value": [
+              "$",
+              "p",
+              null,
+              {
+                "className": "<text:95>",
+                "children": [
+                  "Email"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "1b",
+            "tag": null,
+            "value": [
+              "$",
+              "$L1f",
+              null,
+              {
+                "maxLineCountExpression": 0,
+                "textColorExpression": 169,
+                "textProps": {
+                  "fontFamily": "sans",
+                  "fontSize": "small",
+                  "fontStyle": "normal",
+                  "fontWeight": "bold",
+                  "lineHeight": "default",
+                  "textAlign": "start",
+                  "children": [
+                    [
+                      "$",
+                      "$L20",
+                      "text-attr-0",
+                      {
+                        "action": {
+                          "actions": [
+                            {
+                              "$type": "<text:32>",
+                              "value": {
+                                "content": {
+                                  "$case": "url",
+                                  "url": {
+                                    "$type": "<text:37>",
+                                    "urlValue": {
+                                      "$case": "url",
+                                      "url": "mailto:<email>"
+                                    },
+                                    "openInNewTab": true,
+                                    "interop": false,
+                                    "urlType": "$undefined",
+                                    "clearBackStack": false,
+                                    "openBehaviorConfig": {
+                                      "$case": "openInNewTabOrWindow",
+                                      "openInNewTabOrWindow": {
+                                        "$type": "<text:21>"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        "viewTrackingSpecs": "$undefined",
+                        "linkStyle": "$undefined",
+                        "children": [
+                          "<email>"
+                        ]
+                      }
+                    ]
+                  ],
+                  "linkColorTokens": "$undefined",
+                  "linkHoverDecoration": "underline"
+                }
+              }
+            ]
+          },
+          {
+            "id": "1d",
+            "tag": null,
+            "value": [
+              "$",
+              "p",
+              null,
+              {
+                "className": "<text:95>",
+                "children": [
+                  "<text:15>"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "1e",
+            "tag": null,
+            "value": [
+              "$",
+              "$L1f",
+              null,
+              {
+                "maxLineCountExpression": 0,
+                "textColorExpression": 179,
+                "textProps": {
+                  "fontFamily": "sans",
+                  "fontSize": "small",
+                  "fontStyle": "normal",
+                  "fontWeight": "normal",
+                  "lineHeight": "default",
+                  "textAlign": "start",
+                  "children": [
+                    "<text:12>"
+                  ],
+                  "linkColorTokens": "$undefined",
+                  "linkHoverDecoration": "underline"
+                }
+              }
+            ]
+          },
+          {
+            "id": "10",
+            "tag": null,
+            "value": [
+              "$",
+              "$L22",
+              null,
+              {
+                "display": "block",
+                "imageId": 215,
+                "aria-label": "",
+                "aria-hidden": true,
+                "enableForcedColorStyles": false,
+                "height": "3x",
+                "width": "3x",
+                "flexShrink": 0,
+                "className": "<text:9>"
+              }
+            ]
+          },
+          {
+            "id": "13",
+            "tag": null,
+            "value": [
+              "$",
+              "$L22",
+              null,
+              {
+                "display": "block",
+                "imageId": 155,
+                "aria-label": "",
+                "aria-hidden": true,
+                "enableForcedColorStyles": false,
+                "height": "3x",
+                "width": "3x",
+                "flexShrink": 0,
+                "className": "<text:9>"
+              }
+            ]
+          },
+          {
+            "id": "16",
+            "tag": null,
+            "value": [
+              "$",
+              "$L22",
+              null,
+              {
+                "display": "block",
+                "imageId": 656,
+                "aria-label": "",
+                "aria-hidden": true,
+                "enableForcedColorStyles": false,
+                "height": "3x",
+                "width": "3x",
+                "flexShrink": 0,
+                "className": "<text:9>"
+              }
+            ]
+          },
+          {
+            "id": "19",
+            "tag": null,
+            "value": [
+              "$",
+              "$L22",
+              null,
+              {
+                "display": "block",
+                "imageId": 212,
+                "aria-label": "",
+                "aria-hidden": true,
+                "enableForcedColorStyles": false,
+                "height": "3x",
+                "width": "3x",
+                "flexShrink": 0,
+                "className": "<text:9>"
+              }
+            ]
+          },
+          {
+            "id": "1c",
+            "tag": null,
+            "value": [
+              "$",
+              "$L22",
+              null,
+              {
+                "display": "block",
+                "imageId": 129,
+                "aria-label": "",
+                "aria-hidden": true,
+                "enableForcedColorStyles": false,
+                "height": "3x",
+                "width": "3x",
+                "flexShrink": 0,
+                "className": "<text:9>"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "url": "https://www.linkedin.com/to11ywF4RPyRcWueq",
+      "method": "POST",
+      "status": 200,
+      "contentType": "application/json",
+      "bodySize": 1115,
+      "truncated": false,
+      "bodyFormat": "json",
+      "parseError": null,
+      "body": {
+        "responses": [
+          {
+            "id": "479",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "480",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "481",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "482",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "483",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "484",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "485",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "486",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "487",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "488",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "489",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "498",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "499",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "500",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "501",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "502",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "503",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "504",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "505",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          },
+          {
+            "id": "506",
+            "responseStatus": "ResponseStatus_SUCCESS"
+          }
+        ]
+      }
+    }
+  ]
+}
