@@ -53,6 +53,17 @@
   const buffer = new Map();
 
   /**
+   * The resource census, and the patch health.
+   *
+   * Page-scoped rather than slug-scoped: it answers "what did this document
+   * load", which is a property of the tab, not of a profile. Cleared on
+   * navigation with everything else.
+   */
+  let census = [];
+  let health = null;
+  const CENSUS_MAX = 200;
+
+  /**
    * Records seen before the URL became a profile.
    *
    * A single-page navigation fetches the next profile's data before, or while,
@@ -114,6 +125,13 @@
       return false;
     }
     if (typeof r.status !== "number") return false;
+    // A SKIPPED record carries no body and no size — it exists to say that a
+    // response went past and why it was not copied.
+    if (r.skipped !== undefined) {
+      if (typeof r.skipped !== "string" || r.skipped.length > 60) return false;
+      if (r.body !== null && r.body !== undefined) return false;
+      return true;
+    }
     if (typeof r.bodySize !== "number" || r.bodySize < 0) return false;
     if (r.body !== null && typeof r.body !== "string") return false;
     return true;
@@ -137,6 +155,46 @@
       }
 
       if (nonce === null || data.nonce !== nonce) return;
+
+      /**
+       * The census: URLs the document loaded, by whatever mechanism, with no
+       * bodies. Validated the same way as everything else arriving here — it is
+       * shown to a human as diagnostics, and a hostile page must not be able to
+       * put arbitrary text in front of them.
+       */
+      if (data.kind === "census") {
+        if (!Array.isArray(data.entries)) return;
+        for (const raw of data.entries) {
+          if (!raw || typeof raw !== "object") continue;
+          if (typeof raw.path !== "string" || raw.path.length === 0 || raw.path.length > 500) {
+            continue;
+          }
+          try {
+            const u = new URL(raw.path, location.href);
+            if (!/(^|\.)linkedin\.com$/i.test(u.hostname)) continue;
+            // No query, ever — the MAIN side strips it, and this side enforces it.
+            if (u.search) continue;
+          } catch {
+            continue;
+          }
+          if (census.length >= CENSUS_MAX) break;
+          census.push({
+            path: raw.path,
+            initiatorType: typeof raw.initiatorType === "string" ? raw.initiatorType.slice(0, 40) : "",
+            transferSize: typeof raw.transferSize === "number" ? raw.transferSize : null,
+            decodedBodySize: typeof raw.decodedBodySize === "number" ? raw.decodedBodySize : null,
+          });
+        }
+        if (data.health && typeof data.health === "object") {
+          health = {
+            fetchPatched: data.health.fetchPatched === true,
+            xhrOpenPatched:
+              data.health.xhrOpenPatched === null ? null : data.health.xhrOpenPatched === true,
+          };
+        }
+        return;
+      }
+
       if (data.kind !== "observed") return;
       if (!isValidRecord(data.record)) return;
 
@@ -192,6 +250,11 @@
       if (now === lastSlug) return;
       if (lastSlug) buffer.delete(lastSlug);
       lastSlug = now;
+      // The census describes what the DOCUMENT loaded. On a client-side
+      // navigation the document is the same one, so it is NOT cleared here: the
+      // requests that fetched this profile were made before the URL changed, and
+      // throwing them away would delete the evidence at the moment it becomes
+      // interesting. It is capped instead, and dies with the tab.
 
       /**
        * Landing on a profile claims whatever was observed on the way in.
@@ -232,40 +295,113 @@
    * READ-ONLY, and a copy: a caller that mutated what it was handed would corrupt
    * the buffer for the next capture.
    */
+  /**
+   * One status shape, built in one place.
+   *
+   * There were two copies of this — the same fields assembled separately for the
+   * same-world handle and for the extension message — and they had already
+   * drifted once. A diagnostic that differs depending on which door you knocked
+   * on is worse than no diagnostic.
+   */
+  /**
+   * The records a capture may actually use — one implementation, both doors.
+   *
+   * Only records that HAVE a body. A skipped record is a note ABOUT a response
+   * we did not copy; handing it to the mapping as though it were a payload would
+   * turn a diagnostic into a wrong answer. (This lived in two places, and the
+   * copy behind the extension message did not have the filter — which is exactly
+   * the kind of divergence that made the status shape wrong before it.)
+   */
+  const takeRecords = (slug) => {
+    prune();
+    const key = slug ? String(slug).toLowerCase() : currentSlug();
+    const entry = key ? buffer.get(key) : null;
+    const withBody = (r) => !r.skipped && typeof r.body === "string";
+    const own = (entry?.records ?? []).filter(withBody).map((r) => ({ ...r }));
+    // Anything still unattributed is handed over too: on this page, at this
+    // moment, it is the best answer available to "what did the page fetch".
+    const held = pending.filter(withBody).map((r) => ({ ...r }));
+    const seen = new Set(own.map((r) => r.url));
+    return [...own, ...held.filter((r) => !seen.has(r.url))];
+  };
+
+  const buildStatus = () => {
+    prune();
+    const slug = currentSlug();
+    const entry = slug ? buffer.get(slug) : null;
+    const records = entry?.records ?? [];
+    const copied = records.filter((r) => !r.skipped);
+    const skipped = [...records, ...pending].filter((r) => r.skipped);
+    const byReason = {};
+    for (const r of skipped) byReason[r.skipped] = (byReason[r.skipped] ?? 0) + 1;
+    return {
+      installed: nonce !== null,
+      world: installedAt?.world ?? null,
+      timing: installedAt?.at ?? null,
+      slug,
+      // Only records with a body count as observations. This used to include the
+      // skipped ones, which would have read as "we captured 12 responses" when we
+      // had captured none.
+      recordCount: copied.length,
+      // Observed but not yet attributed to a profile — visible, so "nothing
+      // here" and "held, waiting for a slug" cannot be confused.
+      pendingCount: pending.filter((r) => !r.skipped).length,
+      /**
+       * WHY THERE WAS NOTHING TO CAPTURE.
+       *
+       * The three fields that turn "the buffer is empty" into an answer:
+       * what went past and was not copied, what the document loaded by any
+       * mechanism at all, and whether our patches are still the ones installed.
+       */
+      skippedCount: skipped.length,
+      skippedByReason: byReason,
+      censusCount: census.length,
+      patchHealth: health,
+      inventory: copied.map((r) => ({
+        url: r.url,
+        method: r.method,
+        status: r.status,
+        contentType: r.contentType,
+        bodySize: r.bodySize,
+        truncated: !!r.truncated,
+      })),
+    };
+  };
+
   globalThis.VentureObserved = {
     status() {
+      return buildStatus();
+    },
+    take(slug) {
+      return takeRecords(slug);
+    },
+    /**
+     * Everything the diagnostics need and the mapping must not have: the skipped
+     * responses, the census, and whether our patches are still installed.
+     */
+    diagnostics() {
       prune();
       const slug = currentSlug();
       const entry = slug ? buffer.get(slug) : null;
+      const all = [...(entry?.records ?? []), ...pending];
+      const skipped = all.filter((r) => r.skipped);
+      const byReason = {};
+      for (const r of skipped) byReason[r.skipped] = (byReason[r.skipped] ?? 0) + 1;
       return {
-        installed: nonce !== null,
-        world: installedAt?.world ?? null,
-        timing: installedAt?.at ?? null,
-        slug,
-        recordCount: entry?.records.length ?? 0,
-        // Observed but not yet attributed to a profile — visible, so "nothing
-        // here" and "held, waiting for a slug" cannot be confused.
-        pendingCount: pending.length,
-        inventory: (entry?.records ?? []).map((r) => ({
+        health,
+        skippedCount: skipped.length,
+        skippedByReason: byReason,
+        skipped: skipped.map((r) => ({
           url: r.url,
           method: r.method,
           status: r.status,
           contentType: r.contentType,
-          bodySize: r.bodySize,
-          truncated: !!r.truncated,
+          bodySize: r.bodySize ?? null,
+          reason: r.skipped,
         })),
+        censusCount: census.length,
+        census: census.slice(),
       };
-    },
-    take(slug) {
-      prune();
-      const key = slug ? String(slug).toLowerCase() : currentSlug();
-      const entry = key ? buffer.get(key) : null;
-      const own = (entry?.records ?? []).map((r) => ({ ...r }));
-      // Anything still unattributed is handed over too: on this page, at this
-      // moment, it is the best answer available to "what did the page fetch".
-      const held = pending.map((r) => ({ ...r }));
-      const seen = new Set(own.map((r) => r.url));
-      return [...own, ...held.filter((r) => !seen.has(r.url))];
     },
   };
 
@@ -279,49 +415,38 @@
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     try {
       if (msg?.type === "observerStatus") {
-        prune();
-        const slug = currentSlug();
-        const entry = slug ? buffer.get(slug) : null;
-        sendResponse({
-          ok: true,
-          installed: nonce !== null,
-          world: installedAt?.world ?? null,
-          timing: installedAt?.at ?? null,
-          slug,
-          recordCount: entry?.records.length ?? 0,
-          pendingCount: pending.length,
-          // The inventory, without the bodies: what was seen, how big, and when.
-          inventory: (entry?.records ?? []).map((r) => ({
-            url: r.url,
-            method: r.method,
-            status: r.status,
-            contentType: r.contentType,
-            bodySize: r.bodySize,
-            truncated: !!r.truncated,
-          })),
-        });
+        sendResponse({ ok: true, ...buildStatus() });
         return true;
       }
 
       if (msg?.type === "observerTake") {
-        prune();
         const slug = msg.slug ? String(msg.slug).toLowerCase() : currentSlug();
-        const entry = slug ? buffer.get(slug) : null;
-        const own = entry?.records ?? [];
-        const seen = new Set(own.map((r) => r.url));
         sendResponse({
           ok: true,
           installed: nonce !== null,
           slug,
-          // Unattributed records travel too — see the note on `pending`.
-          records: [...own, ...pending.filter((r) => !seen.has(r.url))],
+          records: takeRecords(slug),
         });
+        return true;
+      }
+
+      /**
+       * The full diagnostic dump, for the popup's "Copy observed responses".
+       *
+       * Separate from `observerStatus` because it is bulky and only wanted when
+       * someone is looking into a failure — and separate from `observerTake`
+       * because the mapping must never see a skipped record.
+       */
+      if (msg?.type === "observerDiagnostics") {
+        sendResponse({ ok: true, ...buildStatus(), ...globalThis.VentureObserved.diagnostics() });
         return true;
       }
 
       if (msg?.type === "observerClear") {
         buffer.clear();
         pending = [];
+        census = [];
+        health = null;
         sendResponse({ ok: true });
         return true;
       }

@@ -714,6 +714,14 @@ async function observerStatus(tabId) {
   }
 }
 
+async function observerDiagnostics(tabId) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: "observerDiagnostics" });
+  } catch (e) {
+    return { ok: false, error: String(e?.message ?? e).slice(0, 80) };
+  }
+}
+
 async function observerTake(tabId, slug) {
   try {
     return await chrome.tabs.sendMessage(tabId, { type: "observerTake", slug });
@@ -750,7 +758,14 @@ $("api-snapshot").addEventListener("click", async () => {
     }
     const taken = await observerTake(tab.id);
     if (!taken?.records?.length) {
-      msg("Nothing observed yet on this page. Reload the profile, then try again.", "err");
+      // Not "reload": a reload is the case that fetches nothing. See the note on
+      // the inventory button.
+      msg(
+        "Nothing captured on this page yet. Reloading will not help — go to the feed " +
+          "and click through to a profile, which is what makes the app fetch it. " +
+          "Then use Copy observed responses to see what did arrive.",
+        "err",
+      );
       return;
     }
 
@@ -802,6 +817,7 @@ $("api-inventory").addEventListener("click", async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const status = await observerStatus(tab?.id);
+    const diag = status?.installed ? await observerDiagnostics(tab?.id) : null;
     const report = {
       observerInstalled: !!status?.installed,
       world: status?.world ?? null,
@@ -809,6 +825,29 @@ $("api-inventory").addEventListener("click", async () => {
       slug: status?.slug ?? null,
       recordCount: status?.recordCount ?? 0,
       inventory: status?.inventory ?? [],
+      /**
+       * WHY THERE WAS NOTHING — the three fields added after observation came
+       * back empty three times with no way to tell which of these it was.
+       *
+       *   skipped   responses that DID arrive and were not copied, with the
+       *             reason for each. If the payload is in here, the filter is
+       *             the bug.
+       *   census    every URL the document loaded, by any mechanism — including
+       *             ones our patched fetch never saw (a worker, another realm).
+       *             If the payload is in here but not in `skipped`, it went past
+       *             our patches entirely and the interception point is the bug.
+       *   patchHealth  whether our fetch/XHR patches are still the installed
+       *             ones. If false, something replaced them after us.
+       *
+       * If it is in NEITHER, the page did not fetch it — and the DOM path is the
+       * only path, which is worth knowing for certain rather than by inference.
+       */
+      skippedCount: status?.skippedCount ?? 0,
+      skippedByReason: status?.skippedByReason ?? {},
+      skipped: diag?.skipped ?? [],
+      censusCount: status?.censusCount ?? 0,
+      census: diag?.census ?? [],
+      patchHealth: status?.patchHealth ?? null,
       // Distinguishes "no content script here" from "ran and saw nothing".
       noContentScript: status?.noContentScript ?? false,
       error: status?.error ?? null,
@@ -816,11 +855,22 @@ $("api-inventory").addEventListener("click", async () => {
     };
     await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
     msg(
-      report.observerInstalled
-        ? `Copied. ${report.recordCount} response(s) observed on this page.`
-        : status?.noContentScript
+      !report.observerInstalled
+        ? status?.noContentScript
           ? "Copied. No content script in this tab — RELOAD the LinkedIn page and try again."
-          : "Copied. The observer is installed but saw nothing — reload the profile.",
+          : "Copied. The observer is not installed on this page."
+        : report.recordCount > 0
+          ? `Copied. ${report.recordCount} response(s) captured on this page.`
+          : /**
+             * The old message here said "reload the profile", which is the one
+             * instruction that CANNOT work: a fresh load is exactly the case
+             * where LinkedIn server-renders the profile and fetches no JSON for
+             * it. Navigating to a profile from inside the app is what produces a
+             * fetch, so that is what it now says.
+             */
+            `Copied. Nothing captured — but ${report.skippedCount} response(s) went past and ` +
+            `${report.censusCount} were loaded in total. Send me the copy. ` +
+            `(Do NOT reload: click through to a profile from the feed instead.)`,
       report.observerInstalled && report.recordCount > 0 ? "ok" : "err",
     );
   } catch (e) {

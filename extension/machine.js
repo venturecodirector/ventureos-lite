@@ -408,13 +408,45 @@
         }
         const records = O.take();
         gathered.observed = records;
-        return records.length > 0
-          ? { ok: true, detail: { records: records.length, inventory: status.inventory } }
-          : {
-              ok: false,
-              reason: "buffer_empty_page_loaded_before_observer",
-              detail: { inventory: status.inventory },
-            };
+        if (records.length > 0) {
+          return { ok: true, detail: { records: records.length, inventory: status.inventory } };
+        }
+        /**
+         * EMPTY, AND WHY.
+         *
+         * The old reason said "page loaded before observer", which was a GUESS
+         * dressed as a finding — and the wrong guess, as it turned out: on a fresh
+         * load LinkedIn server-renders the profile and fetches no JSON for it at
+         * all, so an empty buffer is the NORMAL outcome there, not a timing
+         * failure. Three rounds of investigation went into that ambiguity.
+         *
+         * Now the reason is chosen from what was actually observed:
+         *   · responses arrived and were skipped  → the filter is the suspect
+         *   · the document loaded things we never saw → the interception point is
+         *   · our patch is no longer installed → something replaced it
+         *   · nothing at all → the page really did not fetch, and the DOM path is
+         *     the only path. That is a finding, not a shrug.
+         */
+        const diag = typeof O.diagnostics === "function" ? O.diagnostics() : null;
+        gathered.observerDiagnostics = diag;
+        const reason =
+          diag && diag.health && diag.health.fetchPatched === false
+            ? "our_fetch_patch_was_replaced"
+            : (status.skippedCount ?? 0) > 0
+              ? "responses_arrived_but_none_were_json"
+              : (status.censusCount ?? 0) > 0
+                ? "document_loaded_resources_our_patches_never_saw"
+                : "page_fetched_nothing_server_rendered";
+        return {
+          ok: false,
+          reason,
+          detail: {
+            inventory: status.inventory,
+            skippedByReason: status.skippedByReason ?? {},
+            censusCount: status.censusCount ?? 0,
+            patchHealth: status.patchHealth ?? null,
+          },
+        };
       });
 
       // ---- NORMALIZE --------------------------------------------------------

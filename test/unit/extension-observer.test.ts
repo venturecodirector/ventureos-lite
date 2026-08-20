@@ -34,7 +34,19 @@ const MANIFEST = JSON.parse(readFileSync(join(EXT, "manifest.json"), "utf8")) as
 };
 
 /** A page with the MAIN-world interceptor installed over a controllable fetch. */
-function pageWithInterceptor(opts: { fetchImpl?: typeof fetch } = {}) {
+function pageWithInterceptor(
+  opts: {
+    fetchImpl?: typeof fetch;
+    /**
+     * Resource timings to hand the census. jsdom implements no
+     * PerformanceObserver, so one is supplied: it calls the observer's callback
+     * once with these entries, which is exactly what the browser does.
+     */
+    performanceEntries?: Array<Record<string, unknown>>;
+    /** Runs after the interceptor is installed — for the patch-replaced case. */
+    afterInstall?: (win: Window & typeof globalThis) => void;
+  } = {},
+) {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     url: "https://www.linkedin.com/in/mgoldberger/",
   });
@@ -58,13 +70,31 @@ function pageWithInterceptor(opts: { fetchImpl?: typeof fetch } = {}) {
   if (!win.Response) win.Response = Response as unknown as typeof win.Response;
   if (!win.crypto) win.crypto = { getRandomValues: (a: Uint8Array) => a } as unknown as Crypto;
 
-  new Function("window", "document", "crypto", "URL", "XMLHttpRequest", MAIN)(
+  // A minimal PerformanceObserver: one callback, with the entries given.
+  if (opts.performanceEntries) {
+    const entries = opts.performanceEntries;
+    (win as unknown as { PerformanceObserver: unknown }).PerformanceObserver = class {
+      #cb: (list: { getEntries: () => unknown[] }) => void;
+      constructor(cb: (list: { getEntries: () => unknown[] }) => void) {
+        this.#cb = cb;
+      }
+      observe() {
+        setTimeout(() => this.#cb({ getEntries: () => entries }), 0);
+      }
+      disconnect() {}
+    };
+  }
+
+  new Function("window", "document", "crypto", "URL", "XMLHttpRequest", "setTimeout", MAIN)(
     win,
     dom.window.document,
     dom.window.crypto,
     dom.window.URL,
     dom.window.XMLHttpRequest,
+    setTimeout,
   );
+
+  opts.afterInstall?.(win);
 
   return { dom, win, posted, original };
 }
@@ -164,26 +194,120 @@ describe("the patched fetch is transparent", () => {
     expect(posted.filter((p) => (p as { kind?: string }).kind === "hello")).toHaveLength(1);
   });
 
-  it("observes only same-site JSON", async () => {
-    const make = (url: string, type: string) =>
+  /**
+   * ── COPIED, SKIPPED, OR NEITHER ───────────────────────────────────────────
+   *
+   * The filter used to return a boolean and DISCARD everything it declined. So
+   * when a capture found nothing there was no way to tell "the page fetched no
+   * JSON" from "the page fetched something and we skipped it" — two problems with
+   * completely different fixes, and three rounds of investigation ended in that
+   * ambiguity.
+   *
+   * A declined same-site response is now announced WITHOUT ITS BODY, with the
+   * reason. Off-site traffic is skipped-with-reason too but never read; the body
+   * is null in both cases, which is what keeps this a census rather than a
+   * dragnet.
+   */
+  it("copies same-site JSON, and records what it declines and why", async () => {
+    const make = (url: string, type: string, body = '{"a":1}') =>
       (async () =>
-        new Response('{"a":1}', {
+        new Response(body, {
           status: 200,
-          headers: { "content-type": type },
+          headers: type ? { "content-type": type } : {},
         })) as typeof fetch;
 
-    for (const [url, type, expected] of [
-      ["https://www.linkedin.com/voyager/api/a", "application/json", 1],
-      ["https://www.linkedin.com/x.js", "application/javascript", 0],
-      ["https://evil.example/api", "application/json", 0],
-    ] as const) {
-      const { win, posted } = pageWithInterceptor({ fetchImpl: make(url, type) });
+    const cases = [
+      // url, content-type, body, expected outcome
+      ["https://www.linkedin.com/api/a", "application/json", '{"a":1}', "copied"],
+      // The two ways an API hides its type. Sniffed, and kept when it parses.
+      ["https://www.linkedin.com/api/b", "", '{"a":1}', "copied"],
+      ["https://www.linkedin.com/api/c", "text/plain", '[{"a":1}]', "copied"],
+      // Sniffed and rejected: the census still shows it arrived.
+      ["https://www.linkedin.com/api/d", "text/plain", "not json at all", "skipped"],
+      ["https://www.linkedin.com/x.js", "application/javascript", "var a=1", "skipped"],
+      ["https://evil.example/api", "application/json", '{"a":1}', "skipped"],
+    ] as const;
+
+    for (const [url, type, body, expected] of cases) {
+      const { win, posted } = pageWithInterceptor({ fetchImpl: make(url, type, body) });
       // jsdom's Response has no url, so the request URL is what is judged.
       await (win.fetch as typeof fetch)(url);
       await new Promise((r) => setTimeout(r, 10));
-      const observed = posted.filter((p) => (p as { kind?: string }).kind === "observed");
-      expect(observed.length, `${url} (${type})`).toBe(expected);
+      const observed = posted.filter(
+        (p) => (p as { kind?: string }).kind === "observed",
+      ) as Array<{ record: { body: string | null; skipped?: string } }>;
+      expect(observed.length, `${url} (${type || "no type"}) produced no record`).toBe(1);
+      const record = observed[0]!.record;
+      if (expected === "copied") {
+        expect(record.skipped, `${url} was skipped`).toBeUndefined();
+        expect(record.body, `${url} has no body`).toBe(body);
+      } else {
+        expect(record.skipped, `${url} was copied`).toBeTruthy();
+        expect(record.body, `a skipped record must carry no body`).toBeNull();
+      }
     }
+  });
+
+  /**
+   * The census is the answer to "did the payload go past us entirely".
+   *
+   * A patched fetch cannot see a request issued from a Worker, or through a
+   * function taken from another realm (`iframe.contentWindow.fetch` is the
+   * standard way to get an unpatched copy). The browser's own resource timeline
+   * can. This is a READ of that timeline — it originates nothing.
+   */
+  it("reports what the document loaded, with paths only and no query strings", async () => {
+    const { win, posted } = pageWithInterceptor({
+      performanceEntries: [
+        {
+          name: "https://www.linkedin.com/api/graphql?queryId=secret&variables=urn:li:fsd_profile:REAL",
+          initiatorType: "fetch",
+          transferSize: 4096,
+          decodedBodySize: 30000,
+        },
+        { name: "https://evil.example/tracker.gif", initiatorType: "img", transferSize: 40 },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 500));
+    const census = posted.filter((p) => (p as { kind?: string }).kind === "census") as Array<{
+      entries: Array<{ path: string; initiatorType: string; decodedBodySize: number | null }>;
+      health: { fetchPatched: boolean };
+    }>;
+    expect(census.length, "no census was posted").toBeGreaterThan(0);
+    const entries = census.flatMap((c) => c.entries);
+    // Off-site resources are not the page's data and are not censused.
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.path).toBe("https://www.linkedin.com/api/graphql");
+    // The query string carried an identifier and a token; neither survives.
+    expect(entries[0]!.path).not.toContain("queryId");
+    expect(entries[0]!.path).not.toContain("REAL");
+    expect(entries[0]!.decodedBodySize).toBe(30000);
+    // And it reports whether our patch is still the installed one.
+    expect(census[0]!.health.fetchPatched).toBe(true);
+    void win;
+  });
+
+  /**
+   * The failure mode we could not see at all: something replaces our patch after
+   * we install it. Everything keeps "working" and nothing is ever observed.
+   */
+  it("notices when the page replaces our patched fetch", async () => {
+    const { win, posted } = pageWithInterceptor({
+      performanceEntries: [
+        { name: "https://www.linkedin.com/api/x", initiatorType: "fetch", transferSize: 10 },
+      ],
+      afterInstall: (w) => {
+        // What an app does to shake off an interceptor.
+        (w as unknown as { fetch: unknown }).fetch = async () => new Response("{}");
+      },
+    });
+    await new Promise((r) => setTimeout(r, 500));
+    const census = posted.filter((p) => (p as { kind?: string }).kind === "census") as Array<{
+      health: { fetchPatched: boolean };
+    }>;
+    expect(census.length).toBeGreaterThan(0);
+    expect(census[0]!.health.fetchPatched).toBe(false);
+    void win;
   });
 });
 
@@ -322,6 +446,150 @@ describe("the bridge treats everything as untrusted", () => {
 });
 
 // ── item 8f: the boundary, enforced ────────────────────────────────────────
+
+/**
+ * ── THE DIAGNOSIS, ON THE BRIDGE SIDE ───────────────────────────────────────
+ *
+ * The census and the skipped records exist to answer one question — why was
+ * there nothing to capture — and they are only worth anything if they cannot
+ * be poisoned and cannot be mistaken for a payload.
+ */
+describe("the census and the skipped records", () => {
+  function bridge() {
+    const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+      url: "https://www.linkedin.com/in/mgoldberger/",
+    });
+    const listeners: ((msg: unknown, s: unknown, r: (v: unknown) => void) => void)[] = [];
+    const chrome = {
+      runtime: {
+        onMessage: {
+          addListener: (fn: (msg: unknown, s: unknown, r: (v: unknown) => void) => void) =>
+            listeners.push(fn),
+        },
+      },
+    };
+    new Function("window", "document", "location", "chrome", "setInterval", "URL", BRIDGE)(
+      dom.window,
+      dom.window.document,
+      dom.window.location,
+      chrome,
+      () => 0,
+      dom.window.URL,
+    );
+    const ask = (msg: unknown) =>
+      new Promise<Record<string, unknown>>((resolve) => {
+        listeners[0]!(msg, null, (v) => resolve(v as Record<string, unknown>));
+      });
+    const send = (data: unknown, origin = "https://www.linkedin.com") => {
+      const ev = new dom.window.MessageEvent("message", { data, origin });
+      Object.defineProperty(ev, "source", { value: dom.window });
+      dom.window.dispatchEvent(ev);
+    };
+    send({ channel: "venture-observer", nonce: "n0n6e-abcdef", kind: "hello", world: "MAIN" });
+    return { dom, ask, send };
+  }
+
+  const NONCE = "n0n6e-abcdef";
+  const census = (entries: unknown[], health?: unknown) => ({
+    channel: "venture-observer",
+    nonce: NONCE,
+    kind: "census",
+    entries,
+    health,
+  });
+
+  it("keeps a same-site path and drops anything else", async () => {
+    const { ask, send } = bridge();
+    send(
+      census([
+        { path: "https://www.linkedin.com/api/a", initiatorType: "fetch", transferSize: 10 },
+        // Off-site: not this page's data.
+        { path: "https://evil.example/x", initiatorType: "fetch" },
+        // A query string must never reach the buffer, even if MAIN sent one.
+        { path: "https://www.linkedin.com/api/b?token=secret", initiatorType: "fetch" },
+        // Shapes that are not entries at all.
+        { path: 42 },
+        null,
+        { initiatorType: "fetch" },
+      ]),
+    );
+    const diag = await ask({ type: "observerDiagnostics" });
+    expect(diag.censusCount).toBe(1);
+    expect((diag.census as Array<{ path: string }>)[0]!.path).toBe(
+      "https://www.linkedin.com/api/a",
+    );
+  });
+
+  it("reports the patch health it was told, and nothing it was not", async () => {
+    const { ask, send } = bridge();
+    send(census([], { fetchPatched: false, xhrOpenPatched: true, extra: "ignored" }));
+    const status = await ask({ type: "observerStatus" });
+    expect(status.patchHealth).toEqual({ fetchPatched: false, xhrOpenPatched: true });
+  });
+
+  /** THE ONE THAT MATTERS: a note about a response is not a response. */
+  it("never hands a skipped record to the mapping", async () => {
+    const { ask, send } = bridge();
+    const record = (url: string, extra: Record<string, unknown>) => ({
+      channel: "venture-observer",
+      nonce: NONCE,
+      kind: "observed",
+      record: { url, method: "GET", status: 200, contentType: "text/html", ...extra },
+    });
+    send(record("https://www.linkedin.com/real", { bodySize: 15, body: '{"included":[]}' }));
+    send(record("https://www.linkedin.com/skipped", { bodySize: null, body: null, skipped: "content_type_not_json" }));
+
+    const taken = await ask({ type: "observerTake" });
+    const urls = (taken.records as Array<{ url: string }>).map((r) => r.url);
+    expect(urls).toEqual(["https://www.linkedin.com/real"]);
+
+    // But the diagnostics see both, and the count of real observations is 1 —
+    // not 2, which is what a shared list would have reported.
+    const status = await ask({ type: "observerStatus" });
+    expect(status.recordCount).toBe(1);
+    expect(status.skippedCount).toBe(1);
+    expect(status.skippedByReason).toEqual({ content_type_not_json: 1 });
+  });
+
+  it("refuses a skipped record that smuggles a body", async () => {
+    const { ask, send } = bridge();
+    send({
+      channel: "venture-observer",
+      nonce: NONCE,
+      kind: "census",
+      entries: [],
+    });
+    send({
+      channel: "venture-observer",
+      nonce: NONCE,
+      kind: "observed",
+      record: {
+        url: "https://www.linkedin.com/x",
+        method: "GET",
+        status: 200,
+        contentType: "text/html",
+        skipped: "content_type_not_json",
+        body: "this should not be here",
+      },
+    });
+    const status = await ask({ type: "observerStatus" });
+    expect(status.skippedCount).toBe(0);
+    expect(status.recordCount).toBe(0);
+  });
+
+  it("clearing wipes the census and the health with everything else", async () => {
+    const { ask, send } = bridge();
+    send(census([{ path: "https://www.linkedin.com/api/a", initiatorType: "fetch" }], {
+      fetchPatched: true,
+      xhrOpenPatched: true,
+    }));
+    expect((await ask({ type: "observerStatus" })).censusCount).toBe(1);
+    await ask({ type: "observerClear" });
+    const after = await ask({ type: "observerStatus" });
+    expect(after.censusCount).toBe(0);
+    expect(after.patchHealth).toBeNull();
+  });
+});
 
 describe("the boundary the whole approach rests on", () => {
   const OBSERVER_FILES = ["observer-main.js", "observer-bridge.js"];

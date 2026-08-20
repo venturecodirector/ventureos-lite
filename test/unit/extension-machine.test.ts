@@ -1005,8 +1005,19 @@ describe("the observation path runs first, and the DOM is the fallback", () => {
   /** A stand-in for the bridge's same-world handle. */
   function withObserver(
     g: Record<string, unknown>,
-    opts: { installed: boolean; records?: unknown[] },
+    opts: {
+      installed: boolean;
+      records?: unknown[];
+      /** Responses that arrived and were not copied, by reason. */
+      skippedByReason?: Record<string, number>;
+      /** How many resources the document loaded by any mechanism. */
+      censusCount?: number;
+      /** Whether our patches are still the installed ones. */
+      patchHealth?: { fetchPatched: boolean } | null;
+    },
   ) {
+    const skippedByReason = opts.skippedByReason ?? {};
+    const skippedCount = Object.values(skippedByReason).reduce((a, b) => a + b, 0);
     g.VentureObserved = {
       status: () => ({
         installed: opts.installed,
@@ -1014,12 +1025,24 @@ describe("the observation path runs first, and the DOM is the fallback", () => {
         timing: opts.installed ? "document_start" : null,
         slug: "mgoldberger",
         recordCount: (opts.records ?? []).length,
+        skippedCount,
+        skippedByReason,
+        censusCount: opts.censusCount ?? 0,
+        patchHealth: opts.patchHealth ?? null,
         inventory: (opts.records ?? []).map((r) => ({
           url: (r as { url: string }).url,
           bodySize: (r as { bodySize?: number }).bodySize ?? 0,
         })),
       }),
       take: () => opts.records ?? [],
+      diagnostics: () => ({
+        health: opts.patchHealth ?? null,
+        skippedCount,
+        skippedByReason,
+        skipped: [],
+        censusCount: opts.censusCount ?? 0,
+        census: [],
+      }),
     };
   }
 
@@ -1047,13 +1070,21 @@ describe("the observation path runs first, and the DOM is the fallback", () => {
   });
 
   /**
-   * The state the user will actually hit first: the extension was installed or
-   * updated after the tab was opened, so the interceptor never saw the page load.
-   * Saying so beats silently producing a thin capture.
+   * ── AN EMPTY BUFFER IS NOT A DIAGNOSIS ────────────────────────────────────
+   *
+   * This step used to answer `buffer_empty_page_loaded_before_observer` — a
+   * guess dressed as a finding, and the WRONG guess. On a fresh page load
+   * LinkedIn server-renders the profile and fetches no JSON for it at all, so an
+   * empty buffer is the normal outcome there, not a timing failure. Three rounds
+   * of investigation went into that ambiguity, and the reported reason is what
+   * sent them in the wrong direction each time.
+   *
+   * The reason is now chosen from what was actually observed, and each of the
+   * four possibilities implies a different fix.
    */
-  it("says the page needs a reload when the buffer is empty", async () => {
+  const reasonWhenEmpty = async (opts: Parameters<typeof withObserver>[1]) => {
     const { dom, g } = page(G, MG);
-    withObserver(g, { installed: true, records: [] });
+    withObserver(g, opts);
     const result = await (g.VentureMachine as Machine).run({
       ...FAST,
       window: dom.window,
@@ -1061,7 +1092,49 @@ describe("the observation path runs first, and the DOM is the fallback", () => {
     });
     const collect = result.machine.steps.find((s) => s.name === "COLLECT_OBSERVED")!;
     expect(collect.ok).toBe(false);
-    expect(collect.reason).toBe("buffer_empty_page_loaded_before_observer");
+    return collect.reason;
+  };
+
+  it("says the page fetched nothing when nothing arrived at all", async () => {
+    // The evidenced case: server-rendered profile, no JSON, nothing skipped,
+    // nothing in the census. The DOM path is the only path — a finding, not a
+    // shrug, and not an instruction to reload.
+    expect(await reasonWhenEmpty({ installed: true, records: [] })).toBe(
+      "page_fetched_nothing_server_rendered",
+    );
+  });
+
+  it("blames the filter when responses arrived and none were JSON", async () => {
+    expect(
+      await reasonWhenEmpty({
+        installed: true,
+        records: [],
+        skippedByReason: { content_type_not_json: 7 },
+      }),
+    ).toBe("responses_arrived_but_none_were_json");
+  });
+
+  it("blames the interception point when the document loaded what we never saw", async () => {
+    // Requests our patched fetch cannot see: a worker, or a function taken from
+    // another realm. The census sees them; that distinction is the whole reason
+    // it exists.
+    expect(await reasonWhenEmpty({ installed: true, records: [], censusCount: 12 })).toBe(
+      "document_loaded_resources_our_patches_never_saw",
+    );
+  });
+
+  it("blames a replaced patch above everything else", async () => {
+    // Highest priority: if our patch is gone, every other signal is downstream
+    // of that and would send the reader after the wrong thing.
+    expect(
+      await reasonWhenEmpty({
+        installed: true,
+        records: [],
+        censusCount: 12,
+        skippedByReason: { content_type_not_json: 3 },
+        patchHealth: { fetchPatched: false },
+      }),
+    ).toBe("our_fetch_patch_was_replaced");
   });
 
   it("says the observer is not installed when the bridge never announced", async () => {

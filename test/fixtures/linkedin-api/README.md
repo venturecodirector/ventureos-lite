@@ -15,6 +15,42 @@ done from a test runner, and it must not be done by asking LinkedIn for anything
 
 So this is a step you have to drive. It takes about ten minutes.
 
+## STATUS, after three attempts: the observer now tells you WHY
+
+Recording was attempted three times and produced telemetry only. Since none of
+the committed DOM fixtures carries a `<code>` block or a JSON script tag either,
+the working conclusion is that LinkedIn server-renders the profile and this
+account's app never fetches it as JSON — in which case there is nothing here to
+record and **the DOM path is the path**.
+
+That conclusion was an INFERENCE, though, and the observer could not tell three
+different situations apart:
+
+| what actually happened | what the old observer said |
+|---|---|
+| the page fetched nothing | "buffer empty, page loaded before observer" |
+| it fetched, and our filter dropped it | "buffer empty, page loaded before observer" |
+| it fetched through a worker or another realm, so our patch never saw it | "buffer empty, page loaded before observer" |
+| something replaced our patch | "buffer empty, page loaded before observer" |
+
+It now distinguishes them, and the reason it reports names the fix:
+
+- `page_fetched_nothing_server_rendered` — the inference confirmed. Stop here;
+  the DOM extractor is the whole answer and this directory stays empty.
+- `responses_arrived_but_none_were_json` — responses DID arrive and were
+  declined. `skippedByReason` in the diagnostics says on what grounds; the filter
+  in `observer-main.js` is the thing to change.
+- `document_loaded_resources_our_patches_never_saw` — the census saw loads that
+  our patched `fetch`/XHR did not, which means a Worker, a Service Worker, or a
+  function taken from another realm. The interception POINT is wrong, not the
+  filter.
+- `our_fetch_patch_was_replaced` — something overwrote `window.fetch` after us.
+
+**So the next step is one click, not a session:** open a profile the way the
+procedure below says, press **Copy observed responses**, and read
+`skippedCount`, `censusCount` and `patchHealth`. Those three numbers decide
+whether this directory ever gets a file.
+
 ## How to record — READ THIS, THE OBVIOUS WAY DOES NOT WORK
 
 The first real attempt taught us something that changes the procedure.
