@@ -33,6 +33,14 @@ export interface LeadDetail {
   title: string;
   /** The LinkedIn headline — its own field, never a stand-in for `title`. */
   headline: string;
+  /**
+   * The location line exactly as the profile showed it.
+   *
+   * Captured on every profile and, until now, visible nowhere: the form's only
+   * City input belongs to the COMPANY, so a lead with no company showed no
+   * location at all even though it had been read correctly and stored.
+   */
+  locationRaw: string;
   email: string;
   phone: string;
   linkedinUrl: string;
@@ -122,6 +130,7 @@ export async function getLeadDetail(leadId: string): Promise<LeadDetail | null> 
     contactName: lead.contactName ?? "",
     title: lead.title ?? "",
     headline: lead.headline ?? "",
+    locationRaw: lead.locationRaw ?? "",
     email: lead.email ?? "",
     phone: lead.phone ?? "",
     linkedinUrl: lead.linkedinUrl ?? "",
@@ -170,6 +179,7 @@ const updateSchema = z.object({
   title: z.string().trim().max(160),
   // Its own field. Free prose the person wrote, longer than a job title.
   headline: z.string().trim().max(400).optional(),
+  locationRaw: z.string().trim().max(200).optional(),
   email: z.string().trim().max(200),
   phone: z.string().trim().max(60),
   linkedinUrl: z.string().trim().max(500),
@@ -246,6 +256,7 @@ export async function updateLeadDetail(raw: unknown): Promise<UpdateLeadResult> 
       contactName: input.contactName || null,
       title: input.title || null,
       headline: input.headline || null,
+      locationRaw: input.locationRaw || null,
       email: input.email || null,
       phone: input.phone || null,
       linkedinUrl: input.linkedinUrl || null,

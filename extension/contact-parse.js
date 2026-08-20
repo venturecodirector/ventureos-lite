@@ -56,11 +56,44 @@
   };
 
   /** The overlay, if it is on screen. */
+  /**
+   * The overlay's container, whichever shape LinkedIn is using today.
+   *
+   * `[role="dialog"]` and `.artdeco-modal` alone were not enough: a real capture
+   * found the Contact-info trigger, pressed it, and then reported
+   * "no overlay to read" — so the container that appeared was neither. The
+   * committed recordings do contain `data-testid="dialog"`,
+   * `data-testid="dialog-content"` and `data-testid="popover-floating"`, so those
+   * are the shapes this page actually ships, and they are checked too.
+   *
+   * Widening the CONTAINER list is safe because the test that follows is the
+   * strict part: a candidate has to carry a Contact-info heading or an actual
+   * mailto:/tel: link. A container that matches neither is not returned, so a
+   * wider net cannot produce a wrong overlay — only find a right one.
+   *
+   * Deliberately NOT verified against a recording of the overlay OPEN: no such
+   * recording exists yet. This is the widest net that cannot be wrong, not a
+   * claim about which container it will be.
+   */
+  const MODAL_CONTAINERS = [
+    '[role="dialog"]',
+    ".artdeco-modal",
+    '[data-testid="dialog"]',
+    '[data-testid="dialog-content"]',
+    '[data-testid="popover-floating"]',
+    "[popover]",
+  ].join(",");
+
   const findModal = () => {
-    for (const el of document.querySelectorAll('[role="dialog"], .artdeco-modal')) {
-      const heading = norm(once(el.querySelector("h1, h2")?.textContent ?? ""));
-      if (/contact info|kapcsolati adatok/.test(heading)) return el;
+    for (const el of document.querySelectorAll(MODAL_CONTAINERS)) {
+      // An explicit contact detail is the strongest signal there is.
       if (el.querySelector('a[href^="mailto:"], a[href^="tel:"]')) return el;
+      const heading = norm(once(el.querySelector("h1, h2, h3")?.textContent ?? ""));
+      if (/contact info|kapcsolati adatok|elerhetoseg/.test(heading)) return el;
+      // A labelled section inside it, for an overlay that renders no heading.
+      for (const h of el.querySelectorAll("h3, dt")) {
+        if (labelKind(once(h.textContent))) return el;
+      }
     }
     return null;
   };

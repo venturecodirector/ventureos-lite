@@ -80,8 +80,30 @@ export async function POST(req: Request): Promise<Response> {
   try {
     await mkdir(join(FILES_DIR, "avatars"), { recursive: true });
     await writeFile(join(FILES_DIR, rel), buf);
-  } catch {
-    return json({ error: "could_not_store_the_file" }, 500);
+  } catch (e) {
+    /**
+     * WHY it could not be stored, not just that it could not.
+     *
+     * "could not store the file" was true and useless: the real cause was that
+     * the app container could not write /data/files at all — the volume is
+     * root-owned and the app runs as uid 1001, while the worker runs as root,
+     * which is why worker-written audit PDFs always worked and only app-written
+     * avatars failed. That asymmetry is what hid it for as long as it did.
+     *
+     * The errno makes it a one-line diagnosis next time. Safe to surface: it names
+     * a filesystem condition, not a path or a secret.
+     */
+    const code = String((e as { code?: string })?.code ?? "unknown");
+    return json(
+      {
+        error: "could_not_store_the_file",
+        reason:
+          code === "EACCES" || code === "EPERM"
+            ? "files_dir_not_writable_by_the_app_user"
+            : `write_failed_${code.toLowerCase()}`,
+      },
+      500,
+    );
   }
 
   await db.lead.update({ where: { id: lead.id }, data: { avatarPath: rel } });

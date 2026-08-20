@@ -41,7 +41,18 @@
   // ---- small helpers ------------------------------------------------------
   const clean = (v) => {
     if (typeof v !== "string") return null;
-    const t = v.replace(/\s+/g, " ").trim();
+    /**
+     * Zero-width characters go first.
+     *
+     * LinkedIn company names carry them — "'Seyu - Together for victory!'\u200b"
+     * ends in a zero-width space — and they survive every trim, so the value
+     * stored differs invisibly from the one a human would type. That is a
+     * duplicate company waiting to happen.
+     */
+    const t = v
+      .replace(/[\u200b-\u200f\u2060\ufeff]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
     return t.length === 0 ? null : t;
   };
 
@@ -1118,11 +1129,43 @@
     ["headline-pattern", () => parseRoleAndCompany(fields.headline?.value)],
     [
       "topcard-company",
+      /**
+       * The current employer, named in the top card as PLAIN TEXT.
+       *
+       * Measured on a real profile: the bounded card's twelve lines are the name,
+       * the connection degree, the headline, the location, "Contact info", then
+       * the company, then the school, then the connection count. The company is
+       * not a link there — the page's 45 `/company/` anchors all sit OUTSIDE the
+       * card, which is why looking for one inside it found nothing on every
+       * profile.
+       *
+       * So the card line is cross-referenced against those anchors: a line that is
+       * also the text of a `/company/` link somewhere on the page IS a company.
+       * That is positive identification from two independent places rather than a
+       * guess about position, and it separates the employer from the school beside
+       * it — "Corvinus University of Budapest" matches no company anchor, while
+       * "'Seyu - Together for victory!'" matches one exactly.
+       *
+       * Bounded either way: the line has to come from inside the card, so no
+       * stranger's employer can arrive through this.
+       */
       () => {
         if (!card.ok) return null;
-        const link = $$('a[href*="/company/"]', card.el).find((a) => clean(label(a)));
-        const company = link ? clean(label(link)) : null;
-        return company ? { role: null, company } : null;
+        const companyLinkTexts = new Set(
+          $$('a[href*="/company/"]')
+            .map((a) => norm(label(a)))
+            .filter((t) => t && t.length >= 2),
+        );
+        if (companyLinkTexts.size === 0) return null;
+        const match = (card.lines ?? []).find(
+          (line) =>
+            companyLinkTexts.has(norm(line)) &&
+            !isChrome(line) &&
+            !isSomeoneElse(line) &&
+            norm(line) !== norm(fields.name?.value ?? "") &&
+            norm(line) !== norm(fields.headline?.value ?? ""),
+        );
+        return match ? { role: null, company: match } : null;
       },
     ],
     ["about-opening", () => parseRoleAndCompany(fields.bio?.value?.slice(0, 240))],
@@ -1146,11 +1189,23 @@
       note("companyName", source, "absent");
       continue;
     }
+    const hadRole = !!fields.jobTitle;
+    const hadCompany = !!fields.companyName;
     if (found.role) offer("jobTitle", "derived", "medium", found.role, jobLimit);
     offer("companyName", "derived", "medium", found.company, (v) =>
       companyLimit(v) ?? (isSomeoneElse(v) ? "company_matches_another_person_on_page" : null),
     );
-    note("jobTitle", source, fields.jobTitle ? "accepted" : "rejected(no_role_in_source)");
+    /**
+     * WHICH LINK OF THE CHAIN ANSWERED, for both fields.
+     *
+     * `offer()` records the provenance SOURCE — "derived" — which says the value
+     * was inferred but not from what. With five sources in the chain that is the
+     * one thing a reader of the diagnostics actually needs: "derived:accepted"
+     * cannot be told apart from "derived:accepted", and when a field starts
+     * arriving wrong there is no way to know which link to look at.
+     */
+    note("jobTitle", source, !hadRole && fields.jobTitle ? "accepted" : "rejected(no_role_in_source)");
+    if (!hadCompany && fields.companyName) note("companyName", source, "accepted");
   }
 
 

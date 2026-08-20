@@ -185,8 +185,38 @@
   for (const [name, placeholder] of [...others.entries()].sort((a, b) => b[0].length - a[0].length)) {
     html = html.replace(new RegExp(rx(name), "g"), placeholder);
   }
+  /**
+   * Replace a slug in EVERY encoding the page writes it in.
+   *
+   * An accented slug is the one that got away. `/in/dávid-bózsik` appears in the
+   * markup as `d%c3%a1vid-b%c3%b3zsik`, and the replacement was built from the
+   * DECODED form, so it matched none of the 73 occurrences — a "scrubbed" fixture
+   * kept a slug that decodes straight back to the person's name.
+   *
+   * Percent-encoding is also case-insensitive in the hex digits, so both are
+   * covered. The placeholder is written in the matching encoding, so the file
+   * stays internally consistent and its links still resolve to each other.
+   */
+  const replaceSlug = (input, slug, placeholder) => {
+    let out = input;
+    const forms = new Set([slug]);
+    try {
+      forms.add(encodeURIComponent(slug));
+      forms.add(encodeURIComponent(slug).toLowerCase());
+      forms.add(encodeURIComponent(slug).toUpperCase());
+    } catch {
+      /* a slug that cannot be encoded is already plain ASCII */
+    }
+    for (const form of forms) {
+      if (!form) continue;
+      const replacement = form === slug ? placeholder : encodeURIComponent(placeholder);
+      out = out.replace(new RegExp(rx(form), "gi"), replacement);
+    }
+    return out;
+  };
+
   for (const [slug, placeholder] of otherSlugs) {
-    html = html.replace(new RegExp(rx(slug), "g"), placeholder);
+    html = replaceSlug(html, slug, placeholder);
   }
 
   // 3. The owner — consistently, so title/slug/card still agree.
@@ -198,7 +228,28 @@
       if (p.length >= 4) html = html.replace(new RegExp(`\\b${rx(p)}\\b`, "g"), OWNER.first);
     }
   }
-  if (ownerSlug) html = html.replace(new RegExp(rx(ownerSlug), "g"), placeholderSlug);
+  if (ownerSlug) html = replaceSlug(html, ownerSlug, placeholderSlug);
+
+  /**
+   * 3b. MEMBER IDS. `ACoAAB1234…` is a person, as surely as their name is.
+   *
+   * This step did not exist, and the fixtures committed before it carried six
+   * real member ids each — inside `urn:li:fsd_profile:` values and tracking
+   * attributes. Names and slugs were being replaced while the identifier that
+   * resolves to the same human went straight into version control, which is
+   * exactly the kind of gap that a scrubber lulls you into not looking for.
+   *
+   * Replaced referentially, so the file stays internally consistent: an id
+   * mentioned in three places still ties those three places together, which is
+   * what the fixture is for.
+   */
+  const memberIds = new Map();
+  html = html.replace(/ACoAA[A-Za-z0-9_-]{6,}/g, (id) => {
+    if (!memberIds.has(id)) {
+      memberIds.set(id, `ACoAASCRUBBED${String(memberIds.size + 1).padStart(3, "0")}`);
+    }
+    return memberIds.get(id);
+  });
 
   // 4. Signed URLs and opaque tokens. The licdn query string is the signature
   //    that expires; the path shape is what the photo picker is tested against.

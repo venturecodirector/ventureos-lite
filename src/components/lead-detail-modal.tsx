@@ -116,6 +116,7 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
         contactName: form.contactName,
         title: form.title,
         headline: form.headline,
+        locationRaw: form.locationRaw,
         email: form.email,
         phone: form.phone,
         linkedinUrl: form.linkedinUrl,
@@ -290,6 +291,21 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
                 placeholder="Phone"
                 value={form.phone}
                 onChange={(e) => patch({ phone: e.target.value })}
+              />
+              {/*
+                THE PROFILE'S OWN LOCATION.
+                Captured on every profile and previously shown nowhere: the only
+                City input on this form belongs to the company, so a lead without
+                a company displayed no location at all — even though it had been
+                read correctly and stored. It sits in the Contact block because it
+                describes the PERSON, not their employer.
+              */}
+              <input
+                className={INPUT}
+                placeholder="Location"
+                data-testid="lead-location"
+                value={form.locationRaw}
+                onChange={(e) => patch({ locationRaw: e.target.value })}
               />
               <input
                 className={`${INPUT} sm:col-span-2`}
