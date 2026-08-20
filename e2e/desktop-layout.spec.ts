@@ -12,7 +12,22 @@ import { test, expect } from "@playwright/test";
  *     drew across the rest of the page.
  */
 const WIDTHS = [1280, 1512, 1920, 2560];
-const PAGES = ["/", "/analytics", "/pipeline", "/leads", "/settings", "/public-pages", "/content"];
+const PAGES = [
+  "/",
+  "/analytics",
+  "/pipeline",
+  "/leads",
+  "/settings",
+  "/public-pages",
+  "/content",
+  // Added after both were reported as "the design is falling apart". Neither was
+  // on this list, which is how they drifted: no overflow, but the inbox's thread
+  // list grew unbounded (stranding the other two columns at the top of a page
+  // three screens tall) and the referrer ledger stretched to the height of the
+  // forms beside it with a second, dashed border drawn inside the first.
+  "/inbox",
+  "/referrers",
+];
 
 test.describe("desktop layout", () => {
   for (const width of WIDTHS) {
@@ -186,4 +201,22 @@ test.describe("desktop layout", () => {
     await expect(nav).toHaveAttribute("data-fade-top", "true");
     await expect(nav).toHaveAttribute("data-fade-bottom", "false");
   });
+});
+
+/**
+ * A screen may be taller than the viewport when it has more to show. What it may
+ * NOT do is grow with a LIST that has its own panel — the inbox's thread list
+ * used to, and `align-items:start` (which the prototype's `.inbox` specifies)
+ * then left the conversation and qualification columns floating at the top of a
+ * page most of which was empty.
+ */
+test.describe("a list inside a panel scrolls, rather than growing the page", () => {
+  for (const path of ["/inbox", "/referrers"]) {
+    test(`${path} fits the viewport it was given`, async ({ page }) => {
+      await page.setViewportSize({ width: 1512, height: 900 });
+      await page.goto(path);
+      const height = await page.evaluate(() => document.documentElement.scrollHeight);
+      expect(height, `${path} is ${height}px tall in a 900px window`).toBeLessThanOrEqual(940);
+    });
+  }
 });

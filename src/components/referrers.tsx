@@ -89,7 +89,13 @@ export function Referrers({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr]">
+      {/*
+        `items-start`, as every other two-column screen in the app has (and as the
+        prototype's own grids do). Without it the ledger panel stretched to the
+        height of the two forms beside it, so an empty ledger was a 570px box with
+        its content floating at the top — the other half of "the design is broken".
+      */}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[300px_1fr]">
         {/* left: manage + assign */}
         <div className="grid gap-4">
           <div className="rounded-card border border-line bg-panel p-[18px]">
@@ -173,7 +179,7 @@ export function Referrers({
           </div>
 
           {ledger.length === 0 && (
-            <EmptyState title="no referrers yet" testId="referrers-empty">
+            <EmptyState title="no referrers yet" testId="referrers-empty" inset>
               A referrer is the person or company who made an introduction. Tag a lead as
               a referral and the revenue it produces is attributed back to them here.
             </EmptyState>

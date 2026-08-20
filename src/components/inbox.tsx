@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -62,8 +63,14 @@ export function Inbox({
   async function logInbound(leadId: string, body: string) {
     setBusy(true);
     setError(null);
-    await logInboundReply({ leadId, body });
+    // A bare await here meant a thrown action showed nothing at all: the button
+    // re-enabled, the textarea kept its text, and the reply was not logged.
+    const failed = await attemptVoid(logInboundReply({ leadId, body }));
     setBusy(false);
+    if (failed) {
+      setError(failed);
+      return;
+    }
     await reload();
   }
 
@@ -118,8 +125,20 @@ export function Inbox({
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[290px_1fr_300px]">
         {/* thread list */}
-        <div className={`${showList ? "block" : "hidden"} rounded-card border border-line bg-panel p-2 lg:block`}>
-          <div className="mb-2 grid gap-1.5 border-b border-line px-1.5 pb-2">
+        {/*
+          THE THREAD LIST IS BOUNDED.
+
+          It used to grow with the number of threads, and since the grid is
+          `items-start` (as the prototype's `.inbox` is), a long list left the
+          conversation and qualification columns stranded at the top of a page
+          three screens tall — which is what "the inbox layout is broken" was.
+          A list that scrolls inside its own panel is also just what an inbox is.
+          The composer stays pinned while it scrolls.
+        */}
+        <div
+          className={`${showList ? "block" : "hidden"} rounded-card border border-line bg-panel p-2 lg:sticky lg:top-4 lg:block lg:max-h-[calc(100vh-124px)] lg:overflow-y-auto`}
+        >
+          <div className="mb-2 grid gap-1.5 border-b border-line bg-panel px-1.5 pb-2 lg:sticky lg:-top-2 lg:z-10 lg:pt-2">
             <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
               New reply
             </div>
@@ -161,7 +180,7 @@ export function Inbox({
             </div>
           </div>
           {threads.length === 0 && (
-            <EmptyState title="no replies yet" testId="inbox-empty">
+            <EmptyState title="no replies yet" testId="inbox-empty" inset>
               Replies land here once a mailbox is connected, or when you paste one in by
               hand. Analysis runs when you open an unread message — never in bulk.
             </EmptyState>
@@ -190,7 +209,15 @@ export function Inbox({
         </div>
 
         {/* conversation */}
-        <div className={`${!showList ? "block" : "hidden"} rounded-card border border-line bg-panel p-[18px] lg:block`}>
+        {/*
+          The conversation fills the column the list occupies, so the two read as
+          one pane rather than a tall list next to a short card floating in a void.
+          `flex` + `mt-auto` on the composer keeps the reply box at the bottom
+          where a reply box belongs.
+        */}
+        <div
+          className={`${!showList ? "block" : "hidden"} rounded-card border border-line bg-panel p-[18px] lg:flex lg:min-h-[calc(100vh-124px)] lg:flex-col`}
+        >
           {!thread ? (
             <p className="text-[13px] text-muted">Select a thread.</p>
           ) : (
@@ -211,7 +238,8 @@ export function Inbox({
                 )}
               </div>
 
-              <div className="mb-3 max-h-[46vh] overflow-auto">
+              {/* Absorbs the column's spare height, and scrolls inside it. */}
+              <div className="mb-3 max-h-[46vh] overflow-auto lg:max-h-none lg:flex-1">
                 {thread.messages.map((m) => (
                   <div
                     key={m.id}

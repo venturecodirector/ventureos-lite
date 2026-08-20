@@ -18,6 +18,7 @@ export function EmptyState({
   action,
   secondary,
   testId,
+  inset = false,
 }: {
   /** Lowercase, a few words. "no leads yet", not "No Leads Found". */
   title: string;
@@ -27,11 +28,24 @@ export function EmptyState({
   /** A quieter second option, when there genuinely is one. */
   secondary?: ReactNode;
   testId?: string;
+  /**
+   * Drop the card of its own, for an empty state that sits INSIDE a panel.
+   *
+   * The default is a dashed-bordered card, which is right when the empty state
+   * IS the panel. Nested inside one — the referrer ledger, the meetings list —
+   * it drew a second border a few pixels inside the first, and a doubled border
+   * around a mostly-empty box is what "the design is falling apart" looks like.
+   */
+  inset?: boolean;
 }) {
   return (
     <div
       data-testid={testId ?? "empty-state"}
-      className="rounded-card border border-dashed border-line bg-[rgba(239,241,248,0.02)] px-6 py-10 text-center"
+      className={
+        inset
+          ? "px-4 py-8 text-center"
+          : "rounded-card border border-dashed border-line bg-[rgba(239,241,248,0.02)] px-6 py-10 text-center"
+      }
     >
       <h2 className="font-display text-[22px] lowercase tracking-display">{title}</h2>
       <p className="mx-auto mt-2 max-w-[440px] text-[13px] leading-relaxed text-muted">
