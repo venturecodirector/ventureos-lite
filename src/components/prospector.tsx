@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useState, useTransition } from "react";
 import { estimateProspectCostUsd } from "@/modules/prospector/cost";
@@ -74,7 +75,7 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
       setResult(res);
     } catch (e) {
       setResult(null);
-      setError((e as Error).message);
+      setError(serverActionError(e));
     }
   }
 
@@ -98,7 +99,7 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
       const res = await runProspectSearch({ keyword, location, radius, maxResults: depth });
       setResult(res);
     } catch (e) {
-      setError((e as Error).message);
+      setError(serverActionError(e));
     } finally {
       setClassifying(false);
     }

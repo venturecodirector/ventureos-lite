@@ -1,4 +1,5 @@
 "use client";
+import { attempt } from "@/lib/client/server-action";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -108,7 +109,7 @@ export function SettingsWorkflows({ view }: { view: WorkflowView }) {
     if (!draft) return;
     setError(null);
     startTransition(async () => {
-      const res = await saveRule(draft);
+      const res = await attempt(saveRule(draft));
       if (!res.ok) {
         setError(res.error);
         return;

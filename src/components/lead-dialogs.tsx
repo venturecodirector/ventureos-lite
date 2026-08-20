@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
 import { overrideScore } from "@/modules/leads/actions";
@@ -31,7 +32,7 @@ export function EnrichDialog({
     let active = true;
     enrichCompanyLookup(companyId)
       .then((r) => active && setCandidates(r.candidates))
-      .catch((e) => active && setMsg((e as Error).message));
+      .catch((e) => active && setMsg(serverActionError(e)));
     return () => {
       active = false;
     };

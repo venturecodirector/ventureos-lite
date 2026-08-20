@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
 import type { ComparisonTable } from "@/modules/audit/comparison";
@@ -78,7 +79,7 @@ export function ComparisonPanel({ auditId }: { auditId: string }) {
         );
       }
     } catch (e) {
-      setNote((e as Error).message);
+      setNote(serverActionError(e));
     } finally {
       setBusy("idle");
     }
@@ -93,7 +94,7 @@ export function ComparisonPanel({ auditId }: { auditId: string }) {
       setPending(auditIds.length);
       setTable(await getComparison(auditId));
     } catch (e) {
-      setNote((e as Error).message);
+      setNote(serverActionError(e));
     } finally {
       setBusy("idle");
     }

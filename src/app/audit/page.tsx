@@ -6,12 +6,12 @@ export const dynamic = "force-dynamic";
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ url?: string }>;
+  searchParams: Promise<{ url?: string; run?: string }>;
 }) {
   const sp = await searchParams;
   return (
     <AppShell activePath="/audit">
-      <AuditRunner initialUrl={sp.url ?? ""} />
+      <AuditRunner initialUrl={sp.url ?? ""} autoRun={sp.run === "1"} />
     </AppShell>
   );
 }

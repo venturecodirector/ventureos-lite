@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -119,7 +120,7 @@ export function LeadBulkBar({
       onClear();
       router.refresh();
     } catch (e) {
-      setError((e as Error).message);
+      setError(serverActionError(e));
     } finally {
       setProgress(null);
     }
@@ -161,7 +162,7 @@ export function LeadBulkBar({
       setSummary({ applied: targets.length, skipped: [], note: "exported" });
       close();
     } catch (e) {
-      setError((e as Error).message);
+      setError(serverActionError(e));
     } finally {
       setProgress(null);
     }

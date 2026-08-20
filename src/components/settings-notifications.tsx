@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -123,7 +124,7 @@ export function SettingsNotifications({ initial }: { initial: PreferenceMatrix }
       setDevices((d) => d + 1);
       router.refresh();
     } catch (e) {
-      setError((e as Error).message);
+      setError(serverActionError(e));
     } finally {
       setBusy(false);
     }

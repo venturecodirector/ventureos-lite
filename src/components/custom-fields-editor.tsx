@@ -1,4 +1,5 @@
 "use client";
+import { attempt } from "@/lib/client/server-action";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -69,7 +70,7 @@ export function CustomFieldsEditor({
       const payload: Record<string, unknown> = {};
       for (const def of editable) payload[def.key] = draft[def.key] ?? null;
 
-      const res = await saveCustomFieldValues({ entity, entityId, values: payload });
+      const res = await attempt(saveCustomFieldValues({ entity, entityId, values: payload }));
       if (!res.ok) {
         setError(res.error);
         return;

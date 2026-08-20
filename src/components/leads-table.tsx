@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { moveLeadStage, runResearch } from "@/modules/leads/actions";
+import { attempt } from "@/lib/client/server-action";
 import { columnsWithCustom } from "@/modules/leads/columns";
 import type { FilterSet, SortField, SortSpec } from "@/modules/leads/filters";
 import type { LeadFacets, LeadTableRow } from "@/modules/leads/table";
@@ -249,23 +250,27 @@ export function LeadsTable(props: LeadsTableProps) {
 
   async function research(leadId: string) {
     setError(null);
-    try {
-      // A refused research is an ANSWER, not a crash — the table shows it in the
-      // same error strip it uses for a refused stage move.
-      const res = await runResearch(leadId);
-      if (!res.ok) {
-        setError(res.error);
-        return;
-      }
-      router.refresh();
-    } catch (e) {
-      setError((e as Error).message);
+    /**
+     * A refused research is an ANSWER, not a crash — the table shows it in the
+     * same error strip it uses for a refused stage move.
+     *
+     * `attempt` is what makes "Run research does nothing" impossible. This used
+     * to be a try/catch rendering `(e as Error).message`, and a Server Action
+     * that throws in production arrives with an EMPTY message — so `setError("")`
+     * left the strip unrendered (`{error && …}`) and the button looked dead.
+     * Every path out of here now produces something the operator can read.
+     */
+    const res = await attempt(runResearch(leadId));
+    if (!res.ok) {
+      setError(res.error);
+      return;
     }
+    router.refresh();
   }
 
   async function toContacted(leadId: string) {
     setError(null);
-    const res = await moveLeadStage(leadId, "CONTACTED");
+    const res = await attempt(moveLeadStage(leadId, "CONTACTED"));
     if (!res.ok) setError(res.error);
     else router.refresh();
   }

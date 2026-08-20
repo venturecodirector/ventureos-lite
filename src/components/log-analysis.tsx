@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -85,7 +86,7 @@ export function LogAnalysis({ companyId }: { companyId?: string }) {
       await uploadAccessLog(form);
       await refresh();
     } catch (e) {
-      setError((e as Error).message);
+      setError(serverActionError(e));
     } finally {
       setBusy(false);
       if (fileInput.current) fileInput.current.value = "";

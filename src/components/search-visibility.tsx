@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
 import {
@@ -95,7 +96,7 @@ export function SearchVisibility({ companyId }: { companyId: string }) {
       setKeyword("");
       await refresh();
     } catch (e) {
-      setError((e as Error).message);
+      setError(serverActionError(e));
     } finally {
       setBusy(false);
     }

@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -69,7 +70,7 @@ export function ManualLeadForm({
       setDuplicateOf(res.duplicateOf);
       setMsg("This matches a lead you already have.");
     } catch (e) {
-      setMsg((e as Error).message);
+      setMsg(serverActionError(e));
     } finally {
       setBusy(false);
     }

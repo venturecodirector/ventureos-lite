@@ -1,4 +1,5 @@
 "use client";
+import { attempt } from "@/lib/client/server-action";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -245,7 +246,7 @@ export function ForecastTab({ view, isOwner }: { view: ForecastView; isOwner: bo
               disabled={pending}
               onClick={() =>
                 startTransition(async () => {
-                  const res = await setCommitThreshold(threshold);
+                  const res = await attempt(setCommitThreshold(threshold));
                   if (!res.ok) setError(res.error);
                   else {
                     setError(null);

@@ -1,5 +1,6 @@
 "use client";
 
+import { serverActionError } from "@/lib/client/server-action";
 import { useEffect, useRef, useState } from "react";
 import type { AuditView } from "@/modules/audit/types";
 import { JobProgress } from "./job-progress";
@@ -39,7 +40,20 @@ function VerdictChip({ verdict }: { verdict: string }) {
   );
 }
 
-export function AuditRunner({ initialUrl }: { initialUrl: string }) {
+export function AuditRunner({
+  initialUrl,
+  autoRun = false,
+}: {
+  initialUrl: string;
+  /**
+   * Start immediately, without a second click.
+   *
+   * Set when the operator arrived here from a lead's "Audit site" button: they
+   * already asked for the audit, and making them press Run again on a prefilled
+   * form is a step that carries no decision.
+   */
+  autoRun?: boolean;
+}) {
   const [url, setUrl] = useState(initialUrl);
   const [withPitch, setWithPitch] = useState(false);
   // Internal-only: public and self-serve audits stay single-page (P2/1).
@@ -94,11 +108,27 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
       const { auditId: id } = await startAudit({ url, withPitch, crawl: withCrawl });
       setAuditId(id);
     } catch (e) {
-      setError((e as Error).message);
+      // `startAudit` validates by `parse`, so a rejected URL leaves by `throw` —
+      // and Next.js strips the message off anything thrown out of a Server
+      // Action in production. `(e as Error).message` was therefore EMPTY there,
+      // and `{error && …}` rendered nothing: the button looked broken.
+      setError(serverActionError(e));
     } finally {
       setBusy(false);
     }
   }
+
+  /**
+   * The one-shot auto-start. Guarded by a ref rather than by `auditId` so that
+   * a failed first attempt is not retried on every render.
+   */
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (!autoRun || autoRan.current || !initialUrl.trim()) return;
+    autoRan.current = true;
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRun, initialUrl]);
 
   async function exportPdf() {
     if (!view) return;
@@ -122,7 +152,7 @@ export function AuditRunner({ initialUrl }: { initialUrl: string }) {
     try {
       setShare(await publishShare(view.id));
     } catch (e) {
-      setError((e as Error).message);
+      setError(serverActionError(e));
     } finally {
       setSharing(false);
     }

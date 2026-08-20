@@ -226,10 +226,13 @@ export async function updateLeadDetail(raw: unknown): Promise<UpdateLeadResult> 
   }
 
   // Company first: if the tax id clashes, nothing should have been saved yet.
-  if (lead.companyId && input.company.name) {
+  if (input.company.name) {
     if (input.company.taxId) {
       const clash = await db.company.findFirst({
-        where: { taxId: input.company.taxId, id: { not: lead.companyId } },
+        where: {
+          taxId: input.company.taxId,
+          ...(lead.companyId ? { id: { not: lead.companyId } } : {}),
+        },
         select: { id: true, name: true },
       });
       if (clash) {
@@ -239,15 +242,28 @@ export async function updateLeadDetail(raw: unknown): Promise<UpdateLeadResult> 
         };
       }
     }
-    await db.company.update({
-      where: { id: lead.companyId },
-      data: {
-        name: input.company.name,
-        domain: input.company.domain || null,
-        city: input.company.city || null,
-        taxId: input.company.taxId || null,
-      },
-    });
+    const data = {
+      name: input.company.name,
+      domain: input.company.domain || null,
+      city: input.company.city || null,
+      taxId: input.company.taxId || null,
+    };
+    if (lead.companyId) {
+      await db.company.update({ where: { id: lead.companyId }, data });
+    } else {
+      /**
+       * THE LEAD HAD NO COMPANY.
+       *
+       * A lead captured from LinkedIn, or typed in by hand, frequently has no
+       * company row — and the form shows the four company fields regardless. So
+       * filling them in and pressing Save reported "Saved." and threw the typed
+       * values away, because the whole branch above used to be gated on
+       * `lead.companyId`. Silently discarding what someone just typed is worse
+       * than refusing it.
+       */
+      const created = await db.company.create({ data: { ...data, workspaceId } });
+      await db.lead.update({ where: { id: lead.id }, data: { companyId: created.id } });
+    }
   }
 
   await db.lead.update({

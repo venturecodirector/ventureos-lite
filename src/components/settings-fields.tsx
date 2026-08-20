@@ -1,4 +1,5 @@
 "use client";
+import { attempt } from "@/lib/client/server-action";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -68,14 +69,14 @@ export function SettingsFields({
           const [value, ...rest] = line.split("|");
           return { value: value.trim(), label: (rest.join("|") || value).trim() };
         });
-      const res = await createCustomField({
+      const res = await attempt(createCustomField({
         entity,
         label,
         type,
         required,
         help: help || null,
         options: needsOptions(type) ? options : undefined,
-      });
+      }));
       if (!res.ok) {
         setError(res.error);
         return;
@@ -91,7 +92,7 @@ export function SettingsFields({
   function patch(id: string, change: Record<string, unknown>) {
     setError(null);
     startTransition(async () => {
-      const res = await updateCustomField({ id, ...change });
+      const res = await attempt(updateCustomField({ id, ...change }));
       if (!res.ok) setError(res.error);
       else router.refresh();
     });

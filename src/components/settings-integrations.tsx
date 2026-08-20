@@ -1,4 +1,5 @@
 "use client";
+import { attempt } from "@/lib/client/server-action";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -86,8 +87,16 @@ export function SettingsIntegrations({ data }: { data: IntegrationsView }) {
                   data-testid={`integration-test-${g.id}`}
                   onClick={() =>
                     startTransition(async () => {
-                      const res = await testIntegration({ groupId: g.id });
-                      setTests((t) => ({ ...t, [g.id]: res }));
+                      const res = await attempt(testIntegration({ groupId: g.id }));
+                      // A thrown action answers `{ ok:false, error }`; this panel
+                      // renders `message`, so it is translated rather than dropped.
+                      setTests((t) => ({
+                        ...t,
+                        [g.id]:
+                          "message" in res
+                            ? res
+                            : { ok: false, message: res.error },
+                      }));
                     })
                   }
                 >
@@ -173,7 +182,7 @@ function Field({
 
   function save(next: string) {
     startTransition(async () => {
-      const res = await saveIntegration({ key: field.key, value: next });
+      const res = await attempt(saveIntegration({ key: field.key, value: next }));
       if (!res.ok) {
         onSaved(res.error, false);
         return;

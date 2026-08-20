@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -79,7 +80,7 @@ export function QuoteBuilder({
       const { documentId } = await createQuote({ leadId, items, vatRatePct, validUntil });
       setDoc(await getQuote(documentId));
     } catch (e) {
-      setMsg((e as Error).message);
+      setMsg(serverActionError(e));
     } finally {
       setBusy(null);
     }

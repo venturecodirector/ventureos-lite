@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -287,7 +288,7 @@ function ComposerModal({
         setBody(d.body);
         setHasPdf(d.hasPdf);
       })
-      .catch((e) => setMsg((e as Error).message))
+      .catch((e) => setMsg(serverActionError(e)))
       .finally(() => setLoaded(true));
   }
 
@@ -364,7 +365,7 @@ function ContractModal({
         setMilestones(p.milestones);
         setPayment(p.payment_terms);
       })
-      .catch((e) => setMsg((e as Error).message))
+      .catch((e) => setMsg(serverActionError(e)))
       .finally(() => setLoaded(true));
   }
 
@@ -374,7 +375,7 @@ function ContractModal({
       const { text } = await draftScopeParagraph(quoteId);
       setScope(text);
     } catch (e) {
-      setMsg((e as Error).message);
+      setMsg(serverActionError(e));
     } finally {
       setDrafting(false);
     }

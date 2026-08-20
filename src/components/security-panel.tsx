@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import Image from "next/image";
 import { useState, useTransition } from "react";
@@ -69,7 +70,7 @@ export function SecurityPanel({
       try {
         await fn();
       } catch (e) {
-        setMsg({ kind: "err", text: (e as Error).message });
+        setMsg({ kind: "err", text: serverActionError(e) });
       }
     });
   }

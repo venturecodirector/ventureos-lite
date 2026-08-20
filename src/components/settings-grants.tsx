@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -41,7 +42,7 @@ export function SettingsGrants({
       await setGrant({ userId, grant, enabled });
       router.refresh();
     } catch (e) {
-      setError((e as Error).message);
+      setError(serverActionError(e));
     } finally {
       setBusy(null);
     }

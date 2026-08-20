@@ -1,4 +1,5 @@
 "use client";
+import { attempt } from "@/lib/client/server-action";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -46,7 +47,7 @@ export function SettingsDataQuality({ view }: { view: DataQualityView }) {
     setError(null);
     setNote(null);
     startTransition(async () => {
-      const res = await getMergePreview({ entity, survivorId, loserId });
+      const res = await attempt(getMergePreview({ entity, survivorId, loserId }));
       if (!res.ok) {
         setError(res.error);
         return;
@@ -60,12 +61,12 @@ export function SettingsDataQuality({ view }: { view: DataQualityView }) {
     if (!preview) return;
     setError(null);
     startTransition(async () => {
-      const res = await performMerge({
+      const res = await attempt(performMerge({
         entity: preview.entity,
         survivorId: preview.survivorId,
         loserId: preview.loserId,
         choices,
-      });
+      }));
       if (!res.ok) {
         setError(res.error);
         return;
@@ -82,7 +83,7 @@ export function SettingsDataQuality({ view }: { view: DataQualityView }) {
   function revert(id: string) {
     setError(null);
     startTransition(async () => {
-      const res = await undoMerge(id);
+      const res = await attempt(undoMerge(id));
       if (!res.ok) setError(res.error);
       else {
         setNote(`Merge undone — ${res.restored} row(s) put back.`);
@@ -95,10 +96,12 @@ export function SettingsDataQuality({ view }: { view: DataQualityView }) {
     setError(null);
     setConflicts([]);
     startTransition(async () => {
-      const res = await rollbackBatch(batchId);
+      const res = await attempt(rollbackBatch(batchId));
       if (!res.ok) {
         setError(res.error);
-        setConflicts(res.conflicts ?? []);
+        // `attempt` can also answer with a bare { ok:false, error } when the
+        // action threw, and that shape carries no conflict list.
+        setConflicts("conflicts" in res ? (res.conflicts ?? []) : []);
         return;
       }
       setNote(`Import rolled back — ${res.deleted} deleted, ${res.reverted} reverted.`);

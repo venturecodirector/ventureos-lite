@@ -2,6 +2,9 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { attempt } from "@/lib/client/server-action";
+import { lookupTaxpayer } from "@/modules/registry/actions";
+import { runResearch } from "@/modules/leads/actions";
 import type { Stage } from "@prisma/client";
 import {
   getLeadDetail,
@@ -94,7 +97,7 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
     if (!form) return;
     setMsg(null);
     startTransition(async () => {
-      const res = await deleteLead({ leadId: form.id, eraseDocuments: erasingDocs });
+      const res = await attempt(deleteLead({ leadId: form.id, eraseDocuments: erasingDocs }));
       if (!res.ok) {
         setConfirmDelete(false);
         setMsg({ kind: "err", text: res.error });
@@ -107,29 +110,96 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
     });
   }
 
+  /**
+   * Fill the company from NAV's register.
+   *
+   * Only ever overwrites a field the operator LEFT EMPTY — except the name,
+   * where NAV's spelling is the authoritative one and is offered explicitly.
+   * Nothing is saved here: the fields are filled and Save changes still has to
+   * be pressed, so a wrong number is one Cancel away from being undone.
+   */
+  function lookupTaxId() {
+    if (!form) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await attempt(lookupTaxpayer(form.companyTaxId));
+      if (!res.ok) {
+        setMsg({ kind: "err", text: res.error });
+        return;
+      }
+      patch({
+        companyName: res.legalName,
+        companyCity: res.city ?? form.companyCity,
+        companyTaxId: res.taxNumber,
+      });
+      const notes = [
+        res.deregistered ? "NAV says this taxpayer is DEREGISTERED." : null,
+        res.vatGroupMembership ? `VAT group member: ${res.vatGroupMembership}.` : null,
+        res.address,
+      ].filter(Boolean);
+      setMsg({
+        kind: res.deregistered ? "err" : "ok",
+        text: `${res.legalName}${notes.length ? ` — ${notes.join(" ")}` : ""} Press Save changes to keep it.`,
+      });
+    });
+  }
+
+  /**
+   * The domain the audit should run against.
+   *
+   * The company domain is the useful one; a lead's own LinkedIn URL is not a
+   * site worth auditing, so it is deliberately not a fallback.
+   */
+  const auditTarget = (form?.companyDomain ?? "").trim();
+
+  /** Research from the modal — the table only offers it before a score exists. */
+  function runResearchHere() {
+    if (!form) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await attempt(runResearch(form.id));
+      if (!res.ok) {
+        setMsg({ kind: "err", text: res.error });
+        return;
+      }
+      setDetail((d) => (d ? { ...d, icpScore: res.icpScore } : d));
+      setMsg({ kind: "ok", text: `Researched — ICP score ${res.icpScore}.` });
+      router.refresh();
+    });
+  }
+
   function save() {
     if (!form) return;
     setMsg(null);
     startTransition(async () => {
-      const res = await updateLeadDetail({
-        leadId: form.id,
-        contactName: form.contactName,
-        title: form.title,
-        headline: form.headline,
-        locationRaw: form.locationRaw,
-        email: form.email,
-        phone: form.phone,
-        linkedinUrl: form.linkedinUrl,
-        language: form.language,
-        notes: form.notes,
-        signals: form.signals,
-        company: {
-          name: form.companyName,
-          domain: form.companyDomain,
-          city: form.companyCity,
-          taxId: form.companyTaxId,
-        },
-      });
+      /**
+       * `attempt`, not a bare await. Every REFUSAL here already comes back as
+       * `{ ok: false, error }`, but an unexpected throw is redacted by Next.js
+       * to a message-less Error — and an unhandled rejection inside a transition
+       * shows the operator nothing whatsoever. "The save does not work" was that
+       * silence, not a dead button.
+       */
+      const res = await attempt(
+        updateLeadDetail({
+          leadId: form.id,
+          contactName: form.contactName,
+          title: form.title,
+          headline: form.headline,
+          locationRaw: form.locationRaw,
+          email: form.email,
+          phone: form.phone,
+          linkedinUrl: form.linkedinUrl,
+          language: form.language,
+          notes: form.notes,
+          signals: form.signals,
+          company: {
+            name: form.companyName,
+            domain: form.companyDomain,
+            city: form.companyCity,
+            taxId: form.companyTaxId,
+          },
+        }),
+      );
       if (!res.ok) {
         setMsg({ kind: "err", text: res.error });
         return;
@@ -352,12 +422,32 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
                 value={form.companyCity}
                 onChange={(e) => patch({ companyCity: e.target.value })}
               />
-              <input
-                className={INPUT}
-                placeholder="Adószám"
-                value={form.companyTaxId}
-                onChange={(e) => patch({ companyTaxId: e.target.value })}
-              />
+              <div className="flex gap-1.5">
+                <input
+                  className={INPUT}
+                  placeholder="Adószám"
+                  data-testid="lead-company-taxid"
+                  value={form.companyTaxId}
+                  onChange={(e) => patch({ companyTaxId: e.target.value })}
+                />
+                {/*
+                  Look the number up at NAV and fill the company from the answer.
+                  The whole lookup already existed — validator, signed request,
+                  parser, credential resolver — with no button anywhere. It is
+                  read-only (queryTaxpayer), free, and the name it returns is
+                  NAV's own spelling, which is the one a contract has to carry.
+                */}
+                <button
+                  type="button"
+                  className={BTN}
+                  data-testid="lead-taxid-lookup"
+                  disabled={pending || form.companyTaxId.trim().length === 0}
+                  title="Look this adószám up at NAV"
+                  onClick={lookupTaxId}
+                >
+                  Lookup
+                </button>
+              </div>
             </div>
             <p className="text-[11px] text-muted">
               These apply to the company record, shared by every lead there.
@@ -487,6 +577,53 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
 
         {/* ---------- score, stage, timeline ---------- */}
         <div className="grid content-start gap-3">
+          {/*
+            Enrichment, for a lead that already exists.
+            Both of these were reachable only at the moment of capture: research
+            from the leads table and ONLY while the lead had no score yet, and
+            the audit from its own page with the domain typed in by hand. So an
+            existing lead could not be re-researched or audited at all from here.
+          */}
+          <section className="grid gap-2 rounded-[11px] border border-line p-3">
+            <p className={LABEL}>Enrichment</p>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                className={BTN}
+                data-testid="lead-run-research"
+                disabled={pending}
+                title="Re-read the profile and the company site, then re-score"
+                onClick={runResearchHere}
+              >
+                {detail.icpScore == null ? "Run research" : "Re-run research"}
+              </button>
+              <button
+                type="button"
+                className={BTN}
+                data-testid="lead-run-audit"
+                disabled={pending || !auditTarget}
+                title={
+                  auditTarget
+                    ? `Audit ${auditTarget}`
+                    : "Add a company domain or a website first"
+                }
+                onClick={() => {
+                  if (!auditTarget) return;
+                  // The audit runs for ~30s with its own progress view, so it
+                  // belongs on the audit page rather than inside a modal. `run=1`
+                  // starts it on arrival — the operator already asked for it.
+                  router.push(`/audit?url=${encodeURIComponent(auditTarget)}&run=1`);
+                }}
+              >
+                Audit site
+              </button>
+            </div>
+            {!auditTarget && (
+              <p className="text-[11px] text-muted">
+                The audit needs a domain. Fill in the company&apos;s domain and save.
+              </p>
+            )}
+          </section>
           <section className="grid gap-2 rounded-[11px] border border-line p-3">
             <p className={LABEL}>ICP score</p>
             <div className="flex flex-wrap gap-1.5">
@@ -522,11 +659,13 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
                   disabled={pending || scoreReason.trim().length < 3}
                   onClick={() =>
                     startTransition(async () => {
-                      const res = await overrideScoreFromDetail({
-                        leadId: form.id,
-                        score: scoreDraft ?? 0,
-                        reason: scoreReason,
-                      });
+                      const res = await attempt(
+                        overrideScoreFromDetail({
+                          leadId: form.id,
+                          score: scoreDraft ?? 0,
+                          reason: scoreReason,
+                        }),
+                      );
                       if (!res.ok) {
                         setMsg({ kind: "err", text: res.error });
                         return;
@@ -558,7 +697,7 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
                     disabled={pending}
                     onClick={() =>
                       startTransition(async () => {
-                        const res = await moveLeadStage(form.id, s as Stage);
+                        const res = await attempt(moveLeadStage(form.id, s as Stage));
                         if (!res.ok) {
                           setMsg({ kind: "err", text: res.error });
                           return;
@@ -608,7 +747,7 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
                   disabled={pending}
                   onClick={() =>
                     startTransition(async () => {
-                      const res = await convertLeadToDeal({ leadId: form.id });
+                      const res = await attempt(convertLeadToDeal({ leadId: form.id }));
                       if (!res.ok) {
                         setMsg({ kind: "err", text: res.error });
                         return;

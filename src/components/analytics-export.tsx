@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useRef, useState } from "react";
 import { exportAnalyticsPdf } from "@/modules/analytics/actions";
@@ -59,7 +60,7 @@ export function AnalyticsExport() {
         message: "The export is taking longer than a minute — the worker may be busy. Try again.",
       });
     } catch (e) {
-      setState({ kind: "failed", message: (e as Error).message });
+      setState({ kind: "failed", message: serverActionError(e) });
     }
   }
 

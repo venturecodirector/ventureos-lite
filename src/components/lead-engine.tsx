@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -300,7 +301,7 @@ export function LeadEngine({
       router.refresh();
     } catch (e) {
       setRail({ status: "idle" });
-      setError((e as Error).message);
+      setError(serverActionError(e));
     }
   }
 
@@ -380,7 +381,7 @@ export function LeadEngine({
       router.refresh();
     } catch (e) {
       setRail({ status: "idle" });
-      setError((e as Error).message);
+      setError(serverActionError(e));
     }
   }
 

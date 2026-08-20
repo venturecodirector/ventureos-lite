@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
 import { QUADRANTS, EFFORT_LABEL, type PriorityMatrix as Matrix } from "@/modules/audit/priority";
@@ -58,7 +59,7 @@ export function PriorityMatrixPanel({ auditId }: { auditId: string }) {
       const res = await previewQuoteSkeleton({ auditId, checkKeys: selected });
       setLines(res.lines);
     } catch (e) {
-      setError((e as Error).message);
+      setError(serverActionError(e));
     } finally {
       setBusy(false);
     }
@@ -87,7 +88,7 @@ export function PriorityMatrixPanel({ auditId }: { auditId: string }) {
       });
       setResult(documentId);
     } catch (e) {
-      setError((e as Error).message);
+      setError(serverActionError(e));
     } finally {
       setBusy(false);
     }

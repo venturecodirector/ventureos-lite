@@ -1,4 +1,5 @@
 "use client";
+import { serverActionError } from "@/lib/client/server-action";
 
 import { useMemo, useRef, useState } from "react";
 import type { TemplateType, Lang } from "@prisma/client";
@@ -87,7 +88,7 @@ export function TemplateEditor({
       setMsg(`Saved as version ${version} (draft).`);
       await switchTemplate(type, lang);
     } catch (e) {
-      setMsg((e as Error).message);
+      setMsg(serverActionError(e));
     } finally {
       setSaving(false);
     }
