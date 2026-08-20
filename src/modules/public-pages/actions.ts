@@ -180,6 +180,71 @@ export async function revokeAuditShare(
   return { ok: true };
 }
 
+/**
+ * Delete a share link outright — Owner only.
+ *
+ * Revoke and delete are different acts and the operator asked for both. Revoke
+ * backdates the expiry and keeps the row, so who opened it and when survives;
+ * delete removes the link from the list entirely, which is what you want for one
+ * created by mistake or for a prospect who asked to be forgotten.
+ *
+ * Because the row carries the only record of the opens, the audit entry copies
+ * them: the count and the first open are written into `meta` BEFORE the delete,
+ * so destroying the row does not destroy the fact that it was read. Owner-only
+ * for the same reason (hard rule 8: every delete is audited).
+ *
+ * The slug is not reused — it is a cuid-scale random string, and a deleted one
+ * simply 404s, which is the correct answer for a link that no longer exists.
+ */
+export async function deleteAuditShare(
+  raw: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+  } catch {
+    return { ok: false, error: "Only an Owner can delete a share link." };
+  }
+  const parsed = z.object({ shareId: z.string().min(1) }).safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Unknown share." };
+
+  const { workspaceId, userId } = await getActiveContext();
+  const db = getWorkspaceClient(workspaceId);
+  const share = await db.auditShare.findUnique({
+    where: { id: parsed.data.shareId },
+    select: {
+      id: true,
+      slug: true,
+      openCount: true,
+      firstOpenedAt: true,
+      expiresAt: true,
+      auditId: true,
+    },
+  });
+  if (!share) return { ok: false, error: "Share not found." };
+
+  // The log first, so the evidence exists even if the delete fails.
+  await db.auditLog.create({
+    data: {
+      workspaceId,
+      actorUserId: userId,
+      action: "public.share_deleted",
+      entityType: "AuditShare",
+      entityId: share.id,
+      meta: {
+        slug: share.slug,
+        auditId: share.auditId,
+        openCount: share.openCount,
+        firstOpenedAt: share.firstOpenedAt?.toISOString() ?? null,
+        expiresAt: share.expiresAt.toISOString(),
+      },
+    },
+  });
+  await db.auditShare.delete({ where: { id: share.id } });
+
+  revalidatePath("/public-pages");
+  return { ok: true };
+}
+
 /** Take a booking page offline (or back online) — Owner only. */
 export async function setBookingPageActive(
   raw: unknown,

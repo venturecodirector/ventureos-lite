@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { attempt } from "@/lib/client/server-action";
 import {
+  deleteAuditShare,
   revokeAuditShare,
   setBookingPageActive,
   type PublicPagesView,
@@ -61,10 +63,13 @@ export function PublicPages({
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
 
+  /** Which share is one click away from being deleted. */
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
   function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setMsg(null);
     startTransition(async () => {
-      const res = await fn();
+      const res = await attempt(fn());
       if (!res.ok) setMsg(res.error ?? "That did not work.");
       router.refresh();
     });
@@ -203,9 +208,52 @@ export function PublicPages({
                             type="button"
                             disabled={pending}
                             className={BTN}
+                            data-testid={`share-revoke-${s.id}`}
+                            title="Stop the link working, keep the record of who opened it"
                             onClick={() => run(() => revokeAuditShare({ shareId: s.id }))}
                           >
                             Revoke
+                          </button>
+                        )}
+                        {/*
+                          Delete, next to Revoke, because they are different acts:
+                          revoke backdates the expiry and keeps the row, so the
+                          opens survive; delete takes the link off the list for
+                          good. Two clicks, since there is no undo — and the audit
+                          entry copies the open count before the row goes.
+                        */}
+                        {confirmDelete === s.id ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={pending}
+                              data-testid={`share-delete-confirm-${s.id}`}
+                              className="min-h-[36px] rounded-[8px] border border-[rgba(255,92,122,0.5)] bg-[rgba(255,92,122,0.12)] px-2.5 py-1.5 text-[11.5px] font-semibold text-[#FFB3C2] hover:bg-[rgba(255,92,122,0.2)] disabled:opacity-45"
+                              onClick={() => {
+                                setConfirmDelete(null);
+                                run(() => deleteAuditShare({ shareId: s.id }));
+                              }}
+                            >
+                              Delete for good
+                            </button>
+                            <button
+                              type="button"
+                              className={BTN}
+                              onClick={() => setConfirmDelete(null)}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={pending}
+                            className={BTN}
+                            data-testid={`share-delete-${s.id}`}
+                            title="Remove the link from this list entirely"
+                            onClick={() => setConfirmDelete(s.id)}
+                          >
+                            Delete
                           </button>
                         )}
                       </span>
