@@ -12,12 +12,15 @@ export function AccountMenu({
   name,
   email,
   initials,
+  avatarUrl = null,
   role,
   workspaceName,
 }: {
   name: string;
   email: string;
   initials: string;
+  /** Their uploaded photo. Initials on the gradient disc when there is none. */
+  avatarUrl?: string | null;
   role: string;
   workspaceName: string;
 }) {
@@ -51,9 +54,23 @@ export function AccountMenu({
         aria-label="Account menu"
         data-testid="account-menu-button"
         onClick={() => setOpen((v) => !v)}
-        className="grid h-[38px] w-[38px] place-items-center rounded-full bg-grad text-[13px] font-bold text-ink ring-offset-2 ring-offset-canvas focus-visible:ring-2 focus-visible:ring-accent"
+        className={`grid h-[38px] w-[38px] place-items-center overflow-hidden rounded-full text-[13px] font-bold text-ink ring-offset-2 ring-offset-canvas focus-visible:ring-2 focus-visible:ring-accent ${
+          avatarUrl ? "border border-line" : "bg-grad"
+        }`}
       >
-        {initials || "U"}
+        {avatarUrl ? (
+          /* eslint-disable-next-line @next/next/no-img-element -- authenticated route */
+          <img
+            src={avatarUrl}
+            alt=""
+            width={38}
+            height={38}
+            data-testid="account-menu-avatar"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          initials || "U"
+        )}
       </button>
 
       {open && (

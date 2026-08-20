@@ -24,8 +24,18 @@ setup("authenticate", async ({ page, context }) => {
     const passwordHash = await hashPassword(E2E_PASSWORD);
     const user = await prisma.user.upsert({
       where: { email: EMAIL },
-      update: { passwordHash, lockedUntil: null, totpEnabled: false, totpSecret: null },
-      create: { email: EMAIL, name: "E2E Runner", passwordHash },
+      update: {
+        passwordHash,
+        lockedUntil: null,
+        totpEnabled: false,
+        totpSecret: null,
+        // The admin settings page is super-admin only, and several specs exercise
+        // panels that live there. Granting it here rather than in each spec keeps
+        // the gate real everywhere else: a spec that wants to prove the gate uses
+        // its OWN user and does not get this.
+        isSuperAdmin: true,
+      },
+      create: { email: EMAIL, name: "E2E Runner", passwordHash, isSuperAdmin: true },
     });
     await prisma.membership.upsert({
       where: { userId_workspaceId: { userId: user.id, workspaceId: workspace.id } },

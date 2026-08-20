@@ -243,9 +243,26 @@ export async function AppShell({
         </div>
 
         <div className="flex flex-none items-center gap-2.5 border-t border-line p-2.5">
-          <div className="grid h-[30px] w-[30px] place-items-center rounded-full bg-grad text-[12px] font-bold">
-            {shell.user.initials || "U"}
-          </div>
+          {/* Their own photo where they are represented, initials where there is
+              none. The gradient disc stays the fallback rather than the only
+              option — an uploaded picture that appears in Settings and nowhere
+              else is a setting, not a profile. */}
+          {shell.user.avatarUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element -- authenticated
+               route; next/image's optimiser cannot fetch it */
+            <img
+              src={shell.user.avatarUrl}
+              alt=""
+              width={30}
+              height={30}
+              data-testid="shell-avatar"
+              className="h-[30px] w-[30px] flex-none rounded-full border border-line object-cover"
+            />
+          ) : (
+            <div className="grid h-[30px] w-[30px] flex-none place-items-center rounded-full bg-grad text-[12px] font-bold">
+              {shell.user.initials || "U"}
+            </div>
+          )}
           <div className="min-w-0 leading-tight">
             <b className="block truncate text-[13px]" data-testid="active-user">
               {shell.user.name}
@@ -289,6 +306,7 @@ export async function AppShell({
             name={shell.user.name}
             email={shell.user.email}
             initials={shell.user.initials}
+            avatarUrl={shell.user.avatarUrl}
             role={shell.role}
             workspaceName={active?.name ?? ""}
           />

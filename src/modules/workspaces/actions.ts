@@ -23,7 +23,14 @@ export interface WorkspaceOption {
 }
 
 export interface ShellContext {
-  user: { id: string; name: string; email: string; initials: string };
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    initials: string;
+    /** Their own photo, when they have uploaded one. Initials otherwise. */
+    avatarUrl: string | null;
+  };
   activeWorkspaceId: string;
   workspaces: WorkspaceOption[];
   role: string;
@@ -50,7 +57,7 @@ export async function getShellContext(): Promise<ShellContext> {
   const { workspaceId, userId } = await getActiveContext();
   const user = await prismaUnsafe.user.findUnique({
     where: { id: userId },
-    select: { id: true, name: true, email: true, mustEnrollTotp: true },
+    select: { id: true, name: true, email: true, mustEnrollTotp: true, avatarPath: true },
   });
   const memberships = await prismaUnsafe.membership.findMany({
     where: { userId },
@@ -80,6 +87,9 @@ export async function getShellContext(): Promise<ShellContext> {
       name: user?.name ?? "User",
       email: user?.email ?? "",
       initials: initials(user?.name ?? "U"),
+      // Served by id through an authenticated route; the path's hash busts the
+      // cache when the photo is replaced.
+      avatarUrl: user?.avatarPath ? `/api/users/${userId}/avatar` : null,
     },
     activeWorkspaceId: workspaceId,
     workspaces,

@@ -241,6 +241,18 @@ model User {
   /// itself once every item is done; this is for the person who does not want
   /// it either way.
   checklistHiddenAt   DateTime?            @map("checklist_hidden_at")
+  /// Their own photo, under FILES_DIR as `user-avatars/<id>.<ext>`. On the User
+  /// rather than the Membership: it is a picture of a person, and someone in two
+  /// workspaces is the same person in both.
+  avatarPath          String?              @map("avatar_path")
+  /// PLATFORM operator, not a workspace role.
+  ///
+  /// Role (OWNER/ADMIN/BDR) is per membership and says what someone may do
+  /// INSIDE a workspace. This says they administer the installation itself, and
+  /// it is deliberately not grantable from the UI: an Owner who could hand it
+  /// out could hand it to themselves. It is set by
+  /// `scripts/set-super-admin.ts`, on the server, by whoever has the shell.
+  isSuperAdmin        Boolean              @default(false) @map("is_super_admin")
   createdAt           DateTime             @default(now()) @map("created_at")
   updatedAt           DateTime             @updatedAt @map("updated_at")
   memberships         Membership[]

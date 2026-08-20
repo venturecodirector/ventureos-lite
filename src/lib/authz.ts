@@ -45,3 +45,32 @@ export async function isOwner(): Promise<boolean> {
 export async function requireOwner(): Promise<void> {
   if (!(await isOwner())) throw new GrantError("owner");
 }
+
+/**
+ * The platform operator.
+ *
+ * ── WHY THIS IS NOT A ROLE ─────────────────────────────────────────────────
+ *
+ * `Role` lives on the membership and answers "what may this person do inside
+ * this workspace". This answers "who administers this installation" — a
+ * different question, with a different scope, and one that must not be
+ * answerable by anybody inside a workspace. If it were a role, an Owner (who
+ * can already edit memberships) could grant it to themselves.
+ *
+ * So it is a column on the user that no UI writes. It is set on the server with
+ * `scripts/set-super-admin.ts`, by whoever has the shell — which on a
+ * self-hosted deployment is the operator, and that is the whole point.
+ */
+export async function isSuperAdmin(): Promise<boolean> {
+  const ctx = await tryGetActiveContext();
+  if (!ctx) return false;
+  const user = await prismaUnsafe.user.findUnique({
+    where: { id: ctx.userId },
+    select: { isSuperAdmin: true },
+  });
+  return user?.isSuperAdmin === true;
+}
+
+export async function requireSuperAdmin(): Promise<void> {
+  if (!(await isSuperAdmin())) throw new GrantError("super_admin");
+}

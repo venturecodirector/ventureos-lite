@@ -27,6 +27,8 @@ const PAGES = [
   // forms beside it with a second, dashed border drawn inside the first.
   "/inbox",
   "/referrers",
+  // The software half of what used to be one 16-panel page.
+  "/settings/admin",
 ];
 
 test.describe("desktop layout", () => {
