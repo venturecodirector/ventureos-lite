@@ -164,6 +164,7 @@ test("the preference matrix lists every type this role may receive", async ({ pa
 
 test("a preference toggle persists across a reload", async ({ page }) => {
   await page.goto("/settings");
+  const panel = page.getByTestId("settings-notifications");
 
   const push = page.getByTestId("pref-callback_due-push");
   const wasOn = await push.isChecked();
@@ -177,12 +178,17 @@ test("a preference toggle persists across a reload", async ({ page }) => {
   await target.setChecked(!before);
   await expect(target).toBeChecked({ checked: !before });
 
+  // The tick is OPTIMISTIC — it flips before the server has answered — so a
+  // reload here can race the write it is meant to verify. Wait for the panel to
+  // report no writes in flight.
+  await expect(panel).toHaveAttribute("data-saving", "false");
   await page.reload();
   await expect(target).toBeChecked({ checked: !before });
 
   // Put it back.
   await target.setChecked(before);
   await expect(target).toBeChecked({ checked: before });
+  await expect(panel).toHaveAttribute("data-saving", "false");
   expect(typeof wasOn).toBe("boolean");
 });
 
@@ -193,6 +199,8 @@ test("flipping one channel leaves the other two alone", async ({ page }) => {
 
   const digestBefore = await digest.isChecked();
   await inApp.setChecked(false);
+  // Same optimistic-write race as above.
+  await expect(page.getByTestId("settings-notifications")).toHaveAttribute("data-saving", "false");
   await page.reload();
 
   // The row is written from the RESOLVED state, so turning in-app off must not

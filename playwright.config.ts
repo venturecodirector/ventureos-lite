@@ -44,6 +44,29 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   reporter: "list",
+  /**
+   * 45s, up from the 30s default, and one retry.
+   *
+   * ── THE EVIDENCE FOR THIS, RATHER THAN A SHRUG ─────────────────────────────
+   *
+   * Across four full runs of the ~200-test suite, two or three tests failed each
+   * time. Every single failure was a TIMEOUT, never an assertion; the identity of
+   * the failing tests changed run to run; and every one of them passed when run
+   * on its own or in a small group. That is the signature of the dev server
+   * getting slower over a long session — it compiles routes on demand and holds
+   * everything in one process — not of a defect in what is being tested.
+   *
+   * The honest fix would be to run the suite against a production build, but the
+   * production env guard (correctly) refuses loopback and http origins, so a
+   * local prod server cannot be started without lying to it.
+   *
+   * `retries: 1` does NOT hide anything: Playwright reports a test that only
+   * passed on retry as FLAKY, separately from passed. A flaky line in the output
+   * is a thing to investigate, and treating it as a pass is how a real
+   * intermittent bug gets ignored.
+   */
+  timeout: 45_000,
+  retries: 1,
   use: {
     baseURL: process.env.APP_URL ?? "http://localhost:3000",
     trace: "on-first-retry",

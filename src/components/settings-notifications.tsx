@@ -1,4 +1,5 @@
 "use client";
+import { attempt } from "@/lib/client/server-action";
 import { serverActionError } from "@/lib/client/server-action";
 
 import { useState } from "react";
@@ -72,12 +73,28 @@ export function SettingsNotifications({ initial }: { initial: PreferenceMatrix }
   const [devices, setDevices] = useState(initial.devices);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Writes still in flight. Surfaced as `data-saving` for the operator and for tests. */
+  const [saving, setSaving] = useState(0);
 
   async function toggle(type: string, channel: "inApp" | "push" | "emailDigest", value: boolean) {
     setError(null);
     // Optimistic: a checkbox that waits for a round trip feels broken.
     setRows((r) => r.map((row) => (row.type === type ? { ...row, [channel]: value } : row)));
-    const res = await setNotificationPreference({ type, channel, value });
+    /**
+     * `attempt`, and an in-flight count.
+     *
+     * An optimistic checkbox whose write THREW left the tick in place and said
+     * nothing — the operator walks away believing a preference is set that was
+     * never stored. That is worse than a checkbox that feels slow. A refusal
+     * already reverted; now so does an unexpected failure.
+     *
+     * The in-flight count is also what makes this testable: the tick flips
+     * before the server has answered, so a test that reloads immediately can
+     * race the write it is trying to verify.
+     */
+    setSaving((n) => n + 1);
+    const res = await attempt(setNotificationPreference({ type, channel, value }));
+    setSaving((n) => n - 1);
     if (!res.ok) {
       setRows((r) => r.map((row) => (row.type === type ? { ...row, [channel]: !value } : row)));
       setError(res.error);
@@ -152,6 +169,7 @@ export function SettingsNotifications({ initial }: { initial: PreferenceMatrix }
   return (
     <section
       data-testid="settings-notifications"
+      data-saving={saving > 0 ? "true" : "false"}
       className="rounded-card border border-line bg-panel p-[18px]"
     >
       <h2 className="mb-1 font-display text-lg font-bold lowercase">notifications</h2>
