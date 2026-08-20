@@ -698,32 +698,58 @@ enum ContentStatus {
 /// voice, moved Draft → In review → Approved → Published by hand. Publishing
 /// records that a human posted it; the system never posts anywhere itself
 /// (CLAUDE.md hard rule #2).
+/// One TOPIC on the content board. The texts live in ContentVariant, one per
+/// channel: the same subject goes out as a LinkedIn post, a blog article and a
+/// newsletter, and those are three renderings of one editorial decision — not
+/// three unrelated cards that happen to share a title.
 model ContentPost {
   id           String        @id @default(cuid())
   workspaceId  String        @map("workspace_id")
   title        String
-  body         String        @db.Text
-  /// Where it is meant to go — linkedin | blog | newsletter.
-  channel      String        @default("linkedin")
   status       ContentStatus @default(DRAFT)
-  /// True when Claude produced the first version of this text.
-  aiDrafted    Boolean       @default(false) @map("ai_drafted")
-  /// Exactly what Claude produced, so "did a human edit it?" is answered by
-  /// comparison rather than by a flag (same reasoning as outreach messages).
-  aiDraftBody  String?       @map("ai_draft_body") @db.Text
   authorUserId String?       @map("author_user_id")
   approvedBy   String?       @map("approved_by")
   approvedAt   DateTime?     @map("approved_at")
+  /// When a human marked the topic published. Where each channel's text
+  /// actually went is on the variant, because they are posted separately.
   publishedAt  DateTime?     @map("published_at")
-  /// Where it was posted, filled in by the person who published it.
-  publishedUrl String?       @map("published_url")
   reviewNote   String?       @map("review_note") @db.Text
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
+  variants ContentVariant[]
+
   @@index([workspaceId])
   @@index([workspaceId, status])
   @@map("content_posts")
+}
+
+/// One channel's text for a topic. Character limits, the AI-draft comparison and
+/// the published URL are all per channel — a 3000-character LinkedIn cap says
+/// nothing about the blog version.
+model ContentVariant {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  postId      String    @map("post_id")
+  /// linkedin | blog | newsletter
+  channel     String
+  body        String    @default("") @db.Text
+  /// True when Claude produced the first version of THIS text.
+  aiDrafted   Boolean   @default(false) @map("ai_drafted")
+  /// Exactly what Claude produced, so "did a human edit it?" is answered by
+  /// comparison rather than by a flag (same reasoning as outreach messages).
+  aiDraftBody String?   @map("ai_draft_body") @db.Text
+  /// Where this channel's version was posted, and when.
+  publishedAt DateTime? @map("published_at")
+  publishedUrl String?  @map("published_url")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, channel])
+  @@index([workspaceId])
+  @@map("content_variants")
 }
 
 /// Per-workspace integration credentials (spec §4.24). Secrets are stored

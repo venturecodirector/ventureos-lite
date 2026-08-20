@@ -106,18 +106,36 @@ export type PostGate = { ok: true } | { ok: false; message: string };
 export function validateForStatus(input: {
   status: ContentStatus;
   title: string;
-  body: string;
-  channel: string;
+  /**
+   * Every channel's text for this topic.
+   *
+   * The gate is per TOPIC now, and a topic moves as one — so it asks about all
+   * of its variants. An over-limit LinkedIn version cannot be smuggled through
+   * review by the blog version being fine, and a topic with an empty variant is
+   * not ready either: an empty box on the board is a job someone still has to do.
+   */
+  variants: Array<{ channel: string; body: string }>;
 }): PostGate {
   if (input.status === "DRAFT") return { ok: true };
   if (!input.title.trim()) return { ok: false, message: "Give the post a title first." };
-  if (!input.body.trim()) return { ok: false, message: "The post is empty." };
-  if (isOverLimit(input.channel, input.body)) {
-    const max = maxCharsFor(input.channel)!;
-    return {
-      ok: false,
-      message: `LinkedIn caps a post at ${max} characters — trim ${input.body.length - max}.`,
-    };
+  if (input.variants.length === 0) {
+    return { ok: false, message: "Add at least one channel — LinkedIn, blog or newsletter." };
+  }
+  for (const v of input.variants) {
+    if (!v.body.trim()) {
+      return { ok: false, message: `The ${labelFor(v.channel)} version is empty.` };
+    }
+    if (isOverLimit(v.channel, v.body)) {
+      const max = maxCharsFor(v.channel)!;
+      return {
+        ok: false,
+        message: `${labelFor(v.channel)} caps a post at ${max} characters — trim ${v.body.length - max}.`,
+      };
+    }
   }
   return { ok: true };
+}
+
+export function labelFor(channel: string): string {
+  return CHANNELS.find((c) => c.key === channel)?.label ?? channel;
 }

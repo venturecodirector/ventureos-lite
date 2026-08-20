@@ -14,11 +14,13 @@ import {
   type ContentDraft,
 } from "@/lib/ai/prompts/content-draft";
 import {
+  CHANNELS,
   CONTENT_STATUSES,
   canTransition,
   isChannel,
   isOverLimit,
   maxCharsFor,
+  labelFor,
   validateForStatus,
   type ContentStatus,
 } from "./board";
@@ -29,22 +31,34 @@ import {
  * (CLAUDE.md hard rule #1).
  */
 
-export interface ContentPostView {
+/** One channel's text within a topic. */
+export interface ContentVariantView {
   id: string;
-  title: string;
-  body: string;
   channel: string;
-  status: ContentStatus;
+  body: string;
   aiDrafted: boolean;
   /** Live comparison, not a stored flag. */
   humanEdited: boolean;
+  publishedAt: string | null;
+  publishedUrl: string | null;
+  maxChars: number | null;
+  overLimit: boolean;
+}
+
+export interface ContentPostView {
+  id: string;
+  title: string;
+  status: ContentStatus;
+  /** Every channel this topic has been written for, in CHANNELS order. */
+  variants: ContentVariantView[];
   authorName: string | null;
   approvedByName: string | null;
   publishedAt: string | null;
-  publishedUrl: string | null;
   reviewNote: string | null;
-  maxChars: number | null;
-  overLimit: boolean;
+  /** True when any variant is an unedited Claude draft — the card shows it. */
+  hasUneditedDraft: boolean;
+  /** True when any variant is over its channel's character limit. */
+  anyOverLimit: boolean;
   updatedAt: string;
 }
 
@@ -70,7 +84,11 @@ export async function getContentBoard(): Promise<ContentBoardView> {
   const db = getWorkspaceClient(workspaceId);
 
   const [posts, membership] = await Promise.all([
-    db.contentPost.findMany({ orderBy: { updatedAt: "desc" }, take: 200 }),
+    db.contentPost.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 200,
+      include: { variants: true },
+    }),
     prismaUnsafe.membership.findUnique({
       where: { userId_workspaceId: { userId, workspaceId } },
       select: { role: true },
@@ -80,24 +98,51 @@ export async function getContentBoard(): Promise<ContentBoardView> {
 
   return {
     isApprover: membership?.role === "OWNER" || membership?.role === "ADMIN",
-    posts: posts.map((p) => ({
-      id: p.id,
-      title: p.title,
-      body: p.body,
-      channel: p.channel,
-      status: p.status as ContentStatus,
-      aiDrafted: p.aiDrafted,
-      humanEdited: p.aiDrafted ? normalize(p.aiDraftBody) !== normalize(p.body) : true,
-      authorName: p.authorUserId ? (names.get(p.authorUserId) ?? null) : null,
-      approvedByName: p.approvedBy ? (names.get(p.approvedBy) ?? null) : null,
-      publishedAt: p.publishedAt?.toISOString() ?? null,
-      publishedUrl: p.publishedUrl,
-      reviewNote: p.reviewNote,
-      maxChars: maxCharsFor(p.channel),
-      overLimit: isOverLimit(p.channel, p.body),
-      updatedAt: p.updatedAt.toISOString(),
-    })),
+    posts: posts.map((p) => {
+      const variants = toVariantViews(p.variants);
+      return {
+        id: p.id,
+        title: p.title,
+        status: p.status as ContentStatus,
+        variants,
+        authorName: p.authorUserId ? (names.get(p.authorUserId) ?? null) : null,
+        approvedByName: p.approvedBy ? (names.get(p.approvedBy) ?? null) : null,
+        publishedAt: p.publishedAt?.toISOString() ?? null,
+        reviewNote: p.reviewNote,
+        hasUneditedDraft: variants.some((v) => v.aiDrafted && !v.humanEdited),
+        anyOverLimit: variants.some((v) => v.overLimit),
+        updatedAt: p.updatedAt.toISOString(),
+      };
+    }),
   };
+}
+
+/** In CHANNELS order, so the tabs never reshuffle as variants are added. */
+function toVariantViews(
+  rows: Array<{
+    id: string;
+    channel: string;
+    body: string;
+    aiDrafted: boolean;
+    aiDraftBody: string | null;
+    publishedAt: Date | null;
+    publishedUrl: string | null;
+  }>,
+): ContentVariantView[] {
+  const order = new Map(CHANNELS.map((c, i) => [c.key as string, i]));
+  return [...rows]
+    .sort((a, b) => (order.get(a.channel) ?? 99) - (order.get(b.channel) ?? 99))
+    .map((v) => ({
+      id: v.id,
+      channel: v.channel,
+      body: v.body,
+      aiDrafted: v.aiDrafted,
+      humanEdited: v.aiDrafted ? normalize(v.aiDraftBody) !== normalize(v.body) : true,
+      publishedAt: v.publishedAt?.toISOString() ?? null,
+      publishedUrl: v.publishedUrl,
+      maxChars: maxCharsFor(v.channel),
+      overLimit: isOverLimit(v.channel, v.body),
+    }));
 }
 
 function normalize(text: string | null): string {
@@ -126,22 +171,105 @@ export async function createPost(
     data: {
       workspaceId,
       title: parsed.data.title || "Untitled post",
-      body: parsed.data.body,
-      channel: parsed.data.channel,
       status: "DRAFT",
       authorUserId: userId,
     },
     select: { id: true },
   });
+  /**
+   * A separate create, deliberately: a nested write through the relation does
+   * NOT go through the tenant guard, so `workspace_id` would come from the
+   * caller rather than from the session. Every guarded model gets its own call.
+   */
+  await db.contentVariant.create({
+    data: { workspaceId, postId: post.id, channel: parsed.data.channel, body: parsed.data.body },
+  });
   revalidatePath("/content");
   return { ok: true, id: post.id };
+}
+
+// ---------------------------------------------------------------------------
+// variants — one channel's text within a topic
+// ---------------------------------------------------------------------------
+
+/**
+ * Give the topic a channel it does not have yet.
+ *
+ * This is the whole point of the change: the same subject as a LinkedIn post, a
+ * blog article and a newsletter, inside one card, moving through review once.
+ */
+export async function addVariant(
+  raw: unknown,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const parsed = z
+    .object({
+      postId: z.string().min(1),
+      channel: z.string().refine(isChannel, "Unknown channel"),
+      body: z.string().max(20_000).default(""),
+    })
+    .safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Check the channel." };
+
+  const { workspaceId } = await getActiveContext();
+  const db = getWorkspaceClient(workspaceId);
+  const post = await db.contentPost.findUnique({
+    where: { id: parsed.data.postId },
+    select: { id: true, status: true },
+  });
+  if (!post) return { ok: false, error: "Post not found." };
+  if (post.status === "PUBLISHED") {
+    return { ok: false, error: "Reopen the post before adding a channel." };
+  }
+  const clash = await db.contentVariant.findFirst({
+    where: { postId: post.id, channel: parsed.data.channel },
+    select: { id: true },
+  });
+  if (clash) {
+    return { ok: false, error: `This topic already has a ${labelFor(parsed.data.channel)} version.` };
+  }
+
+  const created = await db.contentVariant.create({
+    data: {
+      workspaceId,
+      postId: post.id,
+      channel: parsed.data.channel,
+      body: parsed.data.body,
+    },
+    select: { id: true },
+  });
+  revalidatePath("/content");
+  return { ok: true, id: created.id };
+}
+
+/** Remove one channel's version, leaving the topic and the others alone. */
+export async function deleteVariant(
+  raw: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = z.object({ id: z.string().min(1) }).safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Unknown version." };
+
+  const { workspaceId } = await getActiveContext();
+  const db = getWorkspaceClient(workspaceId);
+  const variant = await db.contentVariant.findUnique({
+    where: { id: parsed.data.id },
+    select: { id: true, channel: true, post: { select: { status: true } } },
+  });
+  if (!variant) return { ok: false, error: "Version not found." };
+  if (variant.post.status === "PUBLISHED") {
+    return { ok: false, error: "Reopen the post before removing a channel." };
+  }
+  await db.contentVariant.delete({ where: { id: variant.id } });
+  revalidatePath("/content");
+  return { ok: true };
 }
 
 const updateSchema = z.object({
   id: z.string().min(1),
   title: z.string().trim().max(200),
-  body: z.string().max(20_000),
-  channel: z.string().refine(isChannel, "Unknown channel"),
+  /** One channel's text. Omitted when only the topic's title changed. */
+  variant: z
+    .object({ id: z.string().min(1), body: z.string().max(20_000) })
+    .optional(),
 });
 
 export async function updatePost(
@@ -161,13 +289,17 @@ export async function updatePost(
     return { ok: false, error: "Reopen the post before editing it." };
   }
 
+  if (parsed.data.variant) {
+    // Scoped to this post, so an id from another topic cannot be written here.
+    const { count } = await db.contentVariant.updateMany({
+      where: { id: parsed.data.variant.id, postId: parsed.data.id },
+      data: { body: parsed.data.variant.body },
+    });
+    if (count === 0) return { ok: false, error: "That version is not on this post." };
+  }
   await db.contentPost.update({
     where: { id: parsed.data.id },
-    data: {
-      title: parsed.data.title || "Untitled post",
-      body: parsed.data.body,
-      channel: parsed.data.channel,
-    },
+    data: { title: parsed.data.title || "Untitled post" },
   });
   revalidatePath("/content");
   return { ok: true };
@@ -195,6 +327,8 @@ const moveSchema = z.object({
   to: z.enum(CONTENT_STATUSES),
   reviewNote: z.string().max(2000).optional(),
   publishedUrl: z.string().max(500).optional(),
+  /** Which channel the URL belongs to. Unambiguous when there is only one. */
+  publishedChannel: z.string().optional(),
 });
 
 /**
@@ -212,7 +346,10 @@ export async function movePost(
   const db = getWorkspaceClient(workspaceId);
 
   const [post, membership] = await Promise.all([
-    db.contentPost.findUnique({ where: { id: parsed.data.id } }),
+    db.contentPost.findUnique({
+      where: { id: parsed.data.id },
+      include: { variants: { select: { id: true, channel: true, body: true } } },
+    }),
     prismaUnsafe.membership.findUnique({
       where: { userId_workspaceId: { userId, workspaceId } },
       select: { role: true },
@@ -227,8 +364,7 @@ export async function movePost(
   const gate = validateForStatus({
     status: parsed.data.to,
     title: post.title,
-    body: post.body,
-    channel: post.channel,
+    variants: post.variants,
   });
   if (!gate.ok) return { ok: false, error: gate.message };
 
@@ -239,15 +375,45 @@ export async function movePost(
       status: parsed.data.to,
       reviewNote: parsed.data.reviewNote ?? post.reviewNote,
       ...(parsed.data.to === "APPROVED" ? { approvedBy: userId, approvedAt: now } : {}),
-      ...(parsed.data.to === "PUBLISHED"
-        ? { publishedAt: now, publishedUrl: parsed.data.publishedUrl || null }
-        : {}),
+      ...(parsed.data.to === "PUBLISHED" ? { publishedAt: now } : {}),
       // Reopening clears the previous sign-off; it has to be earned again.
       ...(parsed.data.to === "DRAFT"
-        ? { approvedBy: null, approvedAt: null, publishedAt: null, publishedUrl: null }
+        ? { approvedBy: null, approvedAt: null, publishedAt: null }
         : {}),
     },
   });
+
+  /**
+   * Publishing stamps every channel's version.
+   *
+   * A topic is marked published once, but each channel was posted somewhere of
+   * its own — so the date goes on all of them and the URL, when one is given,
+   * goes on the channel it belongs to. `publishedChannel` says which; with a
+   * single-variant topic there is no ambiguity and it is optional.
+   */
+  if (parsed.data.to === "PUBLISHED") {
+    await db.contentVariant.updateMany({
+      where: { postId: post.id },
+      data: { publishedAt: now },
+    });
+    if (parsed.data.publishedUrl) {
+      const target =
+        post.variants.find((v) => v.channel === parsed.data.publishedChannel) ??
+        (post.variants.length === 1 ? post.variants[0] : null);
+      if (target) {
+        await db.contentVariant.updateMany({
+          where: { id: target.id, postId: post.id },
+          data: { publishedUrl: parsed.data.publishedUrl },
+        });
+      }
+    }
+  }
+  if (parsed.data.to === "DRAFT") {
+    await db.contentVariant.updateMany({
+      where: { postId: post.id },
+      data: { publishedAt: null, publishedUrl: null },
+    });
+  }
 
   // Every status change is logged, not just the editorial ones. Who sent a
   // post back to draft, and when, is exactly the question asked after the
@@ -267,7 +433,7 @@ export async function movePost(
       entityId: post.id,
       meta: {
         title: post.title,
-        channel: post.channel,
+        channels: post.variants.map((v) => v.channel),
         from: post.status,
         to: parsed.data.to,
       },
@@ -284,6 +450,8 @@ export async function movePost(
 
 const draftSchema = z.object({
   id: z.string().min(1),
+  /** Which channel's version to draft. Optional when the topic has only one. */
+  variantId: z.string().optional(),
   topic: z.string().trim().min(3).max(500),
   notes: z.string().max(2000).optional(),
   language: z.enum(["HU", "EN"]).default("HU"),
@@ -305,10 +473,29 @@ export async function draftPostWithClaude(
 
   const post = await db.contentPost.findUnique({
     where: { id: parsed.data.id },
-    select: { id: true, channel: true, status: true },
+    select: {
+      id: true,
+      status: true,
+      variants: { select: { id: true, channel: true } },
+    },
   });
   if (!post) return { ok: false, error: "Post not found." };
   if (post.status === "PUBLISHED") return { ok: false, error: "Reopen the post before redrafting." };
+
+  /**
+   * Claude drafts ONE channel's version, because the channel decides the shape
+   * of the text — a 3000-character LinkedIn post and a blog article are not the
+   * same piece of writing with a different length. The caller names it; with a
+   * single-variant topic it is the only one there is.
+   */
+  const variant = parsed.data.variantId
+    ? post.variants.find((v) => v.id === parsed.data.variantId)
+    : post.variants.length === 1
+      ? post.variants[0]
+      : undefined;
+  if (!variant) {
+    return { ok: false, error: "Pick which channel to draft for." };
+  }
 
   const workspace = await prismaUnsafe.workspace.findUnique({
     where: { id: workspaceId },
@@ -326,7 +513,7 @@ export async function draftPostWithClaude(
           role: "user",
           content: buildContentMessage({
             topic: parsed.data.topic,
-            channel: post.channel,
+            channel: variant.channel,
             language: parsed.data.language,
             notes: parsed.data.notes,
             companyName:
@@ -344,14 +531,15 @@ export async function draftPostWithClaude(
     return { ok: false, error: "Claude could not draft this. Write it yourself, or retry." };
   }
 
-  await db.contentPost.update({
-    where: { id: post.id },
-    data: {
-      title: draft.title,
-      body: draft.body,
-      aiDrafted: true,
-      aiDraftBody: draft.body,
-    },
+  await db.contentVariant.updateMany({
+    where: { id: variant.id, postId: post.id },
+    data: { body: draft.body, aiDrafted: true, aiDraftBody: draft.body },
+  });
+  // The title belongs to the topic, and the first draft is usually the one that
+  // names it. A title already written by a human is not overwritten.
+  await db.contentPost.updateMany({
+    where: { id: post.id, OR: [{ title: "" }, { title: "Untitled post" }] },
+    data: { title: draft.title },
   });
   revalidatePath("/content");
   return { ok: true, title: draft.title, body: draft.body, rationale: draft.rationale };

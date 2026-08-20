@@ -21,16 +21,22 @@ const BDR_EMAIL = "content-bdr@ventureco.test";
  */
 test.describe.configure({ mode: "serial" });
 
+const EXCERPT =
+  "Egy elég hosszú tervezet, ami több sorban is elfér, hogy a kártyán a levágás látszódjon. ".repeat(
+    3,
+  );
+
+/**
+ * A topic with one channel's text. The card is the TOPIC now — the text lives in
+ * a variant, one per channel — so a seed has to create both.
+ */
 async function seedPost(title: string, status: "DRAFT" | "IN_REVIEW" = "DRAFT") {
   const ws = await prisma.workspace.findFirst({ select: { id: true } });
-  await prisma.contentPost.create({
-    data: {
-      workspaceId: ws!.id,
-      title,
-      body: "Egy elég hosszú tervezet, ami több sorban is elfér, hogy a kártyán a levágás látszódjon. ".repeat(3),
-      channel: "LINKEDIN",
-      status,
-    },
+  const post = await prisma.contentPost.create({
+    data: { workspaceId: ws!.id, title, status },
+  });
+  await prisma.contentVariant.create({
+    data: { workspaceId: ws!.id, postId: post.id, channel: "linkedin", body: EXCERPT },
   });
   return ws!.id;
 }

@@ -73,22 +73,69 @@ describe("channels", () => {
 });
 
 describe("validation on the way out of Draft", () => {
-  const base = { title: "T", body: "Some words.", channel: "linkedin" as const };
+  const one = (body: string, channel = "linkedin") => [{ channel, body }];
+  const base = { title: "T", variants: one("Some words.") };
 
   it("lets a draft be anything, including empty", () => {
-    expect(validateForStatus({ ...base, title: "", body: "", status: "DRAFT" })).toEqual({ ok: true });
+    expect(
+      validateForStatus({ title: "", variants: one(""), status: "DRAFT" }),
+    ).toEqual({ ok: true });
   });
 
-  it("requires a title and body to leave Draft", () => {
+  it("requires a title and a body to leave Draft", () => {
     expect(validateForStatus({ ...base, title: "", status: "IN_REVIEW" }).ok).toBe(false);
-    expect(validateForStatus({ ...base, body: "   ", status: "IN_REVIEW" }).ok).toBe(false);
+    expect(validateForStatus({ ...base, variants: one("   "), status: "IN_REVIEW" }).ok).toBe(false);
     expect(validateForStatus({ ...base, status: "IN_REVIEW" })).toEqual({ ok: true });
   });
 
   it("blocks an over-length LinkedIn post and says how much to cut", () => {
-    const res = validateForStatus({ ...base, body: "x".repeat(3120), status: "IN_REVIEW" });
+    const res = validateForStatus({
+      ...base,
+      variants: one("x".repeat(3120)),
+      status: "IN_REVIEW",
+    });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.message).toContain("120");
+  });
+
+  /**
+   * The topic moves as ONE. Three renderings of a subject are one editorial
+   * decision, so every channel has to be ready — an over-limit LinkedIn version
+   * cannot ride along on a blog version that happens to be fine.
+   */
+  it("judges every channel, not just the first", () => {
+    const res = validateForStatus({
+      title: "T",
+      variants: [
+        { channel: "blog", body: "A perfectly good article." },
+        { channel: "linkedin", body: "x".repeat(3050) },
+      ],
+      status: "IN_REVIEW",
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.message).toContain("LinkedIn");
+      expect(res.message).toContain("50");
+    }
+  });
+
+  it("names the channel whose version is still empty", () => {
+    const res = validateForStatus({
+      title: "T",
+      variants: [
+        { channel: "linkedin", body: "Written." },
+        { channel: "newsletter", body: "" },
+      ],
+      status: "IN_REVIEW",
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.message).toContain("Newsletter");
+  });
+
+  it("refuses a topic with no channel at all", () => {
+    const res = validateForStatus({ title: "T", variants: [], status: "IN_REVIEW" });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.message).toMatch(/at least one channel/i);
   });
 });
 

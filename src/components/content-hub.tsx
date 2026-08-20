@@ -7,6 +7,8 @@ import {
   deletePost,
   draftPostWithClaude,
   movePost,
+  addVariant,
+  deleteVariant,
   updatePost,
   type ContentBoardView,
   type ContentPostView,
@@ -249,18 +251,38 @@ export function ContentHub({ board }: { board: ContentBoardView }) {
                       overrides it — which is why the excerpt was never actually
                       clamped. */}
                   <span className="mt-0.5 line-clamp-2 text-[11.5px] text-muted">
-                    {p.body || "No text yet."}
+                    {p.variants.find((v) => v.body.trim())?.body || "No text yet."}
                   </span>
                   <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10.5px] text-muted">
-                    <span className="rounded-[5px] border border-line px-1.5 py-px">
-                      {CHANNELS.find((c) => c.key === p.channel)?.label ?? p.channel}
-                    </span>
-                    {p.aiDrafted && (
-                      <span className={p.humanEdited ? "text-pos" : "text-warn"}>
-                        {p.humanEdited ? "✦ edited" : "✦ unedited draft"}
+                    {/*
+                      One chip per channel this topic has been written for. The
+                      card IS the topic now, so three renderings of one subject
+                      are three chips here rather than three cards on the board.
+                    */}
+                    {p.variants.length === 0 ? (
+                      <span className="rounded-[5px] border border-dashed border-line px-1.5 py-px">
+                        no channel yet
                       </span>
+                    ) : (
+                      p.variants.map((v) => (
+                        <span
+                          key={v.id}
+                          data-testid={`content-card-channel-${v.channel}`}
+                          className={`rounded-[5px] border px-1.5 py-px ${
+                            v.body.trim() ? "border-line" : "border-dashed border-line text-muted"
+                          }`}
+                          title={v.body.trim() ? undefined : "Nothing written yet"}
+                        >
+                          {CHANNELS.find((c) => c.key === v.channel)?.label ?? v.channel}
+                        </span>
+                      ))
                     )}
-                    {p.overLimit && <span className="text-neg">over limit</span>}
+                    {p.hasUneditedDraft ? (
+                      <span className="text-warn">✦ unedited draft</span>
+                    ) : (
+                      p.variants.some((v) => v.aiDrafted) && <span className="text-pos">✦ edited</span>
+                    )}
+                    {p.anyOverLimit && <span className="text-neg">over limit</span>}
                     {p.publishedAt && <span>{p.publishedAt.slice(0, 10)}</span>}
                   </span>
 
@@ -336,8 +358,17 @@ function PostEditor({
   onRun: (fn: () => Promise<{ ok: boolean; error?: string }>, okText?: string) => void;
 }) {
   const [title, setTitle] = useState(post.title);
-  const [body, setBody] = useState(post.body);
-  const [channel, setChannel] = useState(post.channel);
+  /**
+   * The channel being edited, and one body per channel.
+   *
+   * A map rather than a single string so switching tabs does not throw away an
+   * unsaved edit — the operator writing a newsletter version should be able to
+   * glance at the LinkedIn one and come back to their text.
+   */
+  const [activeId, setActiveId] = useState<string | null>(post.variants[0]?.id ?? null);
+  const [bodies, setBodies] = useState<Record<string, string>>(() =>
+    Object.fromEntries(post.variants.map((v) => [v.id, v.body])),
+  );
   const [topic, setTopic] = useState("");
   const [notes, setNotes] = useState("");
   const [rationale, setRationale] = useState<string | null>(null);
@@ -345,22 +376,41 @@ function PostEditor({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const max = maxCharsFor(channel);
+  const active = post.variants.find((v) => v.id === activeId) ?? null;
+  const body = active ? (bodies[active.id] ?? "") : "";
+  const max = active ? maxCharsFor(active.channel) : null;
   const over = max !== null && body.length > max;
   const locked = post.status === "PUBLISHED";
   const transitions = allowedTransitions(post.status, isApprover);
+  const missing = CHANNELS.filter((c) => !post.variants.some((v) => v.channel === c.key));
+
+  /** Persist the title and the channel currently on screen. */
+  const saveCurrent = () =>
+    updatePost({
+      id: post.id,
+      title,
+      ...(active ? { variant: { id: active.id, body } } : {}),
+    });
 
   async function draft() {
     setError(null);
     setDrafting(true);
     try {
-      const res = await draftPostWithClaude({ id: post.id, topic, notes, language: "HU" });
+      const res = await draftPostWithClaude({
+        id: post.id,
+        // Claude drafts ONE channel's version: the channel decides the shape of
+        // the text, not just its length.
+        variantId: active?.id,
+        topic,
+        notes,
+        language: "HU",
+      });
       if (!res.ok) {
         setError(res.error);
         return;
       }
-      setTitle(res.title);
-      setBody(res.body);
+      if (!title.trim() || title === "Untitled post") setTitle(res.title);
+      if (active) setBodies((b) => ({ ...b, [active.id]: res.body }));
       setRationale(res.rationale || null);
     } finally {
       setDrafting(false);
@@ -403,19 +453,21 @@ function PostEditor({
         <p className="mb-3 rounded-[8px] border border-line px-3 py-2 text-[12px] text-muted">
           Published{post.publishedAt ? ` on ${post.publishedAt.slice(0, 10)}` : ""}. Reopen it to
           make changes.
-          {post.publishedUrl && (
-            <>
-              {" "}
-              <a
-                href={post.publishedUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-accent-ink underline-offset-2 hover:underline"
-              >
-                View post
-              </a>
-            </>
-          )}
+          {post.variants
+            .filter((v) => v.publishedUrl)
+            .map((v) => (
+              <span key={v.id}>
+                {" "}
+                <a
+                  href={v.publishedUrl!}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-accent-ink underline-offset-2 hover:underline"
+                >
+                  View {CHANNELS.find((c) => c.key === v.channel)?.label ?? v.channel}
+                </a>
+              </span>
+            ))}
         </p>
       )}
 
@@ -467,38 +519,115 @@ function PostEditor({
           data-testid="content-title"
           className={INPUT}
         />
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          disabled={locked}
-          rows={12}
-          placeholder="The post…"
-          data-testid="content-body"
-          className={`${INPUT} resize-y leading-relaxed`}
-        />
-        <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
-          <select
-            value={channel}
-            onChange={(e) => setChannel(e.target.value)}
-            disabled={locked}
-            data-testid="content-channel"
-            className="rounded-[8px] border border-line bg-[rgba(0,5,29,0.5)] px-2 py-1.5 text-[12px] text-ink outline-none focus:border-accent"
-          >
-            {CHANNELS.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label}
-              </option>
+        {/*
+          ONE CARD, ONE TOPIC, A TAB PER CHANNEL.
+
+          This used to be a channel <select> on a single body, which meant the
+          same subject as a LinkedIn post AND a blog article AND a newsletter was
+          three separate cards moving through review separately. Now the topic is
+          the card and each channel is a tab inside it; adding one is a button,
+          not a new card.
+        */}
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-line pb-2">
+          {post.variants.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              data-testid={`content-tab-${v.channel}`}
+              onClick={() => setActiveId(v.id)}
+              className={`rounded-[8px] border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${
+                v.id === activeId
+                  ? "border-accent bg-accent-soft text-ink"
+                  : "border-line text-muted hover:border-accent-soft hover:text-ink"
+              }`}
+            >
+              {CHANNELS.find((c) => c.key === v.channel)?.label ?? v.channel}
+              {!(bodies[v.id] ?? "").trim() && <span className="ml-1 text-muted">·</span>}
+            </button>
+          ))}
+          {!locked &&
+            missing.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                data-testid={`content-add-${c.key}`}
+                disabled={pending}
+                title={`Write a ${c.label} version of this topic`}
+                onClick={() =>
+                  onRun(async () => {
+                    // Save what is on screen first, so adding a channel cannot
+                    // cost the operator the paragraph they just wrote.
+                    if (active) {
+                      const saved = await saveCurrent();
+                      if (!saved.ok) return saved;
+                    }
+                    const res = await addVariant({ postId: post.id, channel: c.key });
+                    if (res.ok) setActiveId(res.id);
+                    return res;
+                  }, `${c.label} version added.`)
+                }
+                className="rounded-[8px] border border-dashed border-line px-2.5 py-1.5 text-[12px] text-muted hover:border-accent hover:text-ink disabled:opacity-45"
+              >
+                + {c.label}
+              </button>
             ))}
-          </select>
+        </div>
+
+        {active ? (
+          <textarea
+            value={body}
+            onChange={(e) => setBodies((b) => ({ ...b, [active.id]: e.target.value }))}
+            disabled={locked}
+            rows={12}
+            placeholder={`The ${CHANNELS.find((c) => c.key === active.channel)?.label ?? active.channel} version…`}
+            data-testid="content-body"
+            className={`${INPUT} resize-y leading-relaxed`}
+          />
+        ) : (
+          <p className="rounded-[10px] border border-dashed border-line px-3 py-6 text-center text-[12.5px] text-muted">
+            No channel yet. Add LinkedIn, a blog version or a newsletter above.
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
           {max !== null && (
             <span className={over ? "font-semibold text-neg tabular-nums" : "text-muted tabular-nums"}>
               {body.length} / {max}
             </span>
           )}
-          {post.aiDrafted && (
-            <span className={post.humanEdited ? "text-pos" : "text-warn"}>
-              {post.humanEdited ? "edited by a human" : "still Claude's words"}
+          {active?.aiDrafted && (
+            <span className={active.humanEdited ? "text-pos" : "text-warn"}>
+              {active.humanEdited ? "edited by a human" : "still Claude's words"}
             </span>
+          )}
+          {active?.publishedUrl && (
+            <a
+              href={active.publishedUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent-ink underline-offset-2 hover:underline"
+            >
+              posted here ↗
+            </a>
+          )}
+          {!locked && active && post.variants.length > 1 && (
+            <button
+              type="button"
+              data-testid="content-remove-variant"
+              disabled={pending}
+              className="ml-auto text-[11.5px] text-muted hover:text-[#FFB3C2] disabled:opacity-45"
+              onClick={() =>
+                onRun(async () => {
+                  const res = await deleteVariant({ id: active.id });
+                  if (res.ok) {
+                    setActiveId(post.variants.find((v) => v.id !== active.id)?.id ?? null);
+                  }
+                  return res;
+                }, "Channel removed.")
+              }
+            >
+              Remove this channel
+            </button>
           )}
         </div>
       </div>
@@ -528,7 +657,7 @@ function PostEditor({
             className={BTN}
             data-testid="content-save"
             disabled={pending}
-            onClick={() => onRun(() => updatePost({ id: post.id, title, body, channel }), "Saved.")}
+            onClick={() => onRun(saveCurrent, "Saved.")}
           >
             Save
           </button>
@@ -545,7 +674,7 @@ function PostEditor({
               onRun(async () => {
                 // Persist edits first, so the gate judges what is on screen.
                 if (!locked) {
-                  const saved = await updatePost({ id: post.id, title, body, channel });
+                  const saved = await saveCurrent();
                   if (!saved.ok) return saved;
                 }
                 const res = await movePost({ id: post.id, to: t.to });

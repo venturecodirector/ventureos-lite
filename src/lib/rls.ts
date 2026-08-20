@@ -49,6 +49,7 @@ const BUSINESS_TABLES = [
   "suppressions",
   "claude_usage",
   "content_posts",
+  "content_variants",
   "integrations",
   "saved_views",
   "notifications",
