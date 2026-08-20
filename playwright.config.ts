@@ -56,7 +56,12 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"], storageState: "e2e/.auth/state.json" },
       dependencies: ["setup"],
+      // Runs after the project finishes, pass or fail. Without it the suite
+      // poisons its own next run — see the file for the two failures that were
+      // nothing but leftovers.
+      teardown: "cleanup",
     },
+    { name: "cleanup", testMatch: /cleanup\.teardown\.ts/ },
   ],
   webServer: {
     command: "npm run dev",
