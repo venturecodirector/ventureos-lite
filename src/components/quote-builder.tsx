@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 import { serverActionError } from "@/lib/client/server-action";
 
 import Link from "next/link";
@@ -89,7 +90,12 @@ export function QuoteBuilder({
   async function exportPdf() {
     if (!doc) return;
     setBusy("pdf");
-    await exportQuotePdf(doc.id);
+    const failed = await attemptVoid(exportQuotePdf(doc.id));
+    if (failed) {
+      setBusy(null);
+      setMsg(failed);
+      return;
+    }
     const started = Date.now();
     while (Date.now() - started < 30_000) {
       await new Promise((r) => setTimeout(r, 1500));

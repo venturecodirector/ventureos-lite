@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
 import {
@@ -40,6 +41,7 @@ function TaskRow({
   onChanged: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
   const done = task.doneAt !== null;
 
   return (
@@ -76,12 +78,23 @@ function TaskRow({
           {task.source && <span className="opacity-70">· auto</span>}
         </div>
         {task.note && <p className="mt-1 text-[11.5px] leading-relaxed text-muted">{task.note}</p>}
+        {failure && (
+          <p role="alert" className="mt-1 text-[11.5px] text-[#FFB3C2]">
+            {failure}
+          </p>
+        )}
       </div>
       {!done && (
         <button
           onClick={async () => {
             setBusy(true);
-            await snoozeTask(task.id, 1);
+            setFailure(null);
+            const failed = await attemptVoid(snoozeTask(task.id, 1));
+            if (failed) {
+              setFailure(failed);
+              setBusy(false);
+              return;
+            }
             await onChanged();
             setBusy(false);
           }}
@@ -107,9 +120,10 @@ function NewTask({
   const [type, setType] = useState<TaskType>("todo");
   const [days, setDays] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
 
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
@@ -119,7 +133,17 @@ function NewTask({
           const due = new Date();
           due.setDate(due.getDate() + days);
           due.setHours(17, 0, 0, 0);
-          await createTask({ title, type, dueAt: due.toISOString(), ...entity });
+          setFailure(null);
+          // The title is cleared only once the task exists. Clearing it first
+          // meant a failed create silently ate what the operator had typed.
+          const failed = await attemptVoid(
+            createTask({ title, type, dueAt: due.toISOString(), ...entity }),
+          );
+          if (failed) {
+            setFailure(failed);
+            setBusy(false);
+            return;
+          }
           setTitle("");
           await onCreated();
           setBusy(false);
@@ -148,6 +172,11 @@ function NewTask({
         <option value={3}>+3d</option>
         <option value={7}>+1w</option>
       </select>
+      {failure && (
+        <p role="alert" className="w-full text-[11.5px] text-[#FFB3C2]">
+          {failure}
+        </p>
+      )}
     </div>
   );
 }

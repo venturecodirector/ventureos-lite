@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 import { attempt } from "@/lib/client/server-action";
 
 import { useState, useTransition } from "react";
@@ -165,7 +166,13 @@ export function SettingsWorkflows({ view }: { view: WorkflowView }) {
                       data-testid="rule-toggle"
                       onClick={() =>
                         startTransition(async () => {
-                          await setRuleEnabled(rule.id, !rule.enabled);
+                          // A rule that stays on when the operator turned it off
+                          // keeps firing on their leads.
+                          const failed = await attemptVoid(setRuleEnabled(rule.id, !rule.enabled));
+                          if (failed) {
+                            setError(failed);
+                            return;
+                          }
                           router.refresh();
                         })
                       }
@@ -181,7 +188,11 @@ export function SettingsWorkflows({ view }: { view: WorkflowView }) {
                       disabled={pending}
                       onClick={() =>
                         startTransition(async () => {
-                          await deleteRule(rule.id);
+                          const failed = await attemptVoid(deleteRule(rule.id));
+                          if (failed) {
+                            setError(failed);
+                            return;
+                          }
                           router.refresh();
                         })
                       }

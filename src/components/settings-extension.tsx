@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid, attempt } from "@/lib/client/server-action";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -28,10 +29,23 @@ export function SettingsExtension({
   const [copied, setCopied] = useState(false);
   /** Set when the token was handed straight to the extension. */
   const [connected, setConnected] = useState<string | null>(null);
+  /** This panel had nowhere at all to report a failure. */
+  const [error, setError] = useState<string | null>(null);
 
   function issue() {
+    setError(null);
     startTransition(async () => {
-      const { token } = await issueCaptureToken({ label: label.trim() || undefined });
+      const res = await attempt(
+        issueCaptureToken({ label: label.trim() || undefined }).then((r) => ({
+          ok: true as const,
+          ...r,
+        })),
+      );
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      const token = res.token;
       setIssued(token);
 
       // If the extension is here, hand it the token directly. Copying a token by
@@ -58,6 +72,15 @@ export function SettingsExtension({
       <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
         Browser extension
       </div>
+      {error && (
+        <p
+          role="alert"
+          data-testid="extension-error"
+          className="mb-3 rounded-[8px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.08)] px-3 py-2 text-[12.5px] text-[#FFB3C2]"
+        >
+          {error}
+        </p>
+      )}
       <p className="mb-3 text-[12.5px] text-muted">
         The capture extension signs in with a personal token, not your session —
         it runs on linkedin.com, where a cookie for this site is never sent.
@@ -157,7 +180,17 @@ export function SettingsExtension({
                 onClick={() => {
                   if (!confirm("Revoke this token? The browser using it stops capturing.")) return;
                   startTransition(async () => {
-                    await revokeCaptureToken({ id: t.id });
+                    /**
+                     * The most important one in this file to not fail silently:
+                     * a revoked token is a security action, and believing a
+                     * browser has been cut off when it has not is worse than
+                     * being told the revoke did not work.
+                     */
+                    const failed = await attemptVoid(revokeCaptureToken({ id: t.id }));
+                    if (failed) {
+                      setError(failed);
+                      return;
+                    }
                     router.refresh();
                   });
                 }}

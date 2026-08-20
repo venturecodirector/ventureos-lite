@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 import { serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
@@ -109,7 +110,11 @@ export function ComparisonPanel({ auditId }: { auditId: string }) {
         {table && (
           <button
             onClick={async () => {
-              await clearComparison(auditId);
+              const failed = await attemptVoid(clearComparison(auditId));
+              if (failed) {
+                setNote(failed);
+                return;
+              }
               setTable(null);
               setCandidates(null);
               setPicked([]);

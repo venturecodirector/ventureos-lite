@@ -35,7 +35,14 @@ function Tour() {
   function finish() {
     setClosed(true);
     startTransition(async () => {
-      await completeTour();
+      /**
+       * The two calls in this file are the only fire-and-forget ones left in the
+       * app, and deliberately so: if marking the tour finished fails, the tour
+       * reappears on the next visit. That is self-evident, harmless, and
+       * recoverable by clicking the same button again — an error banner over an
+       * onboarding tour would be worse than the thing it reports.
+       */
+      await completeTour().catch(() => {});
       router.refresh();
     });
   }
@@ -119,7 +126,9 @@ function Checklist({ view }: { view: OnboardingView }) {
           onClick={() => {
             setHidden(true);
             startTransition(async () => {
-              await hideChecklist();
+              // Same reasoning as finish(): a checklist that comes back is its
+              // own error message.
+              await hideChecklist().catch(() => {});
               router.refresh();
             });
           }}

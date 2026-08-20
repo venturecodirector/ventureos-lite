@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 import { serverActionError } from "@/lib/client/server-action";
 
 import { useMemo, useRef, useState } from "react";
@@ -95,7 +96,17 @@ export function TemplateEditor({
   }
 
   async function activate(id: string) {
-    await activateVersion(id);
+    /**
+     * The one in this file that is not cosmetic: the ACTIVE version is what
+     * quotes, contracts and certificates render from. Silently failing to
+     * activate leaves legal documents rendering from the previous template
+     * while the editor shows the new one as live.
+     */
+    const failed = await attemptVoid(activateVersion(id));
+    if (failed) {
+      setMsg(failed);
+      return;
+    }
     await switchTemplate(type, lang);
   }
 

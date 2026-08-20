@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 import { serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
@@ -154,7 +155,11 @@ export function SearchVisibility({ companyId }: { companyId: string }) {
                     <td className="py-1.5 text-right">
                       <button
                         onClick={async () => {
-                          await removeKeyword(k.id);
+                          const failed = await attemptVoid(removeKeyword(k.id));
+                          if (failed) {
+                            setError(failed);
+                            return;
+                          }
                           await refresh();
                         }}
                         className="text-[11px] text-muted hover:text-ink"

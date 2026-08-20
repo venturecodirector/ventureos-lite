@@ -112,6 +112,55 @@ describe("the reported call sites no longer swallow a throw", () => {
   });
 
   /**
+   * NO FIRE-AND-FORGET ACTION CALLS.
+   *
+   * The audit's second sweep: 36 places awaited a Server Action and threw the
+   * result away. 22 of them were not inside a try/catch either, so a failure
+   * produced NOTHING — a revoked capture token that was never revoked, a
+   * mailbox believed disconnected, a template version believed active while
+   * legal documents still rendered from the previous one, a workspace switch
+   * that left you in the old workspace believing you had moved.
+   *
+   * Four panels had nowhere at all to report a failure and gained one.
+   *
+   * The two exceptions are in `onboarding.tsx` and carry an explicit `.catch()`
+   * plus the reason: if marking a tour finished fails, the tour reappears, which
+   * is its own error message.
+   */
+  it("no component awaits a server action and discards the outcome", () => {
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    const files = execSync("ls src/components/*.tsx", { encoding: "utf8" }).split("\n").filter(Boolean);
+    const offenders: string[] = [];
+    for (const file of files) {
+      const lines = readFileSync(file, "utf8").split("\n");
+      const src = lines.join("\n");
+      const actions = new Set<string>();
+      for (const m of src.matchAll(/import\s*\{([^}]+)\}\s*from\s*"@\/modules\/[^"]+"/g)) {
+        for (const part of m[1]!.split(",")) {
+          const name = part.trim().replace("type ", "");
+          if (name && /^[a-z]/.test(name)) actions.add(name);
+        }
+      }
+      lines.forEach((line, i) => {
+        const m = /^\s*await ([A-Za-z_$][\w$]*)\(/.exec(line);
+        if (!m || !actions.has(m[1]!) || line.includes(".catch(")) return;
+        // Inside a try block? Then the file's catch reports it.
+        let depth = 0;
+        for (let j = i; j >= Math.max(0, i - 30); j -= 1) {
+          const l = lines[j]!;
+          if (/\}\s*catch/.test(l)) depth += 1;
+          if (/\btry\s*\{/.test(l)) {
+            if (depth === 0) return;
+            depth -= 1;
+          }
+        }
+        offenders.push(`${file}:${i + 1}`);
+      });
+    }
+    expect(offenders, `silent action calls: ${offenders.join(", ")}`).toEqual([]);
+  });
+
+  /**
    * A guard against the pattern coming back somewhere else. `.message` on a
    * caught Server Action error is empty in production, and `{x && …}` renders
    * nothing for an empty string — so this spelling is always a silent failure.

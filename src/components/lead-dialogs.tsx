@@ -1,5 +1,5 @@
 "use client";
-import { serverActionError } from "@/lib/client/server-action";
+import { attemptVoid, serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
 import { overrideScore } from "@/modules/leads/actions";
@@ -114,6 +114,11 @@ export function OverrideDialog({
   const [score, setScore] = useState(3);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  /**
+   * This dialog had nowhere to report a failure, and the override is an AUDITED
+   * action against the score gate — the operator has to know whether it landed.
+   */
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <Modal>
@@ -147,6 +152,15 @@ export function OverrideDialog({
         placeholder="Reason (required)"
         className="mb-3 w-full rounded-[8px] border border-line bg-[rgba(0,5,29,0.5)] px-2.5 py-2 text-[13px] text-ink outline-none placeholder:text-muted focus:border-accent"
       />
+      {error && (
+        <p
+          role="alert"
+          data-testid="override-error"
+          className="mb-3 rounded-[8px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.08)] px-3 py-2 text-[12.5px] text-[#FFB3C2]"
+        >
+          {error}
+        </p>
+      )}
       <div className="flex justify-end gap-2">
         <button
           onClick={onClose}
@@ -158,8 +172,13 @@ export function OverrideDialog({
           disabled={busy || !reason.trim()}
           onClick={async () => {
             setBusy(true);
-            await overrideScore(leadId, score, reason.trim());
+            setError(null);
+            const failed = await attemptVoid(overrideScore(leadId, score, reason.trim()));
             setBusy(false);
+            if (failed) {
+              setError(failed);
+              return;
+            }
             onDone();
           }}
           className="rounded-[10px] border-[1.5px] border-transparent bg-canvas px-4 py-2 text-[13px] font-semibold text-ink shadow-glow [background-clip:padding-box,border-box] [background-image:linear-gradient(#00051D,#00051D),linear-gradient(135deg,#310B59,#7427C6)] [background-origin:border-box] disabled:opacity-60"

@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -109,16 +110,30 @@ export function Meetings({
   async function genBrief() {
     if (!detail) return;
     setBusy(true);
-    await generateMeetingBrief(detail.id);
+    setError(null);
+    // A brief costs a Sonnet call. Failing without a word is the one outcome
+    // that gives the operator no way to know whether it was spent.
+    const failed = await attemptVoid(generateMeetingBrief(detail.id));
     setBusy(false);
+    if (failed) {
+      setError(failed);
+      return;
+    }
     await reload();
   }
 
   async function saveBrief() {
     if (!detail) return;
     setBusy(true);
-    await updateBrief(detail.id, briefText);
+    setError(null);
+    const failed = await attemptVoid(updateBrief(detail.id, briefText));
     setBusy(false);
+    if (failed) {
+      // Reloading would replace the edited text with the stored one and lose
+      // what the operator typed.
+      setError(failed);
+      return;
+    }
     await reload();
   }
 
@@ -188,7 +203,11 @@ export function Meetings({
                             <button
                               type="button"
                               onClick={async () => {
-                                await setWriteCalendar(c.id);
+                                const failed = await attemptVoid(setWriteCalendar(c.id));
+                                if (failed) {
+                                  setError(failed);
+                                  return;
+                                }
                                 router.refresh();
                               }}
                               className="rounded-[8px] border border-line px-2.5 py-1 text-[11.5px] hover:bg-panel"
@@ -201,7 +220,13 @@ export function Meetings({
                             data-testid="google-disconnect"
                             onClick={async () => {
                               if (!confirm(`Disconnect ${c.accountEmail ?? "this account"}?`)) return;
-                              await disconnectGoogleCalendar(c.id);
+                              // Believing a calendar is disconnected when it is
+                              // not is the worst possible outcome here.
+                              const failed = await attemptVoid(disconnectGoogleCalendar(c.id));
+                              if (failed) {
+                                setError(failed);
+                                return;
+                              }
                               router.refresh();
                             }}
                             className="rounded-[8px] border border-line px-2.5 py-1 text-[11.5px] text-[#FF8FA5] hover:border-[rgba(255,92,122,0.5)]"

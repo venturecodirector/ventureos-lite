@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 import { serverActionError } from "@/lib/client/server-action";
 
 import { useState } from "react";
@@ -133,7 +134,14 @@ function ChainCard({
   }
   async function exportPdf(id: string) {
     setBusy(id);
-    await exportQuotePdf(id);
+    // Without this, a failed render span thirty seconds of polling for a file
+    // that was never going to appear, then stopped, saying nothing.
+    const failed = await attemptVoid(exportQuotePdf(id));
+    if (failed) {
+      setBusy(null);
+      setError(failed);
+      return;
+    }
     const started = Date.now();
     while (Date.now() - started < 30_000) {
       await new Promise((r) => setTimeout(r, 1500));

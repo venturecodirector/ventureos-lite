@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
@@ -144,8 +145,13 @@ export function OutreachStudio({
     if (!current) return;
     setMsg(null);
     startTransition(async () => {
-      // Save first so Claude reviews what is on screen, not the stored copy.
-      await saveOutreachDraft({ messageId: current.id, body });
+      // Save first so Claude reviews what is on screen, not the stored copy —
+      // and if that save fails, do NOT spend a Claude call reviewing the old text.
+      const saveFailed = await attemptVoid(saveOutreachDraft({ messageId: current.id, body }));
+      if (saveFailed) {
+        setMsg({ kind: "err", text: saveFailed });
+        return;
+      }
       const res = await critiqueOutreach({ messageId: current.id });
       if (!res.ok) setMsg({ kind: "err", text: res.error });
       if (lead) reload(lead.id);

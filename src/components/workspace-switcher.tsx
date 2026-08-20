@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -19,6 +20,7 @@ export function WorkspaceSwitcher({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const active = workspaces.find((w) => w.active) ?? workspaces[0];
 
   async function pick(id: string) {
@@ -27,14 +29,33 @@ export function WorkspaceSwitcher({
       return;
     }
     setBusy(true);
-    await switchWorkspace(id);
+    /**
+     * A switch that fails silently is the worst one in the app: the menu closes,
+     * the page refreshes, and you are still in the workspace you were in — while
+     * believing you are in another. Everything you then read or write is in the
+     * wrong place, as far as you know.
+     */
+    const failed = await attemptVoid(switchWorkspace(id));
     setBusy(false);
+    if (failed) {
+      setError(failed);
+      return;
+    }
     setOpen(false);
     router.refresh();
   }
 
   return (
     <div className="relative">
+      {error && (
+        <p
+          role="alert"
+          data-testid="workspace-switch-error"
+          className="mb-1.5 rounded-[8px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.1)] px-2.5 py-1.5 text-[11.5px] text-[#FFB3C2]"
+        >
+          {error}
+        </p>
+      )}
       <button
         onClick={() => setOpen((o) => !o)}
         disabled={busy}

@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 
 import { serverActionError } from "@/lib/client/server-action";
 import { useEffect, useRef, useState } from "react";
@@ -133,7 +134,14 @@ export function AuditRunner({
   async function exportPdf() {
     if (!view) return;
     setPdf("generating");
-    await exportAuditPdf(view.id);
+    // A PDF request that threw used to leave the button saying "generating…"
+    // forever, with nothing on screen to say why.
+    const failed = await attemptVoid(exportAuditPdf(view.id));
+    if (failed) {
+      setPdf("idle");
+      setError(failed);
+      return;
+    }
     const started = Date.now();
     while (Date.now() - started < 30_000) {
       await new Promise((r) => setTimeout(r, 1500));

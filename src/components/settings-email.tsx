@@ -1,4 +1,5 @@
 "use client";
+import { attemptVoid } from "@/lib/client/server-action";
 
 import { useEffect, useState } from "react";
 import {
@@ -34,6 +35,8 @@ const HEALTH: Record<string, { label: string; tone: string; help?: string }> = {
 export function SettingsEmail() {
   const [accounts, setAccounts] = useState<MailAccountView[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /** This panel had nowhere to report a failure either. */
+  const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
     setAccounts(await listMailAccounts());
@@ -56,6 +59,15 @@ export function SettingsEmail() {
       <h2 className="mb-1 font-display text-[15px] font-bold lowercase tracking-display">
         email sync
       </h2>
+      {error && (
+        <p
+          role="alert"
+          data-testid="email-sync-error"
+          className="mb-3 rounded-[8px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.08)] px-3 py-2 text-[12.5px] text-[#FFB3C2]"
+        >
+          {error}
+        </p>
+      )}
       <p className="mb-3 max-w-prose text-[12px] leading-relaxed text-muted">
         We sync only messages involving people already in your pipeline — the search
         we send to Gmail is built from your leads&apos; addresses and their company
@@ -125,7 +137,15 @@ export function SettingsEmail() {
                   <button
                     onClick={async () => {
                       setBusy(a.id);
-                      await setMailAccountEnabled(a.id, !a.enabled);
+                      setError(null);
+                      const failed = await attemptVoid(
+                        setMailAccountEnabled(a.id, !a.enabled),
+                      );
+                      if (failed) {
+                        setError(failed);
+                        setBusy(null);
+                        return;
+                      }
                       await refresh();
                       setBusy(null);
                     }}
@@ -152,7 +172,15 @@ export function SettingsEmail() {
                         return;
                       }
                       setBusy(a.id);
-                      await disconnectMailAccount(a.id);
+                      setError(null);
+                      // Believing a mailbox is disconnected when it is still
+                      // syncing is the failure that matters here.
+                      const failed = await attemptVoid(disconnectMailAccount(a.id));
+                      if (failed) {
+                        setError(failed);
+                        setBusy(null);
+                        return;
+                      }
                       await refresh();
                       setBusy(null);
                     }}
