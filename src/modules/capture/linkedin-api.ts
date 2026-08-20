@@ -446,14 +446,8 @@ export interface FlightRule {
   discriminatorPath: string;
   /** The value that path must hold for the node to be the one we want. */
   discriminator: string;
-  /**
-   * How the value is carried inside the node.
-   *
-   *   mailto  the address inside a `mailto:` url, anywhere below
-   *   url     the first http(s) url below
-   *   text    the first text child that is not layout scaffolding
-   */
-  extract: "mailto" | "url" | "text";
+  /** Which shape of value to look for below the node. */
+  extract: keyof typeof EXTRACTORS;
   confidence: "high" | "medium";
   /** The recorded snapshot that justifies this rule. Never blank. */
   evidence: string;
@@ -483,14 +477,14 @@ export const FLIGHT_MAPPING: Record<string, FlightRule[]> = {
     {
       discriminatorPath: "viewTrackingSpecs.viewName",
       discriminator: "contact-phone",
-      extract: "text",
+      extract: "phone",
       confidence: "high",
       evidence: "contact-overlay.json",
     },
     {
       discriminatorPath: "viewTrackingSpecs.legacyControlName",
       discriminator: "contact_call",
-      extract: "text",
+      extract: "phone",
       confidence: "medium",
       evidence: "contact-overlay.json",
     },
@@ -563,6 +557,17 @@ const ROW_REF = /^\$L?([0-9a-f]{1,4})$/;
  * hang a capture: a depth limit, a visited set for the rows (references can form
  * cycles), and a cap on how many strings are yielded at all.
  */
+/**
+ * Subtrees that are metadata by definition, and are never a field's value.
+ *
+ * `viewTrackingSpecs` holds the discriminator we matched ON, plus a base64
+ * `contentTrackingId`. Walking into it is how the first version of this
+ * extractor came back with `gpRhtA9jSFObSQRBJwS5vQ==` as somebody's phone
+ * number — and the test passed, because it only checked that SOMETHING was found
+ * at that position.
+ */
+const METADATA_KEYS = new Set(["viewTrackingSpecs", "visibilityTriggers", "componentKey", "componentkey"]);
+
 function* stringsUnder(
   value: unknown,
   rows?: Map<string, unknown>,
@@ -591,31 +596,38 @@ function* stringsUnder(
     return;
   }
   if (typeof value === "object") {
-    for (const v of Object.values(value as Record<string, unknown>)) {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (METADATA_KEYS.has(k)) continue;
       yield* stringsUnder(v, rows, depth + 1, seen, budget);
     }
   }
 }
 
 /**
- * Layout scaffolding, which is most of what a React tree's strings are.
+ * ── EVERY RULE SAYS WHAT SHAPE IT IS LOOKING FOR ────────────────────────────
  *
- * Recognised by shape, from the census of a real payload: element names, class
- * name bundles, enum-ish props, references, and the framework's `$undefined`.
+ * The first version of this extractor took "the first string that does not look
+ * like scaffolding". Run against the raw payload it would have returned
+ * `gpRhtA9jSFObSQRBJwS5vQ==` — a tracking id — as the phone number, and the
+ * fixture test passed anyway because it only asserted that something was found.
+ * A plausible wrong answer with a green test is the exact failure mode this
+ * module exists to prevent, so the heuristic is gone.
+ *
+ * Each extractor now recognises its own kind. A predicate also accepts the
+ * SCRUBBER'S PLACEHOLDER for that kind — deliberately, and this is the only
+ * concession to testing in here: a committed fixture holds `<phone>` where a
+ * number was, and without that the locator could not be tested against the
+ * recorded evidence at all. Placeholders never occur in live payloads.
  */
-function isScaffolding(text: string): boolean {
-  if (text.length === 0) return true;
-  if (text.startsWith("$")) return true;
-  if (/^[a-z]+(-[a-z0-9]+)*$/.test(text) && text.length <= 24) return true;
-  if (/^_?[0-9a-f]{6,}( _?[0-9a-f]{4,})*$/.test(text)) return true; // class bundles
-  if (/^(div|span|section|a|p|ul|li|img|button|h[1-6])$/.test(text)) return true;
-  if (/^[A-Z][A-Z_]+$/.test(text)) return true; // SHORT_PRESS, NONE
-  // A componentKey. The first run of the mapping returned one of these as the
-  // phone number, which is exactly the kind of plausible-looking wrong answer
-  // this module is built to avoid.
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(text)) return true;
-  return false;
-}
+const EXTRACTORS = {
+  /** An address inside a `mailto:` url. */
+  mailto: (s: string): string | null => (/^mailto:/i.test(s) ? s.slice("mailto:".length) : null),
+  /** An http(s) url. The scrubbed form `https://<host>/…` matches the same test. */
+  url: (s: string): string | null => (/^https?:\/\//i.test(s) ? s : null),
+  /** A phone number, or the placeholder that stands in for one. */
+  phone: (s: string): string | null =>
+    s === "<phone>" || /^\+?\d[\d ()/-]{7,}$/.test(s) ? s : null,
+} as const;
 
 export interface FlightField {
   value: string;
@@ -652,15 +664,14 @@ export function normalizeFlight(bodies: FlightBody[]): Record<string, FlightFiel
           for (const [path, node] of walkNodes(row.value, `/rows/${row.id}`)) {
             if (at(node, rule.discriminatorPath) !== rule.discriminator) continue;
 
-            const strings = [...stringsUnder(node, rowsById)];
+            const recognise = EXTRACTORS[rule.extract];
             let value: string | null = null;
-            if (rule.extract === "mailto") {
-              const hit = strings.find((s) => /^mailto:/i.test(s));
-              value = hit ? hit.slice("mailto:".length) : null;
-            } else if (rule.extract === "url") {
-              value = strings.find((s) => /^https?:\/\//i.test(s)) ?? null;
-            } else {
-              value = strings.find((s) => !isScaffolding(s)) ?? null;
+            for (const candidate of stringsUnder(node, rowsById)) {
+              const hit = recognise(candidate);
+              if (hit) {
+                value = hit;
+                break;
+              }
             }
             if (!value) continue;
 

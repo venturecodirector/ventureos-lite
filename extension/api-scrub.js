@@ -368,8 +368,37 @@
   const MEMBER_ID = /ACoAA[A-Za-z0-9_-]{34}/g;
   const SLUG_IN_PATH = /\/in\/([A-Za-z0-9][A-Za-z0-9%_-]{2,})/g;
 
-  /** Shapes that are structure, established from a real payload's census. */
+  /**
+   * Shapes that are structure, established from a real payload's census.
+   *
+   * ── WHAT THE SECOND SNAPSHOT ADDED, AND WHY IT MATTERED ───────────────────
+   *
+   * The first version of this list was derived from one 72 KB component response
+   * and it was too narrow. Measured against a full 20-record profile capture, it
+   * was redacting the payload's own vocabulary:
+   *
+   *     $type                 7543 of 7563 destroyed
+   *     legacyControlName      279 of  285 destroyed
+   *     presentationStyle      152 of  152 destroyed
+   *     pageKey                151 of  494 destroyed
+   *
+   * `$type` is the primary semantic discriminator in an SDUI payload
+   * (`proto.sdui.components.core.Text`), and `legacyControlName` is one of the
+   * two names the contact-field mapping keys off. A fixture that loses them is
+   * clean and useless — the exact failure the scrubber's own doc warns about, and
+   * it happened anyway because the allow-list only knew `com.linkedin.…`.
+   *
+   * Four shapes added, none of which a person's name can take. Each is still
+   * checked against the slug tokens first, so a name cannot ride in on one.
+   */
   const STRUCTURAL = [
+    // Any dotted namespace path: proto.sdui.actions.core.Navigate,
+    // com.linkedin.sdui.requests.profile.…
+    /^[a-z][\w$]*(\.[A-Za-z][\w$]*){2,}$/,
+    // SCREAMING_SNAKE enum values: PRESENTATION_STYLE_DEFAULT, SHORT_PRESS
+    /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/,
+    // snake_case identifiers: contact_email, d_flagship3_profile_view_base
+    /^[a-z][a-z0-9]*(_[a-z0-9]+)+$/,
     /^\$/, // React reference or element marker
     /^[0-9a-f]{32}$/, // webpack chunk hash
     /^com\.linkedin\.[\w.$]+$/, // sdui component and request ids
@@ -455,7 +484,19 @@
     if (/^[\w.-]+\/[\w./-]+\?/.test(text) || /displayphoto|profile-framedphoto|company-logo/.test(text)) {
       return `<image:${text.split("/").length}>`;
     }
-    if (/^https?:\/\//.test(text)) return "<url>";
+    /**
+     * A URL keeps its SCHEME and its path depth, and loses its host.
+     *
+     * Same reasoning as `mailto:` above: `<url>` told a reader nothing, and a
+     * mapping rule that looks for an http(s) value cannot be tested against a
+     * fixture where every url was flattened to a placeholder. The host is the
+     * identity here — it is the person's own site — so that is the part that goes.
+     */
+    const asUrl = /^(https?):\/\/[^/]*(\/.*)?$/i.exec(text);
+    if (asUrl) {
+      const depth = (asUrl[2] ?? "").split("/").filter(Boolean).length;
+      return `${asUrl[1].toLowerCase()}://<host>${depth > 0 ? `/<path:${depth}>` : ""}`;
+    }
     if (text.startsWith("/")) return `<path:${text.split("/").filter(Boolean).length}>`;
     return `<text:${text.length}>`;
   }
@@ -494,12 +535,32 @@
 
     const clean = sanitiseKept(value, replacer, ident);
     if (URN_SHAPED.test(clean)) return replacer.urn(clean);
-    for (const shape of STRUCTURAL) {
-      if (shape.test(clean)) return clean;
+    /**
+     * A shape is only a licence to keep if the string carries no name in it.
+     *
+     * `sanitiseKept` above replaces a slug and a whole-string name token, but a
+     * token EMBEDDED in an identifier survives that — `tom_vechy_profile` is a
+     * perfectly ordinary snake_case identifier. Since snake_case, kebab and
+     * dotted paths were just admitted to the allow-list, this closes the door
+     * they opened.
+     */
+    const carriesName = (text) => {
+      const lower = text.toLowerCase();
+      for (const token of ident.tokens.keys()) {
+        if (token.length >= 3 && lower.includes(token)) return true;
+      }
+      return false;
+    };
+    if (!carriesName(clean)) {
+      for (const shape of STRUCTURAL) {
+        if (shape.test(clean)) return clean;
+      }
     }
     // A kebab token is structure only while it is short: class names are, and a
     // three-word name joined by dashes is not.
-    if (/^[a-z0-9]+(-[a-z0-9]+)+$/.test(clean) && clean.length <= 40) return clean;
+    if (/^[a-z0-9]+(-[a-z0-9]+)+$/.test(clean) && clean.length <= 40 && !carriesName(clean)) {
+      return clean;
+    }
     /**
      * A short token CONTAINING A DIGIT is a layout value — `0.5x`, `1:1`, `2x`,
      * `1a`. The digit is what makes this safe: a name does not have one, so this

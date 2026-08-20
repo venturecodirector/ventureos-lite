@@ -479,3 +479,65 @@ describe("the shapes that leaked from a real payload", () => {
     expect(out).toContain("<email>");
   });
 });
+
+/**
+ * ── THE VOCABULARY A SNAPSHOT MUST KEEP ─────────────────────────────────────
+ *
+ * Measured against a full 20-record capture, the first allow-list was redacting
+ * the payload's own vocabulary: 7543 of 7563 `$type` values and 279 of 285
+ * `legacyControlName` values. `$type` is the primary semantic discriminator in an
+ * SDUI payload and `legacyControlName` is one of the two names the contact
+ * mapping keys off — so the fixture came out clean and useless, which is the
+ * failure this file's own documentation warns about.
+ */
+describe("the payload's vocabulary survives", () => {
+  const scrub = (body: string, slug = "tom-vechy-vecsernyes") =>
+    JSON.stringify(
+      S.scrubSnapshot({
+        slug,
+        records: [
+          {
+            url: "https://www.linkedin.com/flagship-web/rsc-action/actions/component",
+            method: "POST",
+            status: 200,
+            contentType: "application/octet-stream",
+            bodySize: body.length,
+            body,
+          },
+        ],
+      }),
+    );
+
+  it("keeps a dotted namespace, which is what $type is", () => {
+    const out = scrub(
+      '0:{"$type":"proto.sdui.actions.core.Navigate","inner":{"$type":"com.linkedin.sdui.requests.profile.fetchProfile"}}',
+    );
+    expect(out).toContain("proto.sdui.actions.core.Navigate");
+    expect(out).toContain("com.linkedin.sdui.requests.profile.fetchProfile");
+  });
+
+  it("keeps SCREAMING_SNAKE enum values", () => {
+    const out = scrub('0:{"presentationStyle":"PRESENTATION_STYLE_DEFAULT","press":"SHORT_PRESS"}');
+    expect(out).toContain("PRESENTATION_STYLE_DEFAULT");
+    expect(out).toContain("SHORT_PRESS");
+  });
+
+  it("keeps snake_case identifiers, including the contact discriminators", () => {
+    const out = scrub('0:{"legacyControlName":"contact_email","pageKey":"d_flagship3_profile_view_base"}');
+    expect(out).toContain("contact_email");
+    expect(out).toContain("d_flagship3_profile_view_base");
+  });
+
+  /**
+   * And the door those three opened, closed. A slug token EMBEDDED in an
+   * identifier is not caught by the whole-string token replacement, and
+   * snake_case, kebab and dotted paths are exactly the shapes a name can hide in.
+   */
+  it("still redacts an identifier that carries a name inside it", () => {
+    const out = scrub('0:{"a":"tom_vechy_profile_card","b":"profile-load-vecsernyes","c":"x.y.vechy"}');
+    expect(out).not.toMatch(/vechy/i);
+    expect(out).not.toMatch(/vecsernyes/i);
+    // A genuine identifier of the same shape is untouched.
+    expect(scrub('0:{"a":"profile_card_experience"}')).toContain("profile_card_experience");
+  });
+});

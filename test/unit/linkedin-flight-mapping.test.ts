@@ -57,11 +57,37 @@ describe("the contact overlay, read by the mapping", () => {
     expect(fields.email!.source).toBe("api");
   });
 
-  it("finds the phone, which is a text child rather than a tel: url", () => {
+  it("finds the phone by its SHAPE, not by position", () => {
     expect(fields.phone, "the phone field was not located").toBeDefined();
-    // A `<text:N>` placeholder: the value was redacted, the position was not.
-    expect(fields.phone!.value).toMatch(/^<text:\d+>$/);
+    // `<phone>` is what the scrubber leaves where a number was — so the
+    // extractor recognised a phone-shaped value, rather than taking whatever
+    // string came first.
+    expect(fields.phone!.value).toBe("<phone>");
     expect(fields.phone!.via).toBe("viewTrackingSpecs.viewName=contact-phone");
+  });
+
+  /**
+   * ── THE BUG THIS PINS ─────────────────────────────────────────────────────
+   *
+   * The first version of the extractor took "the first string that is not
+   * scaffolding". Against the RAW payload that is
+   * `gpRhtA9jSFObSQRBJwS5vQ==` — the node's own `contentTrackingId` — and the
+   * fixture test passed regardless, because it only checked that something had
+   * been found at that position. A plausible wrong answer under a green test is
+   * the precise failure this module exists to prevent, and it got within one
+   * commit of shipping.
+   *
+   * Two things stop it now: the walk skips `viewTrackingSpecs` entirely, and
+   * every rule names the shape it wants.
+   */
+  it("never returns tracking metadata as a value", () => {
+    for (const field of Object.values(fields)) {
+      expect(field.value, "a base64 tracking id came back as a field").not.toMatch(
+        /^[A-Za-z0-9+/]{16,}={0,2}$/,
+      );
+      expect(field.value).not.toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-/); // a componentKey
+      expect(field.value).not.toMatch(/^contact[_-]/); // the discriminator itself
+    }
   });
 
   it("reports where it found each one, for the diagnostics", () => {

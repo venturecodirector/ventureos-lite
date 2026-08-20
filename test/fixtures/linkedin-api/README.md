@@ -15,7 +15,61 @@ done from a test runner, and it must not be done by asking LinkedIn for anything
 
 So this is a step you have to drive. It takes about ten minutes.
 
-## STATUS: two snapshots recorded, the first mapping derived from them
+## STATUS: email and phone work on live data. One more recording is needed.
+
+`rsc-profile.json` (2 records, trimmed from 20 — see `scripts/trim-snapshot.ts`)
+and `contact-overlay.json` (2 records). What is settled, and what is not:
+
+**WORKING, verified against the raw unscrubbed capture:** `email` and `phone`.
+The extractor returns the actual address and the actual number. Both are found by
+`viewTrackingSpecs.viewName` and then by the SHAPE of the value.
+
+**A bug that nearly shipped, and what it changed.** The first extractor took "the
+first string that is not scaffolding". Against the raw payload that is
+`gpRhtA9jSFObSQRBJwS5vQ==` — the node's own `contentTrackingId` — offered as
+somebody's phone number. The fixture test passed, because it asserted only that
+something had been found at that position. Two things stop it now: the walk skips
+`viewTrackingSpecs` entirely, and every rule names the shape it is looking for.
+Nothing here should ever again "find" a value by being near one.
+
+**BLOCKED, and this is what one more save fixes.** Measured against the
+20-record capture, the scrubber was destroying the payload's own vocabulary:
+
+    $type                 7543 of 7563     the primary SDUI discriminator
+    legacyControlName      279 of  285     one of the two contact names
+    presentationStyle      152 of  152
+    pageKey                151 of  494
+
+The allow-list only knew `com.linkedin.…`, so `proto.sdui.components.core.Text`
+and `contact_email` were being redacted as if they were free text. Fixed — dotted
+namespaces, SCREAMING_SNAKE and snake_case are structure now, each still checked
+against the slug tokens so a name cannot ride in on one — but the two committed
+snapshots were recorded BEFORE the fix, so their `$type`s are gone.
+
+That is why name, headline, location, company and job title are still unmapped.
+Their nodes are in the capture (`profile-top-card`, `profile-card-about`,
+`profile-card-experience`, and ten `experience-*` views), but with `$type`
+redacted there is no way to tell which of forty `<text:N>` values under the top
+card is the name. Guessing is what this directory exists to prevent.
+
+`websiteUrl` is unmapped for a second reason: the `<url>` placeholder threw away
+the scheme, so a url-shaped rule cannot be verified against the fixture. The
+scrubber now writes `https://<host>/<path:2>`, which can be.
+
+### The one save that unblocks all of it
+
+Extension **5.4.0 or later** — check the version in the popup before recording.
+
+1. Reload the LinkedIn tab, then click through to a profile **from the feed**.
+2. Open **Contact info** on that profile.
+3. Popup → **Save API snapshot**, label `profile-full`.
+4. Hand over the file. Expect ~11 MB; `scripts/trim-snapshot.ts` cuts it to
+   ~350 KB by keeping only the records that carry a field this fixture teaches,
+   and it prints exactly what it dropped.
+
+A profile that HAS a website in its contact panel also closes `websiteUrl`.
+
+## What was recorded before, and what it taught
 
 `rsc-profile.json` (10 records) and `contact-overlay.json` (2 records — only what
 the profile snapshot does not already hold). What they taught, all of it from the
