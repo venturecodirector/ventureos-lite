@@ -1,3 +1,5 @@
+import { boundingRectangle, haversineKm, type LatLng } from "./geo";
+
 /**
  * Google Places API v1 client (spec §4.3). Text Search returns the `websiteUri`
  * directly via the field mask, so website presence comes back with the search;
@@ -5,6 +7,9 @@
  * cheap — Claude is never used to find businesses.
  */
 export interface PlaceResult {
+  /** Where it is — needed to trim the search rectangle back to a true circle. */
+  lat: number | null;
+  lng: number | null;
   /** Google's own stable id for the place — the only exact dedupe key there is. */
   placeId: string | null;
   name: string;
@@ -27,11 +32,18 @@ export interface PlacesSearchResponse {
   requestCount: number;
 }
 
+export interface PlacesSearchArea {
+  center: LatLng;
+  radiusM: number;
+}
+
 export interface PlacesClient {
   textSearch(q: {
     keyword: string;
     location: string;
     radius?: string;
+    /** When set, results are bounded to this circle — see `area` below. */
+    area?: PlacesSearchArea | null;
     /**
      * Upper bound on results. Text Search returns at most 20 per page, so
      * anything above that is fetched by following `nextPageToken`. Google caps
@@ -58,6 +70,7 @@ export interface ApiPlace {
   formattedAddress?: string;
   addressComponents?: ApiAddressComponent[];
   primaryTypeDisplayName?: { text?: string };
+  location?: { latitude?: number; longitude?: number };
   rating?: number;
   userRatingCount?: number;
   nationalPhoneNumber?: string;
@@ -166,6 +179,7 @@ const FIELD_MASK = [
   "places.formattedAddress",
   "places.addressComponents",
   "places.primaryTypeDisplayName",
+  "places.location",
   "places.rating",
   "places.userRatingCount",
   "places.nationalPhoneNumber",
@@ -184,6 +198,8 @@ const FIELD_MASK = [
 export function mapApiPlace(p: ApiPlace): PlaceResult {
   return {
     placeId: p.id ?? null,
+    lat: typeof p.location?.latitude === "number" ? p.location.latitude : null,
+    lng: typeof p.location?.longitude === "number" ? p.location.longitude : null,
     name: p.displayName?.text ?? "Unknown",
     address: p.formattedAddress ?? null,
     city: readTown(p.addressComponents),
@@ -209,6 +225,7 @@ class GooglePlacesClient implements PlacesClient {
     keyword: string;
     location: string;
     radius?: string;
+    area?: PlacesSearchArea | null;
     maxResults?: number;
   }): Promise<PlacesSearchResponse> {
     // Resolved per workspace by the caller (Settings → Integrations), falling
@@ -235,6 +252,16 @@ class GooglePlacesClient implements PlacesClient {
         pageSize: Math.min(PLACES_PAGE_SIZE, want - results.length),
         ...PLACES_REQUEST_LOCALE,
       };
+      /**
+       * The radius, at last.
+       *
+       * `locationRestriction` takes a RECTANGLE here, not a circle, and it is a
+       * hard bound rather than a preference — which is what a prospector wants:
+       * a `locationBias` circle re-ranks everything towards the centre and
+       * under-covers the outer ring, measured at 1.5 km of spread inside a 3 km
+       * bias against 2.9 km with the restriction.
+       */
+      if (q.area) body.locationRestriction = { rectangle: boundingRectangle(q.area.center, q.area.radiusM) };
       if (pageToken) body.pageToken = pageToken;
 
       const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
@@ -255,7 +282,18 @@ class GooglePlacesClient implements PlacesClient {
       requestCount += 1;
 
       const data = (await res.json()) as { places?: ApiPlace[]; nextPageToken?: string };
-      for (const p of data.places ?? []) results.push(mapApiPlace(p));
+      for (const p of data.places ?? []) {
+        const row = mapApiPlace(p);
+        // Trim the rectangle's corners back to the circle the operator asked
+        // for. A place with no coordinates is kept: Google put it in the area,
+        // and dropping it for missing a field we only use to double-check would
+        // lose a real business.
+        if (q.area && row.lat != null && row.lng != null) {
+          const km = haversineKm(q.area.center, { lat: row.lat, lng: row.lng });
+          if (km > q.area.radiusM / 1000) continue;
+        }
+        results.push(row);
+      }
       pageToken = data.nextPageToken;
     } while (pageToken && results.length < want);
 

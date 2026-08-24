@@ -245,3 +245,119 @@ describe("place id dedupe", () => {
     ).toBe("A");
   });
 });
+
+// ---------------------------------------------------------------------------
+// The radius, which used to reach nothing but the cache key.
+// ---------------------------------------------------------------------------
+
+import {
+  parseRadiusMeters,
+  haversineKm,
+  boundingRectangle,
+  MAX_RADIUS_M,
+  MIN_RADIUS_M,
+} from "../../src/lib/geo";
+
+describe("parseRadiusMeters", () => {
+  it("reads what a person types into a free-text box", () => {
+    expect(parseRadiusMeters("15 km")).toBe(15_000);
+    expect(parseRadiusMeters("15km")).toBe(15_000);
+    expect(parseRadiusMeters("15")).toBe(15_000); // bare number = km, per the placeholder
+    expect(parseRadiusMeters("1.5 km")).toBe(1_500);
+    expect(parseRadiusMeters("1,5 km")).toBe(1_500); // Hungarian decimal comma
+    expect(parseRadiusMeters("2000 m")).toBe(2_000);
+  });
+
+  it("treats an empty or wordless box as no radius, not as zero", () => {
+    for (const raw of ["", "   ", "mindegy", null, undefined]) {
+      expect(parseRadiusMeters(raw)).toBeNull();
+    }
+  });
+
+  it("clamps to what Google will accept", () => {
+    expect(parseRadiusMeters("500 km")).toBe(MAX_RADIUS_M);
+    expect(parseRadiusMeters("1 m")).toBe(MIN_RADIUS_M);
+    expect(parseRadiusMeters("0 km")).toBeNull();
+  });
+});
+
+describe("boundingRectangle + haversineKm", () => {
+  const debrecen = { lat: 47.5288879, lng: 21.6254485 };
+
+  it("contains the circle it was built from", () => {
+    const r = boundingRectangle(debrecen, 3_000);
+    // Due north and due east at exactly 3 km must still be inside the box.
+    expect(r.high.latitude).toBeGreaterThan(debrecen.lat);
+    expect(r.low.latitude).toBeLessThan(debrecen.lat);
+    const northEdge = haversineKm(debrecen, { lat: r.high.latitude, lng: debrecen.lng });
+    expect(northEdge).toBeGreaterThanOrEqual(2.99);
+    expect(northEdge).toBeLessThan(3.1);
+  });
+
+  /**
+   * Why the results are then filtered by exact distance: the rectangle's corner
+   * is r·√2 from the centre, so "15 km" would otherwise quietly mean "up to
+   * 21 km diagonally".
+   */
+  it("has corners well outside the circle — hence the distance check", () => {
+    const r = boundingRectangle(debrecen, 3_000);
+    const corner = haversineKm(debrecen, { lat: r.high.latitude, lng: r.high.longitude });
+    expect(corner).toBeGreaterThan(4);
+  });
+
+  it("does not span the globe near the poles", () => {
+    const r = boundingRectangle({ lat: 89.9, lng: 0 }, 50_000);
+    expect(r.high.longitude).toBeLessThanOrEqual(180);
+    expect(r.low.longitude).toBeGreaterThanOrEqual(-180);
+    expect(r.high.latitude).toBeLessThanOrEqual(90);
+  });
+
+  it("measures a distance we can check by hand", () => {
+    // Budapest → Debrecen is about 190 km.
+    const km = haversineKm({ lat: 47.4979, lng: 19.0402 }, debrecen);
+    expect(km).toBeGreaterThan(180);
+    expect(km).toBeLessThan(200);
+    expect(haversineKm(debrecen, debrecen)).toBeCloseTo(0, 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Classifying every row, not the first screenful.
+// ---------------------------------------------------------------------------
+
+import {
+  CLASSIFY_BATCH,
+  batchStarts,
+  resolveBatchIndices,
+} from "../../src/modules/prospector/classify";
+
+describe("classify batching", () => {
+  it("covers all 60 rows Google can return, in three calls", () => {
+    expect(batchStarts(60)).toEqual([0, 25, 50]);
+    expect(batchStarts(25)).toEqual([0]);
+    expect(batchStarts(26)).toEqual([0, 25]);
+    expect(batchStarts(0)).toEqual([]);
+    // The button says "1 Haiku call / 25 rows" — now true rather than aspirational.
+    expect(CLASSIFY_BATCH).toBe(25);
+  });
+
+  /**
+   * Every batch asks the model about rows 0..24, so the offset is the whole
+   * job: applying the third batch's answers without it would overwrite the
+   * first batch's verdicts — wrong data, where before there was merely missing
+   * data.
+   */
+  it("puts a later batch's answers on the later rows", () => {
+    const items = [{ index: 0 }, { index: 24 }];
+    expect(resolveBatchIndices(items, 50, 10).map((r) => r.row)).toEqual([50]);
+    expect(resolveBatchIndices(items, 25, 25).map((r) => r.row)).toEqual([25, 49]);
+    expect(resolveBatchIndices(items, 0, 25).map((r) => r.row)).toEqual([0, 24]);
+  });
+
+  it("drops an index the model invented instead of writing it somewhere", () => {
+    const junk = [{ index: 40 }, { index: -1 }, { index: 1.5 }, { index: 3 }];
+    expect(resolveBatchIndices(junk, 0, 25).map((r) => r.row)).toEqual([3]);
+    // A short final batch is bounded by its OWN length, not by the batch size.
+    expect(resolveBatchIndices([{ index: 7 }], 50, 5)).toEqual([]);
+  });
+});

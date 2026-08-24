@@ -82,12 +82,16 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<Record<number, "added" | "duplicate">>({});
   const [classifying, setClassifying] = useState(false);
+  // What the classifier actually managed — "25 of 60" is information the
+  // operator needs and never used to get.
+  const [classifyNote, setClassifyNote] = useState<string | null>(null);
 
   const estimate = estimateProspectCostUsd({ expectedResults: depth });
 
   async function run(kw = keyword, loc = location, rad = radius, max = depth) {
     setError(null);
     setAdded({});
+    setClassifyNote(null);
     try {
       const res = await runProspectSearch({
         keyword: kw,
@@ -123,11 +127,15 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
   async function classify() {
     if (!result) return;
     setClassifying(true);
+    setClassifyNote(null);
     try {
-      await classifyProspects(result.searchId);
+      const outcome = await classifyProspects(result.searchId);
       // Re-run from cache to pull the merged classifications back.
       const res = await runProspectSearch({ keyword, location, radius, maxResults: depth });
       setResult(res);
+      setClassifyNote(
+        outcome.note ?? `Classified ${outcome.classified} of ${outcome.total}.`,
+      );
     } catch (e) {
       setError(serverActionError(e));
     } finally {
@@ -143,6 +151,12 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
       {error && (
         <div className="mb-3 rounded-[10px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.1)] px-3.5 py-2.5 text-[12.5px] text-[#FFB3C2]">
           {error}
+        </div>
+      )}
+
+      {result?.notice && (
+        <div className="mb-3 rounded-[10px] border border-[rgba(245,184,65,0.35)] bg-[rgba(245,184,65,0.1)] px-3.5 py-2.5 text-[12.5px] text-warn">
+          {result.notice}
         </div>
       )}
 
@@ -317,7 +331,9 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
               <span className="font-normal text-muted">· 1 Haiku call / 25 rows</span>
             </button>
             <span className="text-[12px] text-muted">
-              {classifying ? "Classifying…" : "Optional — off by default to save credits"}
+              {classifying
+                ? "Classifying…"
+                : (classifyNote ?? "Optional — off by default to save credits")}
             </span>
           </div>
         </>

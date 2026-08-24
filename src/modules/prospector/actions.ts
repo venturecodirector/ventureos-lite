@@ -6,8 +6,11 @@ import { revalidatePath } from "next/cache";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { getPlacesClient, PLACES_PAGE_SIZE, PLACES_MAX_RESULTS } from "@/lib/places";
+import { geocodeLocation } from "@/lib/geocode";
+import { parseRadiusMeters } from "@/lib/geo";
 import { resolveIntegration } from "@/modules/integrations/resolve";
 import { callClaude } from "@/lib/ai/call-claude";
+import { BudgetExceededError } from "@/lib/ai/budget";
 import {
   PROSPECT_CLASSIFY_SYSTEM,
   prospectClassificationSchema,
@@ -16,6 +19,7 @@ import {
 } from "@/lib/ai/prompts/prospect-classify";
 import { classifyWebsite } from "./website";
 import { googleSignals } from "./signals";
+import { CLASSIFY_BATCH, batchStarts, resolveBatchIndices } from "./classify";
 import { enrichCompanySite } from "../leads/enrichment";
 import { TEXT_SEARCH_COST_USD } from "./cost";
 import { isCacheFresh, CACHE_TTL_DAYS } from "./cache";
@@ -31,15 +35,44 @@ const searchSchema = z.object({
   maxResults: z.number().int().min(1).max(PLACES_MAX_RESULTS).optional(),
 });
 
-function summarize(keyword: string, location: string, rows: ProspectRow[]): string {
+function summarize(
+  keyword: string,
+  location: string,
+  rows: ProspectRow[],
+  radiusM?: number | null,
+): string {
   const noWebsite = rows.filter((r) => r.presence !== "has").length;
-  return `${rows.length} ${keyword} found in ${location} · ${noWebsite} have no or weak website`;
+  const within = radiusM ? ` within ${Math.round(radiusM / 100) / 10} km` : "";
+  return `${rows.length} ${keyword} found in ${location}${within} · ${noWebsite} have no or weak website`;
 }
 
 export async function runProspectSearch(raw: unknown): Promise<ProspectSearchResult> {
   const input = searchSchema.parse(raw);
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
+
+  // Workspace key if configured, else the env one.
+  const placesKey = await resolveIntegration(workspaceId, "google.placesApiKey");
+
+  /**
+   * THE RADIUS, WHICH USED TO GO NOWHERE.
+   *
+   * Text Search takes an area, not a place name, so the location has to be
+   * geocoded first — one extra request per distinct town, cached for a day.
+   * When that fails the search still runs, unbounded, and says so: pretending a
+   * radius was applied is exactly how this control came to be decorative.
+   */
+  const radiusM = parseRadiusMeters(input.radius);
+  let notice: string | null = null;
+  let area: { center: { lat: number; lng: number }; radiusM: number } | null = null;
+  if (radiusM) {
+    const center = await geocodeLocation(input.location, placesKey, workspaceId);
+    if (center) {
+      area = { center, radiusM };
+    } else {
+      notice = `Radius ignored — "${input.location}" could not be placed on the map, so the search covers wherever Google reads that name.`;
+    }
+  }
 
   // 30-day cache: don't re-purchase the same area from the Places API.
   const cached = await db.prospectSearch.findFirst({
@@ -74,15 +107,14 @@ export async function runProspectSearch(raw: unknown): Promise<ProspectSearchRes
         fromCache: true,
         searchId: cached.id,
         results,
-        summary: summarize(input.keyword, input.location, results),
+        summary: summarize(input.keyword, input.location, results, area?.radiusM),
         costUsd: 0,
+        notice,
       };
     }
   }
 
-  // Workspace key if configured, else the env one.
-  const placesKey = await resolveIntegration(workspaceId, "google.placesApiKey");
-  const search = await getPlacesClient(placesKey).textSearch(input);
+  const search = await getPlacesClient(placesKey).textSearch({ ...input, area });
   const results: ProspectRow[] = search.results.map((r) => ({
     ...r,
     presence: classifyWebsite(r.websiteUri),
@@ -108,8 +140,9 @@ export async function runProspectSearch(raw: unknown): Promise<ProspectSearchRes
     fromCache: false,
     searchId: rec.id,
     results,
-    summary: summarize(input.keyword, input.location, results),
+    summary: summarize(input.keyword, input.location, results, area?.radiusM),
     costUsd,
+    notice,
   };
 }
 
@@ -246,35 +279,72 @@ export async function addProspectAsLead(
   return { ok: true, leadId: lead.id };
 }
 
+/**
+ * Classify every row, not the first screenful.
+ *
+ * ── WHAT THIS REPLACED ─────────────────────────────────────────────────────
+ *
+ * `rows.slice(0, 25)`, with no notice anywhere. Run a 60-result search and the
+ * button — which says "1 Haiku call / 25 rows", implying three calls — made
+ * ONE, classified 25 rows, and left 35 sitting there unmarked with no
+ * explanation. The operator's reasonable reading was that Claude had judged
+ * those 35 and found nothing to say.
+ *
+ * Now it batches through all of them and REPORTS what it managed, including
+ * when the daily budget stops it partway: the batches already paid for are kept
+ * rather than thrown away with the error.
+ */
 export async function classifyProspects(
   searchId: string,
-): Promise<{ classified: number }> {
+): Promise<{ classified: number; total: number; note: string | null }> {
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
   const search = await db.prospectSearch.findUnique({ where: { id: searchId } });
   if (!search) throw new Error("Search not found");
 
   const rows = (search.results as ProspectRow[] | null) ?? [];
-  const batch = rows.slice(0, 25).map((r, index) => ({
-    index,
-    name: r.name,
-    category: r.category,
-    website: r.presence,
-  }));
+  const byIndex = new Map<number, { fit: "strong" | "possible" | "skip"; priority: number }>();
+  let note: string | null = null;
 
-  const { data } = await callClaude({
-    useCase: "prospect_classify",
-    workspaceId,
-    system: PROSPECT_CLASSIFY_SYSTEM,
-    messages: [{ role: "user", content: buildClassifyMessage(batch) }],
-    schema: prospectClassificationSchema,
-  });
-  const classification = data as ProspectClassification;
+  for (const start of batchStarts(rows.length)) {
+    const slice = rows.slice(start, start + CLASSIFY_BATCH);
+    // Batch-local indices: the model answers about 0..24 every time, exactly as
+    // it did when there was only ever one batch, and the offset is applied here.
+    const batch = slice.map((r, index) => ({
+      index,
+      name: r.name,
+      category: r.category,
+      website: r.presence,
+    }));
 
-  const byIndex = new Map(classification.items.map((it) => [it.index, it]));
+    let classification: ProspectClassification;
+    try {
+      const { data } = await callClaude({
+        useCase: "prospect_classify",
+        workspaceId,
+        system: PROSPECT_CLASSIFY_SYSTEM,
+        messages: [{ role: "user", content: buildClassifyMessage(batch) }],
+        schema: prospectClassificationSchema,
+      });
+      classification = data as ProspectClassification;
+    } catch (e) {
+      if (e instanceof BudgetExceededError) {
+        note = `Stopped at ${byIndex.size} of ${rows.length}: ${e.message}`;
+        break;
+      }
+      throw e;
+    }
+
+    // The offset is applied here, and an index the model invented is dropped
+    // rather than allowed to land on another batch's row.
+    for (const { row, item } of resolveBatchIndices(classification.items, start, slice.length)) {
+      byIndex.set(row, { fit: item.fit, priority: item.priority });
+    }
+  }
+
   const merged: ProspectRow[] = rows.map((r, i) => {
     const c = byIndex.get(i);
-    return c ? { ...r, classification: { fit: c.fit, priority: c.priority } } : r;
+    return c ? { ...r, classification: c } : r;
   });
   await db.prospectSearch.update({
     where: { id: searchId },
@@ -282,5 +352,5 @@ export async function classifyProspects(
   });
 
   revalidatePath("/prospector");
-  return { classified: classification.items.length };
+  return { classified: byIndex.size, total: rows.length, note };
 }

@@ -30,6 +30,12 @@ export interface ProspectSearchResult {
   results: ProspectRow[];
   summary: string;
   costUsd: number;
+  /**
+   * Anything the operator has to know about how the search was actually run —
+   * above all, a radius that could NOT be applied. Silently ignoring it is the
+   * bug this field exists to prevent from coming back.
+   */
+  notice?: string | null;
 }
 
 export interface SavedSearch {
