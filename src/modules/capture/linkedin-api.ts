@@ -447,6 +447,18 @@ export interface FlightRule {
   /** The value that path must hold for the node to be the one we want. */
   discriminator?: string;
   /**
+   * Or: the node is a Text component with this style signature.
+   *
+   * The last resort, and only where a value has one that is UNIQUE. LinkedIn
+   * renders the headline, the location, the company and the job title as plain
+   * text with no key naming any of them, so style is all there is. `noColor`
+   * means the component carries no `textColorExpression` at all, which for the
+   * headline is a signature no other text in the document shares.
+   */
+  textStyle?: { fontSize?: string; fontWeight?: string; noColor?: boolean };
+  /** Narrow the search to one profile card, by `componentkey` suffix. */
+  card?: string;
+  /**
    * Or: the node is identified by CARRYING these keys.
    *
    * The recording put the profile's name in objects with explicit `firstName`
@@ -455,7 +467,7 @@ export interface FlightRule {
    */
   keys?: string[];
   /** Which shape of value to look for below the node. */
-  extract: keyof typeof EXTRACTORS | "keys";
+  extract: keyof typeof EXTRACTORS | "keys" | "styled-text";
   /**
    * Which records may answer.
    *
@@ -492,6 +504,36 @@ export const FLIGHT_MAPPING: Record<string, FlightRule[]> = {
       evidence: "profile-full-2.json",
     },
   ],
+  /**
+   * ── NOT MAPPED, AND THIS IS THE EVIDENCE FOR WHY ──────────────────────────
+   *
+   * A capture of the operator's own profile made these testable for the first
+   * time: the four values were known, so each could be matched to its redacted
+   * LENGTH in the payload. On that profile the answers were exact —
+   *
+   *     headline  the only Text in 84 with fontSize xsmall, weight normal and
+   *               no textColorExpression. 37 characters, matching exactly.
+   *     location  inside the Topcard node, the only Text that is small/normal
+   *               rather than bold. 17 characters, matching exactly.
+   *
+   * Both rules were written, run against a SECOND capture — and returned a
+   * 213-character block as the headline and a 5-character string as the
+   * location. The signature that is unique on one profile is not unique on
+   * another.
+   *
+   * So they are not shipped. A field that is silently wrong is worse than a
+   * field that is absent: absent leaves the DOM path to fill it and the operator
+   * to notice, whereas a 213-character headline is a plausible-looking value
+   * nobody checks. This is the same failure that took six rounds on the DOM
+   * path, caught here before it shipped because a fixture existed to catch it.
+   *
+   * What would actually settle it: two or three more own-profile captures, from
+   * different accounts, with their values known. If one signature holds across
+   * all of them it is a rule; if it does not, LinkedIn's design system is not a
+   * data model and this belongs to the DOM path.
+   */
+  headline: [],
+  location: [],
   email: [
     {
       discriminatorPath: "viewTrackingSpecs.viewName",
@@ -706,10 +748,40 @@ export function normalizeFlight(
   const out: Record<string, FlightField> = {};
   const slug = opts.slug?.toLowerCase() ?? null;
 
-  const isProfileDocument = (url: string): boolean => {
-    const match = /\/in\/([^/?#]+)/i.exec(url);
-    if (!match) return false;
-    return slug === null ? true : decodeURIComponent(match[1]!).toLowerCase() === slug;
+  /**
+   * Does this record belong to the person being captured?
+   *
+   * Two ways, and the second one had to be added: the url is that profile's
+   * page, OR the record NAMES them and nobody else. The name turned up in a
+   * `component` response rather than in the profile document on one capture and
+   * the other way round on another, so a url-only rule found it in one and
+   * silently missed it in the other.
+   *
+   * "And nobody else" is the part that keeps it safe. A record that mentions two
+   * people — a recommendation rail, a browsemap — is ambiguous, and the whole
+   * reason this scoping exists is that one capture can hold several people.
+   */
+  const vanityNamesIn = (value: unknown, depth = 0, out = new Set<string>()): Set<string> => {
+    if (depth > 50 || value === null || typeof value !== "object") return out;
+    if (Array.isArray(value)) {
+      for (const v of value) vanityNamesIn(v, depth + 1, out);
+      return out;
+    }
+    const node = value as Record<string, unknown>;
+    const name = node.vanityName ?? node.publicIdentifier;
+    if (typeof name === "string" && name.length > 0) out.add(name.toLowerCase());
+    for (const v of Object.values(node)) vanityNamesIn(v, depth + 1, out);
+    return out;
+  };
+
+  const belongsToSubject = (record: FlightRecord): boolean => {
+    const match = /\/in\/([^/?#]+)/i.exec(record.url);
+    if (match && (slug === null || decodeURIComponent(match[1]!).toLowerCase() === slug)) {
+      return true;
+    }
+    if (slug === null) return false;
+    const named = vanityNamesIn(record.body);
+    return named.size === 1 && named.has(slug);
   };
 
   for (const [field, rules] of Object.entries(FLIGHT_MAPPING)) {
@@ -717,7 +789,7 @@ export function normalizeFlight(
       if (out[field]) break;
       for (const record of records) {
         if (out[field]) break;
-        if (rule.scope === "profile-document" && !isProfileDocument(record.url)) continue;
+        if (rule.scope === "profile-document" && !belongsToSubject(record)) continue;
         const body = record.body;
         // Row id → value, so a reference can be followed to the row it names.
         const rowsById = new Map<string, unknown>(
@@ -725,13 +797,80 @@ export function normalizeFlight(
             .filter((r) => r.id !== null && r.value !== undefined)
             .map((r) => [String(r.id), r.value]),
         );
+        /**
+         * When a rule names a card, only that card's subtree may answer.
+         *
+         * `componentkey` names every profile card and is neither localised nor
+         * hashed: `com.linkedin.sdui.profile.card.ref<MEMBERID>Topcard`. It is
+         * the most durable anchor this payload offers.
+         */
+        const roots: Array<{ value: unknown; label: string }> = [];
         for (const row of body?.rows ?? []) {
-          if (out[field]) break;
+          if (!rule.card) {
+            roots.push({ value: row.value, label: `/rows/${row.id}` });
+            continue;
+          }
           for (const [path, node] of walkNodes(row.value, `/rows/${row.id}`)) {
+            const key = (node.componentkey ?? node.componentKey) as unknown;
+            if (typeof key !== "string" || !key.endsWith(rule.card)) continue;
+            roots.push({ value: node, label: path });
+            /**
+             * And the rows the card REFERENCES.
+             *
+             * A card node holds very little itself — its content is behind `$L`
+             * references to other rows, so walking the node alone reached three
+             * text components out of eighty-four and found nothing. The
+             * references are the card, as much as the node is.
+             */
+            for (const ref of stringsUnder(node)) {
+              const m = ROW_REF.exec(ref);
+              const target = m ? rowsById.get(m[1]!) : undefined;
+              if (target !== undefined) roots.push({ value: target, label: `${path}→${m![1]}` });
+            }
+          }
+        }
+
+        for (const root of roots) {
+          if (out[field]) break;
+          for (const [path, node] of walkNodes(root.value, root.label)) {
             let value: string | null = null;
             let via = "";
 
-            if (rule.extract === "keys") {
+            if (rule.extract === "styled-text") {
+              /**
+               * A Text component whose style matches, and whose text is real.
+               *
+               * `textProps` is how this payload renders text, so the check is on
+               * the props rather than on the node's position: a headline that
+               * moves one child along still matches, and a differently styled
+               * neighbour never does.
+               */
+              const props = node.textProps as Record<string, unknown> | undefined;
+              if (!props) continue;
+              const want = rule.textStyle ?? {};
+              if (want.fontSize && props.fontSize !== want.fontSize) continue;
+              if (want.fontWeight && props.fontWeight !== want.fontWeight) continue;
+              /**
+               * "No colour" means absent OR the framework's `$undefined`
+               * sentinel — RSC serialises a missing prop as that string rather
+               * than omitting it, and the first version of this check looked
+               * only for a missing key, so it matched nothing at all.
+               */
+              if (
+                want.noColor &&
+                node.textColorExpression !== undefined &&
+                node.textColorExpression !== "$undefined"
+              ) {
+                continue;
+              }
+              const children = props.children;
+              const text = Array.isArray(children) ? children[0] : null;
+              if (typeof text !== "string" || text.length === 0) continue;
+              value = text;
+              via = `textProps ${want.fontSize ?? "*"}/${want.fontWeight ?? "*"}${
+                want.noColor ? "/no-color" : ""
+              }${rule.card ? ` in ${rule.card}` : ""}`;
+            } else if (rule.extract === "keys") {
               const wanted = rule.keys ?? [];
               if (!wanted.every((k) => typeof node[k] === "string" && node[k] !== "")) continue;
               value = wanted.map((k) => String(node[k])).join(" ");
@@ -743,7 +882,7 @@ export function normalizeFlight(
               ) {
                 continue;
               }
-              const recognise = EXTRACTORS[rule.extract];
+              const recognise = EXTRACTORS[rule.extract as keyof typeof EXTRACTORS];
               for (const candidate of stringsUnder(node, rowsById)) {
                 const hit = recognise(candidate);
                 if (hit) {

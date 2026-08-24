@@ -206,3 +206,89 @@ describe("a name is read from the right person's record", () => {
     expect(fields.name!.path).toMatch(/^\/rows\//);
   });
 });
+
+/**
+ * ── THE NEGATIVE RESULT, PINNED SO NOBODY DERIVES IT AGAIN ──────────────────
+ *
+ * `own-profile.json` is a capture of the operator's own profile, and it is the
+ * only one where the values were KNOWN — headline, location, company and job
+ * title were supplied separately, so each could be matched to its redacted
+ * LENGTH. That made a style-based rule testable for the first time.
+ *
+ * On that profile the answers were exact: the headline is the only Text in
+ * eighty-four with `fontSize: xsmall`, `fontWeight: normal` and no
+ * `textColorExpression`, and it is 37 characters, matching
+ * "Business Developer, C-level Executive" exactly. The location is the only
+ * `small`/`normal` Text inside the Topcard node, 17 characters, matching
+ * "Budapest, Hungary".
+ *
+ * Both rules were written and run against a SECOND capture. They returned a
+ * 213-character block as the headline and a 5-character string as the location.
+ *
+ * So they are not shipped, and this test says why — because the next person to
+ * open these fixtures will see the same signature and reach the same conclusion,
+ * and the evidence that it does not generalise is worth more than the rule.
+ */
+describe("headline and location stay unmapped, deliberately", () => {
+  it("has no rule for either", () => {
+    expect(FLIGHT_MAPPING.headline).toEqual([]);
+    expect(FLIGHT_MAPPING.location).toEqual([]);
+  });
+
+  /**
+   * How ambiguous it actually is, measured on both captures.
+   *
+   * The signature looked unique when it was read off ONE record of one capture.
+   * Across the whole fixture it matches six texts on the operator's own profile
+   * — 11, 29, 32, 37, 159 and 177 characters — and two on the other. The
+   * headline is in there, and the extractor returned it only because document
+   * order happened to reach it first.
+   *
+   * That is the whole lesson, and it is why the rule is not shipped: a signature
+   * that is right for the reason "it came first" is not a rule, it is a
+   * coincidence with a green test attached.
+   */
+  const signatureLengths = (file: string): number[] => {
+    const snapshot = JSON.parse(readFileSync(join(DIR, file), "utf8")) as {
+      records: Array<{ body: unknown }>;
+    };
+    const lengths: number[] = [];
+    const walk = (value: unknown, depth = 0): void => {
+      if (depth > 50 || value === null || typeof value !== "object") return;
+      if (Array.isArray(value)) {
+        for (const v of value) walk(v, depth + 1);
+        return;
+      }
+      const node = value as Record<string, unknown>;
+      const props = node.textProps as Record<string, unknown> | undefined;
+      if (
+        props &&
+        props.fontSize === "xsmall" &&
+        props.fontWeight === "normal" &&
+        (node.textColorExpression === undefined || node.textColorExpression === "$undefined")
+      ) {
+        const children = props.children;
+        const text = Array.isArray(children) ? children[0] : null;
+        const m = typeof text === "string" ? /^<text:(\d+)>$/.exec(text) : null;
+        if (m) lengths.push(Number(m[1]));
+      }
+      for (const v of Object.values(node)) walk(v, depth + 1);
+    };
+    for (const record of snapshot.records) walk(record.body);
+    return lengths.sort((a, b) => a - b);
+  };
+
+  it("matches several texts on the profile it was derived from, not one", () => {
+    const lengths = signatureLengths("own-profile.json");
+    // The headline is 37 characters — "Business Developer, C-level Executive".
+    expect(lengths).toContain(37);
+    expect(lengths.length, `only ${lengths.join(", ")} matched`).toBeGreaterThan(1);
+  });
+
+  it("matches a paragraph on another profile, which is what killed the rule", () => {
+    const lengths = signatureLengths("profile-full-2.json");
+    // A headline is capped at 220 characters, so "under the limit" cannot
+    // separate one from a block of prose.
+    expect(lengths.some((n) => n > 150), `matched only ${lengths.join(", ")}`).toBe(true);
+  });
+});

@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { FLIGHT_MAPPING } from "../src/modules/capture/linkedin-api";
+import { FLIGHT_MAPPING, normalizeFlight, type FlightRecord } from "../src/modules/capture/linkedin-api";
 
 /**
  * Trim a recorded LinkedIn snapshot down to the records that teach something.
@@ -73,6 +73,12 @@ function viewNames(value: unknown, out: Set<string>, depth = 0): void {
   for (const v of Object.values(node)) viewNames(v, out, depth + 1);
 }
 
+/** The profile slug a record's url names, so scoped rules can be evaluated. */
+function slugOf(url: string): string | undefined {
+  const m = /\/in\/([^/?#]+)/i.exec(url);
+  return m ? decodeURIComponent(m[1]!).toLowerCase() : undefined;
+}
+
 const [input, output] = process.argv.slice(2);
 if (!input || !output) {
   console.error("Usage: npx tsx scripts/trim-snapshot.ts <in.json> <out.json>");
@@ -92,10 +98,22 @@ for (const record of snapshot.records) {
   const names = new Set<string>();
   viewNames(record.body, names);
   const relevant = [...names].filter((n) => KEEP.test(n)).sort();
-  // A mapped key is its own reason to keep a record, view or no view. It is
-  // added to the coverage set as a pseudo-view so the subset rule below cannot
-  // discard the only record that has it.
+  // A mapped key is its own reason to keep a record, view or no view.
   if (hasMappedKey(record.body)) relevant.push("KEY:mapped-identity-keys");
+  /**
+   * And the criterion that catches everything else: what does the MAPPING get
+   * out of this record on its own?
+   *
+   * Rules anchored on a style signature carry neither a tracked view nor a key,
+   * so a view-and-key rule dropped the very record holding the headline. Asking
+   * the mapping directly needs no list to be kept in step with — a new rule
+   * makes its evidence self-preserving.
+   */
+  for (const [field] of Object.entries(
+    normalizeFlight([record as FlightRecord], { slug: slugOf(record.url) }),
+  )) {
+    relevant.push(`FIELD:${field}`);
+  }
   if (relevant.length > 0) candidates.push({ record, views: relevant });
   else {
     dropped.push({

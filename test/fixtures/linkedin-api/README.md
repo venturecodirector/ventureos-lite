@@ -15,7 +15,64 @@ done from a test runner, and it must not be done by asking LinkedIn for anything
 
 So this is a step you have to drive. It takes about ten minutes.
 
-## STATUS: name, email and phone are mapped. Four fields cannot be, and here is why.
+## STATUS: name, email and phone are mapped. Headline and location were tried and REJECTED.
+
+Three snapshots, each earning its bytes:
+
+| file | what only it supplies |
+|---|---|
+| `own-profile.json` | the operator's own profile, with the four values KNOWN — the only capture where a rule can be checked against a real answer |
+| `profile-full-2.json` | a second profile, and the full card vocabulary |
+| `contact-overlay.json` | the phone |
+
+| field | how it is found | evidence |
+|---|---|---|
+| `name` | `{ firstName, lastName }`, in a record that names this person and nobody else | profile-full-2.json |
+| `email` | `viewTrackingSpecs.viewName = contact-email`, then a `mailto:` url | contact-overlay.json |
+| `phone` | `viewTrackingSpecs.viewName = contact-phone`, then a phone-shaped value | contact-overlay.json |
+
+### The rule that was written, tested, and thrown away
+
+`own-profile.json` made a style-based rule testable for the first time: the four
+values were supplied separately, so each could be matched to its redacted LENGTH.
+
+On that profile, reading one record, the headline looked like the only Text with
+`fontSize: xsmall`, `fontWeight: normal` and no `textColorExpression` — and it is
+37 characters, matching "Business Developer, C-level Executive" exactly. The
+location looked like the only `small`/`normal` Text inside the Topcard node, 17
+characters, matching "Budapest, Hungary". Both rules were written.
+
+Then they were run against the whole fixture:
+
+```
+own-profile      signature matches 6 texts:  11, 29, 32, 37, 159, 177
+profile-full-2   signature matches 2 texts:  37, 213
+```
+
+The headline is in there. The extractor returned it only because document order
+reached it first. On the second profile the same rule offers a 213-character
+paragraph as somebody's headline.
+
+**So they are not shipped.** A field that is silently wrong is worse than a field
+that is absent: absent leaves the DOM path to fill it and the operator to notice,
+while a 213-character headline is a plausible-looking value nobody checks. This is
+the same failure that took six rounds on the DOM path — caught here before
+shipping, because a fixture with known answers existed to catch it. A test pins
+the measurement so the next person to see that signature does not derive it again.
+
+### What would settle it
+
+Two or three more own-profile captures from DIFFERENT accounts, each with its
+four values known. If one signature holds across all of them it is a rule. If it
+does not, LinkedIn's design system is not a data model, and headline, location,
+company and job title belong to the DOM path — which is a legitimate answer, and
+better than a mapping that is right about one person.
+
+Company and job title never got as far as a rule: on this capture the company is
+the only bold Text in the experience record, and the job title has no signature at
+all.
+
+## What was recorded before, and what it taught
 
 Two snapshots, each earning its bytes (a test enforces that):
 
