@@ -34,6 +34,29 @@ function WebsiteChip({ presence }: { presence: ProspectRow["presence"] }) {
   );
 }
 
+/**
+ * Google says this business is shut.
+ *
+ * Worth a warning rather than a quiet field: a permanently closed business is a
+ * wasted lead, a wasted audit and eventually a wasted email, and the status
+ * arrived with every search — it was simply never asked for.
+ */
+function StatusChip({ status }: { status?: string | null }) {
+  if (status !== "CLOSED_PERMANENTLY" && status !== "CLOSED_TEMPORARILY") return null;
+  const permanent = status === "CLOSED_PERMANENTLY";
+  return (
+    <span
+      className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+        permanent
+          ? "bg-[rgba(255,92,122,0.14)] text-[#FFB3C2]"
+          : "bg-[rgba(245,184,65,0.14)] text-warn"
+      }`}
+    >
+      {permanent ? "Permanently closed" : "Temporarily closed"}
+    </span>
+  );
+}
+
 function FitChip({ fit, priority }: { fit: string; priority: number }) {
   const color =
     fit === "strong"
@@ -80,12 +103,19 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
   }
 
   async function add(row: ProspectRow, index: number) {
+    // Everything the search paid for, not a subset of it: the city, the place
+    // id and the rating all arrived with the row and used to stop at this line.
     const res = await addProspectAsLead({
+      placeId: row.placeId,
       name: row.name,
       category: row.category,
       phone: row.phone,
       websiteUri: row.websiteUri,
       address: row.address,
+      city: row.city,
+      businessStatus: row.businessStatus,
+      rating: row.rating,
+      reviews: row.reviews,
     });
     setAdded((m) => ({ ...m, [index]: res.ok ? "added" : "duplicate" }));
   }
@@ -227,6 +257,7 @@ export function Prospector({ saved }: { saved: SavedSearch[] }) {
                   <tr key={i} className="hover:[&>td]:bg-panel">
                     <td className="border-b border-line px-3 py-3 text-[13px] align-middle">
                       <b>{r.name}</b>
+                      <StatusChip status={r.businessStatus} />
                       {r.classification && (
                         <FitChip fit={r.classification.fit} priority={r.classification.priority} />
                       )}

@@ -15,6 +15,8 @@ import {
   type ProspectClassification,
 } from "@/lib/ai/prompts/prospect-classify";
 import { classifyWebsite } from "./website";
+import { googleSignals } from "./signals";
+import { enrichCompanySite } from "../leads/enrichment";
 import { TEXT_SEARCH_COST_USD } from "./cost";
 import { isCacheFresh, CACHE_TTL_DAYS } from "./cache";
 import { normalizeDomain } from "../leads/dedupe";
@@ -57,7 +59,17 @@ export async function runProspectSearch(raw: unknown): Promise<ProspectSearchRes
     // would spend money to return the same rows.
     const want = input.maxResults ?? PLACES_PAGE_SIZE;
     const exhausted = results.length % PLACES_PAGE_SIZE !== 0;
-    if (results.length >= want || exhausted) {
+    /**
+     * A row cached before the request asked for language, place ids and address
+     * components is not the same row.
+     *
+     * Serving it would keep handing back anglicised names — "Mathe Dentistry"
+     * for "Máthé Fogászat Debrecen" — and cityless, un-dedupable leads for up to
+     * thirty days after the fix shipped. The place id is the marker: present on
+     * every row fetched since, on none fetched before.
+     */
+    const currentShape = results.length === 0 || results.every((r) => r.placeId);
+    if (currentShape && (results.length >= want || exhausted)) {
       return {
         fromCache: true,
         searchId: cached.id,
@@ -121,11 +133,16 @@ export async function listSavedSearches(): Promise<SavedSearch[]> {
 }
 
 const addSchema = z.object({
+  placeId: z.string().nullish(),
   name: z.string().min(1),
   category: z.string().nullish(),
   phone: z.string().nullish(),
   websiteUri: z.string().nullish(),
   address: z.string().nullish(),
+  city: z.string().nullish(),
+  businessStatus: z.string().nullish(),
+  rating: z.number().nullish(),
+  reviews: z.number().nullish(),
 });
 
 export async function addProspectAsLead(
@@ -136,22 +153,45 @@ export async function addProspectAsLead(
   const db = getWorkspaceClient(workspaceId);
 
   const existing = await db.company.findMany({
-    select: { id: true, domain: true, phone: true },
+    select: { id: true, domain: true, phone: true, googlePlaceId: true },
   });
   const dup = findProspectDuplicate(
-    { domain: input.websiteUri ?? null, phone: input.phone ?? null },
-    existing,
+    {
+      placeId: input.placeId ?? null,
+      domain: input.websiteUri ?? null,
+      phone: input.phone ?? null,
+    },
+    existing.map((e) => ({ ...e, placeId: e.googlePlaceId })),
   );
   if (dup) return { ok: false, duplicateOf: dup.id };
+
+  /**
+   * Stored in the SAME shape the rest of the system writes.
+   *
+   * Places says "06 30 130 2223" and site enrichment writes "+36301302223" for
+   * one phone; keeping Google's spelling meant the company row and the lead row
+   * disagreed about the number, and the duplicate check compared them as two
+   * different strings.
+   */
+  const companyPhone = normalizePhone(input.phone).value ?? input.phone ?? null;
 
   const company = await db.company.create({
     data: {
       workspaceId,
       name: input.name,
       domain: normalizeDomain(input.websiteUri) ?? undefined,
-      phone: input.phone ?? undefined,
+      // The full URI as well as the bare domain: enrichment prefers `website`
+      // when it is there, and a site living on a path is not reachable from the
+      // hostname alone.
+      website: input.websiteUri ?? undefined,
+      phone: companyPhone ?? undefined,
       industry: input.category ?? undefined,
       address: input.address ?? undefined,
+      // The town, straight out of Google's addressComponents. It was never
+      // requested from the API, so the City field on a prospected lead was empty
+      // on 70 of the 71 companies here — every one of which had an address.
+      city: input.city ?? undefined,
+      googlePlaceId: input.placeId ?? undefined,
     },
   });
   /**
@@ -166,15 +206,41 @@ export async function addProspectAsLead(
    * "06 1 234 5678" end up as the same stored value rather than as two leads.
    */
   const leadPhone = normalizePhone(input.phone).value;
+
+  /**
+   * THE EMAIL GOOGLE DOES NOT HAVE.
+   *
+   * The Places API carries no email field for any business, at any billing
+   * tier — so a prospected lead arrived with an empty Email field and stayed
+   * that way until somebody ran research on it. The address is on the company's
+   * own site, usually in the impresszum, and reading it is a request we already
+   * know how to make politely.
+   *
+   * Bounded on purpose: only when Google gave a website at all, one homepage
+   * plus at most one contact page, robots.txt honoured, and the result cached on
+   * the company for thirty days — so the research run that follows does not pay
+   * for the same page twice.
+   */
+  const site = company.domain || company.website ? await enrichCompanySite(company.id) : null;
+  const siteEmail = site?.contacts?.emails[0] ?? null;
+  const sitePhone = site?.contacts?.phones[0] ?? null;
+
   const lead = await db.lead.create({
     data: {
       workspaceId,
       companyId: company.id,
       source: "PROSPECTOR",
       stage: "RESEARCHED",
-      phone: leadPhone ?? undefined,
+      phone: leadPhone ?? sitePhone ?? undefined,
+      email: siteEmail ?? undefined,
+      signals: googleSignals(input),
     },
   });
+
+  // Google had no number but the site did — the company row should say so too.
+  if (!companyPhone && sitePhone) {
+    await db.company.update({ where: { id: company.id }, data: { phone: sitePhone } });
+  }
 
   revalidatePath("/leads");
   return { ok: true, leadId: lead.id };

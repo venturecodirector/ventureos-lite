@@ -399,6 +399,11 @@ model Company {
   address      String?
   city         String?
   taxId        String?      @map("tax_id") // adószám — dedupe key within a workspace
+  /// Google's own id for the place this company was prospected from. The only
+  /// EXACT dedupe key the Prospector has: a business with neither a website nor
+  /// a phone number — and there are plenty — matched nothing before, so it could
+  /// be added twice with no duplicate warning at all.
+  googlePlaceId String?     @map("google_place_id")
   /// How this company entered the workspace, when it was not a prospect we
   /// chose: "competitor_audit" for one pulled in by a comparison (P2/3). Null
   /// for everything created the ordinary way.
@@ -446,6 +451,7 @@ model Company {
 
   @@unique([workspaceId, taxId])
   @@index([workspaceId])
+  @@index([workspaceId, googlePlaceId])
   @@map("companies")
 }
 
