@@ -387,10 +387,32 @@
     // deleted a perfectly good headline. A one-character line cannot be evidence
     // that a longer line is an aggregate of its children.
     const meaningful = lines.filter((l) => l.length > 1 && !/^[·•|,;:\-–—\s]+$/.test(l));
+    /**
+     * An aggregate contains TWO other lines. One is a coincidence.
+     *
+     * The rule used to drop any line containing any other, and that is what
+     * silently deleted the headline on the post-RSC page. The card renders the
+     * current company as its own chip, so
+     *
+     *     "Partner & Head of Business Development at JeansDay Marketing"
+     *
+     * contains "JeansDay Marketing" — and every headline of the form
+     * "<role> at <company>" does, whenever the company is also a chip. The line
+     * was thrown away as though it were a container's concatenated text, the top
+     * card was left with three chips and no headline, and the validator then
+     * rejected each chip in turn: the location for reading as a location, the
+     * company and the school for having no headline signal. That is the whole of
+     * the reported "the headline could not be read".
+     *
+     * A container's text really is its children's, so it contains SEVERAL of
+     * them — the glued name+degree+headline line here contains five. Counting
+     * rather than testing keeps the aggregates out and lets the headline
+     * through, and every line in the recorded fixture lands on the correct side.
+     */
+    const containsOthers = (l) =>
+      meaningful.filter((o) => o !== l && o.length >= 4 && l.includes(o)).length;
     return {
-      lines: meaningful.filter(
-        (l) => !meaningful.some((o) => o !== l && o.length >= 4 && l.includes(o)),
-      ),
+      lines: meaningful.filter((l) => containsOthers(l) < 2),
       excluded,
     };
   };
@@ -937,7 +959,30 @@
    * is prose and "Building the future of X" is not a job title.
    */
   const jobLimit = (v) => (v.length > 200 ? "job_title_too_long" : null);
-  const companyLimit = (v) => (v.length > 200 ? "company_name_too_long" : null);
+  /**
+   * A DATE RANGE IS NOT AN EMPLOYER.
+   *
+   * The experience reader used to take the entry's second line as the employer,
+   * and on the recorded post-RSC page that entry has no employer line at all:
+   *
+   *     0  "PR & Marketing Consultant"
+   *     1  "Jan 2015 - Jul 2020 · 5 yrs 7 mos"
+   *     2  "… more"
+   *
+   * So `companyName` came back as "Jan 2015 - Jul 2020", with `experience:
+   * accepted` and high confidence, and went into a lead that way. The length
+   * check was the only thing this validator did, and a date range is short.
+   *
+   * Matched by shape in both languages, because a Hungarian profile renders
+   * "2015. jan. – 2020. júl. · 5 év 7 hónap".
+   */
+  const DATE_RANGE =
+    /\b(19|20)\d{2}\b[\s.]*[-–—]|\b(present|jelenleg)\b|\b\d+\s*(yrs?|years?|mos?|months?|év|évek|hónap)\b/i;
+  const companyLimit = (v) => {
+    if (v.length > 200) return "company_name_too_long";
+    if (DATE_RANGE.test(v)) return "company_reads_as_a_date_range";
+    return null;
+  };
 
   /**
    * The author byline on this person's own posts.
@@ -995,8 +1040,91 @@
     const usable = lines.filter((l) => !isChrome(l) && !isSomeoneElse(l));
     // Bounded to the Experience subtree: the entry's own lines, in order — role,
     // then employer, then the date range.
-    offer("jobTitle", "experience", "high", usable[0], jobLimit);
-    offer("companyName", "experience", "high", usable[1]?.split(" · ")[0], companyLimit);
+    /**
+     * Role and employer are read TOGETHER, or neither is.
+     *
+     * They are one fact — "X at Y" — and a lead that pairs a role from one
+     * source with an employer from another states something that was never true.
+     * On the recorded page the first experience entry is a role that ended in
+     * 2020 and names no employer, so taking its title while the company came
+     * from the current headline produced "PR & Marketing Consultant" at
+     * "JeansDay Marketing": two real facts, one false pairing.
+     *
+     * So the title is offered only when this entry also identifies the employer.
+     * Otherwise the derived headline pattern supplies both, consistently.
+     */
+
+    /**
+     * The employer BY SHAPE, not by position.
+     *
+     * `usable[1]` assumed every entry reads role / employer / dates. The recorded
+     * page has entries with no employer line at all, so position handed the date
+     * range to `companyName`. Skipping the role, the dates and the expander
+     * leaves either the employer or nothing — and nothing is the right answer
+     * when the entry does not name one. The top card's company chip is still
+     * tried afterwards, and on that page it holds the CURRENT employer, which is
+     * the more useful one anyway.
+     */
+    const isNoise = (l) =>
+      !l || DATE_RANGE.test(l) || /^(…\s*)?(more|show more|továbbiak)$/i.test(l);
+    /**
+     * POSITIVE identification, or nothing.
+     *
+     * Skipping the noise is not enough: on the recorded page the entry has no
+     * employer at all, and "skip what it is not" then handed over "External
+     * Communications" — a skill listed further down. Wrong with high confidence,
+     * which is the outcome this extractor exists to avoid.
+     *
+     * So an employer must be corroborated: either the entry names a `/company/`
+     * link whose TEXT is that line, or the line is the one the headline gives
+     * after "at". Otherwise the field is absent here and the derived sources —
+     * the headline pattern, the card's company chip — get their turn. On this
+     * page that is what supplies the CURRENT employer, which is the more useful
+     * one anyway: the first experience entry is a role that ended in 2020.
+     */
+    /**
+     * Company-link texts from the WHOLE page, not just this entry.
+     *
+     * Entry-scoped was too narrow: on the older recorded profiles the employer
+     * is named in the entry as plain text while its `/company/` link sits in the
+     * card or the right rail, so requiring the anchor inside the entry rejected
+     * six employers that were perfectly readable. Page-wide is the same
+     * cross-reference `topcard-company` already uses — two independent places
+     * naming the same string — and the line still has to come from this entry,
+     * so no stranger's employer can arrive through it.
+     */
+    const companyTexts = new Set(
+      $$('a[href*="/company/"]').map((a) => norm(label(a))).filter((t) => t && t.length >= 2),
+    );
+    /**
+     * THE EMPLOYER IS THE LINE BETWEEN THE ROLE AND THE DATES.
+     *
+     * That is the entry's shape, and it is what separates the two recorded
+     * pages: an older profile reads role / "Danubia Fogászat Kft." / dates, while
+     * the post-RSC one reads role / dates — no employer at all. So if the line
+     * after the role is ALREADY a date, this entry does not name one, and
+     * scanning further down finds a skill ("External Communications") and files
+     * it as the employer with high confidence. Bounded to that one position, the
+     * question answers itself.
+     *
+     * A line further down is still accepted if a `/company/` link somewhere on
+     * the page carries the same text — corroboration from two independent places,
+     * for entries that put the employer somewhere else.
+     */
+    const afterRole = usable[1]?.split(" · ")[0];
+    const employerLine = !isNoise(afterRole)
+      ? afterRole
+      : usable
+          .slice(2)
+          .map((l) => l.split(" · ")[0])
+          .find((l) => !isNoise(l) && companyTexts.has(norm(l)));
+    if (employerLine) {
+      offer("jobTitle", "experience", "high", usable[0], jobLimit);
+      offer("companyName", "experience", "high", employerLine, companyLimit);
+    } else {
+      note("companyName", "experience", "no_employer_named_in_the_entry");
+      note("jobTitle", "experience", "not_read_without_its_employer");
+    }
     // Whether this is the CURRENT role, which is the only one worth filing.
     const dates = usable.find((l) => /\b(present|jelenleg|current)\b/i.test(l));
     if (dates) note("jobTitle", "experience", "marked_present");

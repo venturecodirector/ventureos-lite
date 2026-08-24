@@ -133,7 +133,22 @@
     } catch {
       continue;
     }
-    if (!slug || (ownerSlug && slug === ownerSlug)) continue;
+    /**
+     * FOLDED comparison, not string equality.
+     *
+     * `á` has two Unicode spellings — U+00E1, and `a` followed by a combining
+     * accent — and a page can use one in its anchors and the other in its URL.
+     * They look identical and are not equal, so `slug === ownerSlug` quietly
+     * failed on an accented profile and the OWNER was scrubbed as "Person 32":
+     * the fixture's title then said one person and its slug another, and the
+     * extractor's name-agreement check failed on a page where the real
+     * extraction had worked perfectly.
+     *
+     * A fixture that manufactures its own bug is worse than no fixture. `fold`
+     * normalises and strips accents, which is what the comparison meant all
+     * along.
+     */
+    if (!slug || (ownerSlug && fold(slug) === fold(ownerSlug))) continue;
 
     if (!otherSlugs.has(slug)) {
       n += 1;
@@ -223,9 +238,29 @@
   for (const name of [...ownerNames].sort((a, b) => b.length - a.length)) {
     const parts = name.split(/\s+/);
     html = html.replace(new RegExp(rx(name), "g"), `${OWNER.last} ${OWNER.first}`);
-    // Also the parts alone, which appear in aria-labels ("Anna's profile").
+    /**
+     * Also the parts alone, which appear in aria-labels ("Anna's profile").
+     *
+     * The boundary is a Unicode lookaround, NOT `\b`. JavaScript's `\b` is
+     * ASCII: between `é` and a space there is no word boundary at all, so
+     * `\bMáté\b` matched nothing and a real capture kept the owner's first name
+     * in nine places — `aria-label="Máté is a Premium member"`, "Recommend Máté",
+     * and a recommendation's prose. Every Hungarian name ending in an accent had
+     * the same hole. (The same `\b` assumption bit the role vocabulary earlier:
+     * `\bvezető\b` cannot match inside "Gyártásvezető".)
+     */
     for (const p of parts) {
-      if (p.length >= 4) html = html.replace(new RegExp(`\\b${rx(p)}\\b`, "g"), OWNER.first);
+      // Never re-replace the placeholder with itself: a second pass over an
+      // already-scrubbed page turned "Anonimizált Ödön" into "Ödön Ödön",
+      // because the title it read the owner's name FROM was already the
+      // placeholder.
+      if (p === OWNER.first || p === OWNER.last) continue;
+      if (p.length >= 4) {
+        html = html.replace(
+          new RegExp(`(?<![\\p{L}\\p{N}])${rx(p)}(?![\\p{L}\\p{N}])`, "gu"),
+          OWNER.first,
+        );
+      }
     }
   }
   if (ownerSlug) html = replaceSlug(html, ownerSlug, placeholderSlug);
