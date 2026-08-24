@@ -182,6 +182,19 @@
   const URN_SHAPED = /^urn:li:[a-zA-Z0-9_]+:.+/;
 
   /**
+   * The vanity forms of the placeholder cast, so a second pass can recognise its
+   * own earlier output and leave it alone.
+   */
+  const CAST_SLUGS = new Set(
+    [OWNER, ...OTHERS.map(([first, last]) => ({ first, last }))].map((p) =>
+      `${p.first}-${p.last}`
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase(),
+    ),
+  );
+
+  /**
    * Walk a parsed body, replacing identity in place.
    *
    * Depth-limited rather than trusting the input to be finite: a hostile or merely
@@ -501,6 +514,28 @@
     return `<text:${text.length}>`;
   }
 
+  /**
+   * Keys whose VALUE is identity, whatever shape it takes.
+   *
+   * ── WHY A KEY RULE SURVIVES IN A SHAPE-BASED SCRUBBER ─────────────────────
+   *
+   * The inverted rule below redacts anything that is not provably structure, and
+   * it is right for React trees, where a name sits in an unnamed array position.
+   * But it cannot see a name that LOOKS like structure — `Farkhod` and
+   * `Ibragimov` came through a real capture as PascalCase tokens, because their
+   * owner's slug was nowhere in the payload for the token rule to catch.
+   *
+   * Where a key names the field, though, the guessing stops: `firstName` holds a
+   * first name whatever it looks like. So the shape rule is the default and this
+   * is the override — the two cover each other's blind spot.
+   */
+  const IDENTITY_KEYS = new Set([
+    "firstName", "lastName", "familiarName", "fullName", "name", "displayName",
+    "headline", "occupation", "title", "subtitle", "caption",
+    "emailAddress", "email", "phoneNumber", "phone",
+    "vanityName", "publicIdentifier", "birthday", "birthDate", "address",
+  ]);
+
   function scrubFlightValue(value, replacer, ident, depth = 0) {
     if (depth > 60) return "<depth-limit>";
     if (value === null || value === undefined) return value;
@@ -512,6 +547,26 @@
       for (const [k, v] of Object.entries(value)) {
         // The KEY is schema and is kept — but a key can carry a slug too.
         const key = sanitiseKept(k, replacer, ident);
+        /**
+         * The key says it is identity, so the value goes — no shape test.
+         * A slug-shaped key keeps the slug mapping, so one person's vanityName
+         * stays consistent with their url elsewhere in the same snapshot.
+         */
+        if (typeof v === "string" && v.length > 0 && IDENTITY_KEYS.has(key)) {
+          if (v.startsWith("<")) {
+            out[key] = v; // already a placeholder from an earlier pass
+          } else if (key === "vanityName" || key === "publicIdentifier") {
+            // A cast slug is already this file's own output — keep it, or a
+            // second pass renames the same person and the record contradicts
+            // its own url.
+            out[key] = CAST_SLUGS.has(v.toLowerCase())
+              ? v
+              : (ident.slugs.get(v) ?? replacer.person(`slug::${v}`, "vanity"));
+          } else {
+            out[key] = placeholderFor(sanitiseKept(v, replacer, ident));
+          }
+          continue;
+        }
         /**
          * A NUMERIC id is still an id.
          *
@@ -532,6 +587,18 @@
       return out;
     }
     if (typeof value !== "string") return value;
+
+    /**
+     * A placeholder this file wrote earlier is left exactly as it is.
+     *
+     * Without this, a second pass re-placeholdered its own output — `<text:24>`
+     * became `<text:9>`, then `<text:8>` — so each run quietly shrank the only
+     * information a redacted value still carried: how long the original was. Any
+     * tool that can be run twice has to survive being run twice.
+     */
+    if (/^(<[a-z]+(:\d+)?>|mailto:<email>|tel:<phone>|https?:\/\/<host>(\/<path:\d+>)?)$/.test(value)) {
+      return value;
+    }
 
     const clean = sanitiseKept(value, replacer, ident);
     if (URN_SHAPED.test(clean)) return replacer.urn(clean);
@@ -597,6 +664,22 @@
     ];
     for (const slug of candidates) {
       if (!slug || slugs.has(slug)) continue;
+      /**
+       * A slug that is ALREADY a placeholder maps to itself.
+       *
+       * Re-scrubbing has to be idempotent, and the first attempt was not: a
+       * second pass handed `odon-anonimizalt` a fresh cast name, so a record
+       * whose URL said one person had a body saying another. A fixture that
+       * contradicts itself teaches something false, which is worse than one that
+       * teaches nothing.
+       */
+      if (CAST_SLUGS.has(slug.toLowerCase())) {
+        slugs.set(slug, slug);
+        for (const part of slug.split("-")) {
+          if (part.length >= 3) tokens.set(part.toLowerCase(), part);
+        }
+        continue;
+      }
       // "vanity" is the hint that asks for the slug FORM of a name, which is
       // exactly what a slug is — so a person's placeholder slug matches their
       // placeholder name elsewhere in the same snapshot.
@@ -699,5 +782,24 @@
     };
   }
 
-  globalThis.VentureApiScrub = { scrubSnapshot, scrubRecord, scrubValue, createReplacer };
+  /**
+   * Re-scrub an already-parsed row with the current rules.
+   *
+   * Exported for `scripts/rescrub-snapshot.ts`: a snapshot recorded before a
+   * scrubber fix can be brought up to date without asking for another recording.
+   * The slug comes from the record's url, which is where the token vocabulary
+   * comes from when the body itself no longer spells it out.
+   */
+  function scrubFlightBody(row, replacer, url) {
+    const ident = identityMapFor(String(url ?? ""), replacer, []);
+    return scrubFlightValue(row, replacer, ident, 0);
+  }
+
+  globalThis.VentureApiScrub = {
+    scrubSnapshot,
+    scrubRecord,
+    scrubValue,
+    scrubFlightBody,
+    createReplacer,
+  };
 })();

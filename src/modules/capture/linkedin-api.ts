@@ -443,17 +443,55 @@ export function unmatchedProfileShaped(
 
 export interface FlightRule {
   /** Dotted path, within a candidate node, to the discriminating value. */
-  discriminatorPath: string;
+  discriminatorPath?: string;
   /** The value that path must hold for the node to be the one we want. */
-  discriminator: string;
+  discriminator?: string;
+  /**
+   * Or: the node is identified by CARRYING these keys.
+   *
+   * The recording put the profile's name in objects with explicit `firstName`
+   * and `lastName` keys — no tracked view anywhere near them. Where a key names
+   * the field there is nothing to discriminate on, and nothing to guess either.
+   */
+  keys?: string[];
   /** Which shape of value to look for below the node. */
-  extract: keyof typeof EXTRACTORS;
+  extract: keyof typeof EXTRACTORS | "keys";
+  /**
+   * Which records may answer.
+   *
+   * `profile-document` restricts a rule to the record whose url IS the profile
+   * page — because one capture can hold several people. A session that walks
+   * from one profile to another leaves both in the buffer, and a rule that took
+   * the first `firstName` it found would attach the wrong person's name to the
+   * right person's lead. That is not hypothetical: the recorded snapshot holds
+   * two.
+   */
+  scope?: "any" | "profile-document";
   confidence: "high" | "medium";
   /** The recorded snapshot that justifies this rule. Never blank. */
   evidence: string;
 }
 
 export const FLIGHT_MAPPING: Record<string, FlightRule[]> = {
+  name: [
+    {
+      // `{ firstName, lastName }`, in the record that IS the profile page.
+      keys: ["firstName", "lastName"],
+      extract: "keys",
+      scope: "profile-document",
+      confidence: "high",
+      evidence: "profile-full.json",
+    },
+    {
+      // The greeting form, when the pair is not there. Lower confidence: it is
+      // a first name only, and the capture wants a full one.
+      keys: ["familiarName"],
+      extract: "keys",
+      scope: "profile-document",
+      confidence: "medium",
+      evidence: "profile-full.json",
+    },
+  ],
   email: [
     {
       discriminatorPath: "viewTrackingSpecs.viewName",
@@ -645,14 +683,42 @@ export interface FlightField {
  * Returns only what it FOUND. A field with no rule, or a rule whose
  * discriminator is absent, is simply missing — never a guess, and never a throw.
  */
-export function normalizeFlight(bodies: FlightBody[]): Record<string, FlightField> {
+/** A record as the observer and the scrubber both carry it. */
+export interface FlightRecord {
+  url: string;
+  body: FlightBody | null;
+}
+
+/**
+ * Read the fields the mapping knows about out of a set of recorded records.
+ *
+ * Returns only what it FOUND. A field with no rule, or a rule whose
+ * discriminator is absent, is simply missing — never a guess, and never a throw.
+ *
+ * `slug` scopes the rules that need it: one capture can hold two people, so a
+ * rule marked `profile-document` only reads the record whose url is that
+ * person's page.
+ */
+export function normalizeFlight(
+  records: FlightRecord[],
+  opts: { slug?: string } = {},
+): Record<string, FlightField> {
   const out: Record<string, FlightField> = {};
+  const slug = opts.slug?.toLowerCase() ?? null;
+
+  const isProfileDocument = (url: string): boolean => {
+    const match = /\/in\/([^/?#]+)/i.exec(url);
+    if (!match) return false;
+    return slug === null ? true : decodeURIComponent(match[1]!).toLowerCase() === slug;
+  };
 
   for (const [field, rules] of Object.entries(FLIGHT_MAPPING)) {
     for (const rule of rules) {
       if (out[field]) break;
-      for (const body of bodies) {
+      for (const record of records) {
         if (out[field]) break;
+        if (rule.scope === "profile-document" && !isProfileDocument(record.url)) continue;
+        const body = record.body;
         // Row id → value, so a reference can be followed to the row it names.
         const rowsById = new Map<string, unknown>(
           (body?.rows ?? [])
@@ -662,16 +728,30 @@ export function normalizeFlight(bodies: FlightBody[]): Record<string, FlightFiel
         for (const row of body?.rows ?? []) {
           if (out[field]) break;
           for (const [path, node] of walkNodes(row.value, `/rows/${row.id}`)) {
-            if (at(node, rule.discriminatorPath) !== rule.discriminator) continue;
-
-            const recognise = EXTRACTORS[rule.extract];
             let value: string | null = null;
-            for (const candidate of stringsUnder(node, rowsById)) {
-              const hit = recognise(candidate);
-              if (hit) {
-                value = hit;
-                break;
+            let via = "";
+
+            if (rule.extract === "keys") {
+              const wanted = rule.keys ?? [];
+              if (!wanted.every((k) => typeof node[k] === "string" && node[k] !== "")) continue;
+              value = wanted.map((k) => String(node[k])).join(" ");
+              via = `keys=${wanted.join("+")}`;
+            } else {
+              if (
+                !rule.discriminatorPath ||
+                at(node, rule.discriminatorPath) !== rule.discriminator
+              ) {
+                continue;
               }
+              const recognise = EXTRACTORS[rule.extract];
+              for (const candidate of stringsUnder(node, rowsById)) {
+                const hit = recognise(candidate);
+                if (hit) {
+                  value = hit;
+                  break;
+                }
+              }
+              via = `${rule.discriminatorPath}=${rule.discriminator}`;
             }
             if (!value) continue;
 
@@ -679,8 +759,8 @@ export function normalizeFlight(bodies: FlightBody[]): Record<string, FlightFiel
               value,
               source: "api",
               confidence: rule.confidence,
-              path: `${path}`,
-              via: `${rule.discriminatorPath}=${rule.discriminator}`,
+              path,
+              via,
             };
             break;
           }

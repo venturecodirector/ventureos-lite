@@ -15,7 +15,62 @@ done from a test runner, and it must not be done by asking LinkedIn for anything
 
 So this is a step you have to drive. It takes about ten minutes.
 
-## STATUS: email and phone work on live data. One more recording is needed.
+## STATUS: name, email and phone are mapped from recorded payloads
+
+Three snapshots: `profile-full.json` (2 records, trimmed from 17),
+`rsc-profile.json` (2 of 20) and `contact-overlay.json` (2 of 11).
+
+| field | how it is found | evidence |
+|---|---|---|
+| `name` | `{ firstName, lastName }` keys, in the record whose url IS that profile | profile-full.json |
+| `email` | `viewTrackingSpecs.viewName = contact-email`, then a `mailto:` url | contact-overlay.json |
+| `phone` | `viewTrackingSpecs.viewName = contact-phone`, then a phone-shaped value | contact-overlay.json |
+
+`email` and `phone` are verified against the RAW unscrubbed capture: the
+extractor returns the real address and the real number.
+
+### One capture holds more than one person
+
+The name is in objects with explicit `firstName`/`lastName` keys and no tracked
+view anywhere near them — and a session that walks from one profile to another
+leaves BOTH in the buffer. The recorded capture holds two. A rule that took the
+first pair it found would attach one person's name to the other person's lead,
+silently, and only for operators who browse the way people actually browse.
+
+So a rule can declare `scope: "profile-document"`: it may only read the record
+whose url is that person's page. The test that matters asks for a slug whose
+record has no name and asserts the answer is NOTHING rather than the other
+person's.
+
+### Still unmapped, and why
+
+- **headline, location, company, job title** — their nodes are in the capture
+  (`profile-top-card`, `profile-card-about`, `profile-card-experience`, ten
+  `experience-*` views) but no key names them the way `firstName` does, and every
+  text value is a `<text:N>` placeholder. Which of forty is the headline is not
+  something a fixture can currently answer. A capture that includes the
+  **Contact info panel AND the About section expanded** may carry keyed values
+  the way the name did.
+- **websiteUrl** — the `contact-website` node is witnessed but the person in that
+  snapshot has no website, so the shape a real value arrives in is unseen.
+
+### What the scrubber learned from this round
+
+- **A key beats a shape.** `Farkhod` and `Ibragimov` — a third person's name,
+  from a recommendation rail — came through as PascalCase tokens, because their
+  owner's slug was nowhere in the payload for the token rule to catch. Where a
+  key names the field the guessing stops, so `firstName`, `headline`,
+  `vanityName` and their kind are now scrubbed on the KEY whatever the value
+  looks like. Shape is the default; the key rule is the override, and each
+  covers the other's blind spot.
+- **Re-scrubbing has to be idempotent.** `scripts/rescrub-snapshot.ts` brings an
+  older snapshot up to date without asking for another recording. Its first
+  version re-placeholdered its own output (`<text:24>` → `<text:9>` → `<text:8>`,
+  losing the one thing a redacted value still carried) and re-mapped placeholder
+  slugs, so a record's url said one person and its body said another. Both fixed,
+  and a fixture test runs it twice and compares bytes.
+
+## What was recorded before, and what it taught
 
 `rsc-profile.json` (2 records, trimmed from 20 — see `scripts/trim-snapshot.ts`)
 and `contact-overlay.json` (2 records). What is settled, and what is not:

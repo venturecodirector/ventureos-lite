@@ -4,7 +4,7 @@ import { join } from "node:path";
 import {
   FLIGHT_MAPPING,
   normalizeFlight,
-  type FlightBody,
+  type FlightRecord,
 } from "../../src/modules/capture/linkedin-api";
 
 /**
@@ -24,13 +24,11 @@ import {
  */
 const DIR = join(process.cwd(), "test/fixtures/linkedin-api");
 
-function bodiesFrom(file: string): FlightBody[] {
+function recordsFrom(file: string): FlightRecord[] {
   const snapshot = JSON.parse(readFileSync(join(DIR, file), "utf8")) as {
-    records: Array<{ bodyFormat: string | null; body: FlightBody | null }>;
+    records: FlightRecord[];
   };
-  return snapshot.records
-    .filter((r) => r.bodyFormat === "rsc-flight" && r.body)
-    .map((r) => r.body!);
+  return snapshot.records.filter((r) => r.body);
 }
 
 describe("every rule cites a snapshot that exists", () => {
@@ -39,14 +37,18 @@ describe("every rule cites a snapshot that exists", () => {
     expect(rules.length).toBeGreaterThan(0);
     for (const rule of rules) {
       expect(() => readFileSync(join(DIR, rule.evidence))).not.toThrow();
-      expect(rule.discriminator.length).toBeGreaterThan(0);
-      expect(rule.discriminatorPath).toMatch(/\./);
+      // A rule identifies its node either by a tracked discriminator or by the
+      // keys the node carries — one or the other, never neither.
+      const byDiscriminator = Boolean(rule.discriminatorPath && rule.discriminator);
+      const byKeys = Boolean(rule.keys?.length);
+      expect(byDiscriminator || byKeys, `${rule.evidence}: rule identifies nothing`).toBe(true);
+      if (byDiscriminator) expect(rule.discriminatorPath).toMatch(/\./);
     }
   });
 });
 
 describe("the contact overlay, read by the mapping", () => {
-  const fields = normalizeFlight(bodiesFrom("contact-overlay.json"));
+  const fields = normalizeFlight(recordsFrom("contact-overlay.json"));
 
   it("finds the email, by its tracking name rather than its label", () => {
     expect(fields.email, "the email field was not located").toBeDefined();
@@ -114,7 +116,7 @@ describe("the contact overlay, read by the mapping", () => {
 });
 
 describe("the profile snapshot has no contact panel, and says so by omission", () => {
-  const fields = normalizeFlight(bodiesFrom("rsc-profile.json"));
+  const fields = normalizeFlight(recordsFrom("rsc-profile.json"));
 
   /**
    * The contact rows only exist once the panel has been opened — which is why
@@ -126,19 +128,19 @@ describe("the profile snapshot has no contact panel, and says so by omission", (
   });
 
   it("returns an object rather than throwing on a payload with none of its keys", () => {
-    expect(() => normalizeFlight(bodiesFrom("rsc-profile.json"))).not.toThrow();
+    expect(() => normalizeFlight(recordsFrom("rsc-profile.json"))).not.toThrow();
   });
 });
 
 describe("it degrades rather than guessing", () => {
   it("returns nothing for an empty or malformed set of bodies", () => {
     expect(normalizeFlight([])).toEqual({});
-    expect(normalizeFlight([{ format: "rsc-flight", rows: [] }])).toEqual({});
+    expect(normalizeFlight([{ url: "https://x/", body: { format: "rsc-flight", rows: [] } }])).toEqual({});
     // Shapes it has never seen must not throw.
     expect(
       normalizeFlight([
-        { format: "rsc-flight", rows: [{ id: "0", tag: null, value: "just a string" }] },
-        { format: "rsc-flight", rows: [{ id: "1", tag: null }] },
+        { url: "https://x/", body: { format: "rsc-flight", rows: [{ id: "0", tag: null, value: "just a string" }] } },
+        { url: "https://x/", body: { format: "rsc-flight", rows: [{ id: "1", tag: null }] } },
       ]),
     ).toEqual({});
   });
@@ -147,7 +149,57 @@ describe("it degrades rather than guessing", () => {
     const loop: Record<string, unknown> = { a: 1 };
     loop.self = loop;
     expect(() =>
-      normalizeFlight([{ format: "rsc-flight", rows: [{ id: "0", tag: null, value: loop }] }]),
+      normalizeFlight([
+        { url: "https://x/", body: { format: "rsc-flight", rows: [{ id: "0", tag: null, value: loop }] } },
+      ]),
     ).not.toThrow();
+  });
+});
+
+/**
+ * ── ONE CAPTURE, TWO PEOPLE ─────────────────────────────────────────────────
+ *
+ * A session that walks from one profile to another leaves both in the buffer,
+ * and the recorded capture holds exactly that: two profile documents. The name
+ * lives in objects with explicit `firstName` and `lastName` keys and no tracked
+ * view anywhere near them, so a rule that took the first pair it found would
+ * attach one person's name to the other person's lead — silently, and only for
+ * operators who browse the way people actually browse.
+ *
+ * The scoping is therefore the property worth testing, more than the extraction.
+ */
+describe("a name is read from the right person's record", () => {
+  const records = recordsFrom("profile-full.json");
+
+  it("finds the name in the record whose url is that profile", () => {
+    const fields = normalizeFlight(records, { slug: "odon-anonimizalt" });
+    expect(fields.name, "no name found for the profile that has one").toBeDefined();
+    expect(fields.name!.via).toBe("keys=firstName+lastName");
+    expect(fields.name!.confidence).toBe("high");
+    // Scrubbed, so this is the placeholder pair — the POSITION is the assertion.
+    expect(fields.name!.value).toMatch(/^<text:\d+> <text:\d+>$/);
+  });
+
+  /** THE POINT: the other person's record must not answer for this one. */
+  it("returns nothing rather than the other person in the same capture", () => {
+    const fields = normalizeFlight(records, { slug: "elek-teszt" });
+    expect(
+      fields.name,
+      "a name was taken from a record belonging to somebody else",
+    ).toBeUndefined();
+  });
+
+  it("refuses a slug that is in no record at all", () => {
+    expect(normalizeFlight(records, { slug: "nobody-here" }).name).toBeUndefined();
+  });
+
+  /**
+   * With no slug the rule still only reads a profile document — never a
+   * component response or an action payload that happens to carry a name.
+   */
+  it("still restricts itself to a profile document when given no slug", () => {
+    const fields = normalizeFlight(records);
+    expect(fields.name).toBeDefined();
+    expect(fields.name!.path).toMatch(/^\/rows\//);
   });
 });

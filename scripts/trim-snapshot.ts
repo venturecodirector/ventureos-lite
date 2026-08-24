@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { FLIGHT_MAPPING } from "../src/modules/capture/linkedin-api";
 
 /**
  * Trim a recorded LinkedIn snapshot down to the records that teach something.
@@ -40,6 +41,26 @@ interface Record_ {
   body: unknown;
 }
 
+/**
+ * The keys the mapping reads directly, taken FROM the mapping.
+ *
+ * A record can be worth keeping without carrying a tracked view: the profile's
+ * name is in objects with explicit `firstName` and `lastName` keys and no view
+ * anywhere near them. The first version of this rule dropped exactly that record
+ * as "covered by a richer one" — it had fewer views and more evidence.
+ */
+const MAPPED_KEYS = new Set(Object.values(FLIGHT_MAPPING).flatMap((rules) => rules.flatMap((r) => r.keys ?? [])));
+
+function hasMappedKey(value: unknown, depth = 0): boolean {
+  if (depth > 60 || value === null || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((v) => hasMappedKey(v, depth + 1));
+  const node = value as Record<string, unknown>;
+  for (const k of MAPPED_KEYS) {
+    if (typeof node[k] === "string" && node[k] !== "") return true;
+  }
+  return Object.values(node).some((v) => hasMappedKey(v, depth + 1));
+}
+
 function viewNames(value: unknown, out: Set<string>, depth = 0): void {
   if (depth > 60 || value === null || typeof value !== "object") return;
   if (Array.isArray(value)) {
@@ -71,6 +92,10 @@ for (const record of snapshot.records) {
   const names = new Set<string>();
   viewNames(record.body, names);
   const relevant = [...names].filter((n) => KEEP.test(n)).sort();
+  // A mapped key is its own reason to keep a record, view or no view. It is
+  // added to the coverage set as a pseudo-view so the subset rule below cannot
+  // discard the only record that has it.
+  if (hasMappedKey(record.body)) relevant.push("KEY:mapped-identity-keys");
   if (relevant.length > 0) candidates.push({ record, views: relevant });
   else {
     dropped.push({

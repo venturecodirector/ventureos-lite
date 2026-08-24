@@ -541,3 +541,62 @@ describe("the payload's vocabulary survives", () => {
     expect(scrub('0:{"a":"profile_card_experience"}')).toContain("profile_card_experience");
   });
 });
+
+/**
+ * ── RUNNING IT TWICE MUST NOT CHANGE THE ANSWER ─────────────────────────────
+ *
+ * `scripts/rescrub-snapshot.ts` exists so a snapshot recorded before a scrubber
+ * fix can be brought up to date without asking somebody for another ten-minute
+ * browser session. Its first version was not idempotent in two ways, and both
+ * damaged the fixture rather than the privacy:
+ *
+ *   · it re-placeholdered its own output — `<text:24>` became `<text:9>`, then
+ *     `<text:8>` — so each run shrank the one thing a redacted value still
+ *     carried, which is how long the original was;
+ *   · it handed an already-placeholdered slug a FRESH cast name, so a record
+ *     whose url said `odon-anonimizalt` had a body saying `cecilia-proba`. A
+ *     fixture that contradicts itself teaches something false.
+ */
+describe("scrubbing twice changes nothing", () => {
+  const body =
+    '0:{"$type":"proto.sdui.components.core.Text","firstName":"Tom","lastName":"Vecsernyes",' +
+    '"vanityName":"tom-vechy-vecsernyes","url":"https://example.com/a/b","note":"a longer free sentence"}';
+  const once = () =>
+    S.scrubSnapshot({
+      slug: "tom-vechy-vecsernyes",
+      records: [
+        {
+          url: "https://www.linkedin.com/flagship-web/in/tom-vechy-vecsernyes/",
+          method: "POST",
+          status: 200,
+          contentType: "application/octet-stream",
+          bodySize: body.length,
+          body,
+        },
+      ],
+    });
+
+  it("a placeholder survives a second pass unchanged", () => {
+    const first = once().records[0]! as unknown as { body: { rows: Array<{ value: Record<string, string> }> } };
+    const value = first.body.rows[0]!.value;
+    // Feed the scrubbed row back through the flight walker.
+    const replacer = (S as unknown as { createReplacer(): unknown }).createReplacer();
+    const again = (S as unknown as {
+      scrubFlightBody(row: unknown, replacer: unknown, url: string): { value: Record<string, string> };
+    }).scrubFlightBody({ id: "0", tag: null, value }, replacer, "https://x/in/tom-vechy-vecsernyes/");
+    expect(again.value).toEqual(value);
+  });
+
+  it("keeps a name key redacted and a slug key stable", () => {
+    const row = (once().records[0]! as unknown as {
+      body: { rows: Array<{ value: Record<string, string> }> };
+    }).body.rows[0]!.value;
+    expect(row.firstName).not.toBe("Tom");
+    expect(row.lastName).not.toMatch(/Vecsernyes/i);
+    // The slug key resolves to the same placeholder the url uses.
+    expect(row.vanityName).toMatch(/^[a-z]+-[a-z]+$/);
+    expect(row.vanityName).not.toMatch(/vechy/i);
+    // And the payload's own vocabulary is untouched.
+    expect(row.$type).toBe("proto.sdui.components.core.Text");
+  });
+});
