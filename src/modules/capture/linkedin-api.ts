@@ -480,7 +480,7 @@ export const FLIGHT_MAPPING: Record<string, FlightRule[]> = {
       extract: "keys",
       scope: "profile-document",
       confidence: "high",
-      evidence: "profile-full.json",
+      evidence: "profile-full-2.json",
     },
     {
       // The greeting form, when the pair is not there. Lower confidence: it is
@@ -489,7 +489,7 @@ export const FLIGHT_MAPPING: Record<string, FlightRule[]> = {
       extract: "keys",
       scope: "profile-document",
       confidence: "medium",
-      evidence: "profile-full.json",
+      evidence: "profile-full-2.json",
     },
   ],
   email: [

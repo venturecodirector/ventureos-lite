@@ -45,9 +45,32 @@ const load = (name: string): Snapshot =>
   JSON.parse(readFileSync(join(DIR, name), "utf8")) as Snapshot;
 
 describe("the recorded snapshots exist and parsed", () => {
-  it("there is at least a profile and a contact overlay", () => {
-    expect(files).toContain("rsc-profile.json");
+  it("there is a profile capture and a contact overlay", () => {
+    expect(files).toContain("profile-full-2.json");
     expect(files).toContain("contact-overlay.json");
+  });
+
+  /**
+   * Every committed snapshot must EARN its bytes.
+   *
+   * Four accumulated, and two were redundant: one whose fields and cards were a
+   * subset of another's, and one recorded before the scrubber learned to keep
+   * `$type`, which yielded no field at all. A fixture nobody reads is a fixture
+   * nobody notices going stale.
+   */
+  it("every snapshot supplies a field or a card no other one does", () => {
+    const seen = new Set<string>();
+    for (const name of files) {
+      const raw = readFileSync(join(DIR, name), "utf8");
+      const cards = new Set(
+        (raw.match(/profile\.card\.ref\w*?(Topcard|About|ExperienceTopLevelSection|ContactInfoDetailSection)/g) ?? []).map(
+          (c) => c.replace(/.*ref\w*?(?=[A-Z])/, ""),
+        ),
+      );
+      const fresh = [...cards].filter((c) => !seen.has(c));
+      expect(fresh.length, `${name} adds nothing another snapshot does not already have`).toBeGreaterThan(0);
+      for (const c of cards) seen.add(c);
+    }
   });
 
   it("every record parsed, as JSON or as RSC flight", () => {
@@ -61,7 +84,7 @@ describe("the recorded snapshots exist and parsed", () => {
 
   /** The payload that used to be declined unread. */
   it("the profile arrives as octet-stream and is read as RSC flight", () => {
-    const flight = load("rsc-profile.json").records.filter(
+    const flight = load("profile-full-2.json").records.filter(
       (r) => r.bodyFormat === "rsc-flight",
     );
     expect(flight.length).toBeGreaterThan(0);

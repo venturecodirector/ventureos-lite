@@ -15,7 +15,65 @@ done from a test runner, and it must not be done by asking LinkedIn for anything
 
 So this is a step you have to drive. It takes about ten minutes.
 
-## STATUS: name, email and phone are mapped from recorded payloads
+## STATUS: name, email and phone are mapped. Four fields cannot be, and here is why.
+
+Two snapshots, each earning its bytes (a test enforces that):
+
+| file | what only it supplies |
+|---|---|
+| `profile-full-2.json` | the name, the email, and the full card vocabulary — one recording with the contact panel open |
+| `contact-overlay.json` | the phone |
+
+| field | how it is found | evidence |
+|---|---|---|
+| `name` | `{ firstName, lastName }` keys, in the record whose url IS that profile | profile-full-2.json |
+| `email` | `viewTrackingSpecs.viewName = contact-email`, then a `mailto:` url | contact-overlay.json |
+| `phone` | `viewTrackingSpecs.viewName = contact-phone`, then a phone-shaped value | contact-overlay.json |
+
+`email` and `phone` are verified against a RAW unscrubbed capture: the extractor
+returns the real address and the real number.
+
+### The card vocabulary, which is the durable anchor
+
+`componentkey` names every profile card, indexed by the member id:
+
+```
+com.linkedin.sdui.profile.card.ref<MEMBERID>Topcard
+com.linkedin.sdui.profile.card.ref<MEMBERID>About
+com.linkedin.sdui.profile.card.ref<MEMBERID>ExperienceTopLevelSection
+com.linkedin.sdui.profile.card.ref<MEMBERID>ContactInfoDetailSection
+```
+
+Not localised, not hashed, and stable across the three captures. Anything mapped
+from a card should be anchored here rather than on a tracked view.
+
+### WHY HEADLINE, LOCATION, COMPANY AND JOB TITLE ARE NOT MAPPED
+
+Not for want of looking. Their cards are locatable — `Topcard`, `About`,
+`ExperienceTopLevelSection` are all in the capture. What is missing is anything
+that says WHICH text is which:
+
+- no semantic key. The whole capture has no `headline`, `occupation`,
+  `companyName` or `jobTitle` key anywhere. The name is mappable precisely
+  because it is the one field LinkedIn does put behind keys (`firstName`,
+  `lastName`);
+- no style discriminator. Every `textProps` under the top card carries the same
+  `fontSize: "small"`, `fontFamily: "sans"` — nothing separates a headline from a
+  location;
+- and the one thing that WOULD tell them apart is the text itself, which is
+  exactly what a committed fixture must not contain.
+
+Position within the card is the only remaining signal, and "the second text is
+the headline" is a guess dressed as a rule — the thing this directory exists to
+prevent. It is also the thing that broke six times on the DOM path.
+
+**What would unblock it, without putting anyone's data in the repo:** a capture
+of an OWN profile, plus the four values told to me separately. Matching a known
+string to a `<text:N>` length pins each path exactly once; the rules then cite
+this file, and only the scrubbed fixture is committed. Nobody else's data is
+involved, because the profile is the operator's own.
+
+## What was recorded before, and what it taught
 
 Three snapshots: `profile-full.json` (2 records, trimmed from 17),
 `rsc-profile.json` (2 of 20) and `contact-overlay.json` (2 of 11).

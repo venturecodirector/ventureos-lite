@@ -115,20 +115,23 @@ describe("the contact overlay, read by the mapping", () => {
   });
 });
 
-describe("the profile snapshot has no contact panel, and says so by omission", () => {
-  const fields = normalizeFlight(recordsFrom("rsc-profile.json"));
+describe("a capture that includes the contact panel", () => {
+  const records = recordsFrom("profile-full-2.json");
 
   /**
-   * The contact rows only exist once the panel has been opened — which is why
-   * there are two snapshots. A mapping that "found" an email here would be
-   * matching something else, and that is worth pinning.
+   * This one was recorded with the panel OPEN, so the same capture carries both
+   * the profile document and the contact rows — which is worth pinning, because
+   * the earlier snapshots needed two separate recordings to cover the same
+   * ground and the second one exists only for that reason.
    */
-  it("finds no email in a profile view where the panel was never opened", () => {
-    expect(fields.email).toBeUndefined();
+  it("supplies the name and the email from one recording", () => {
+    const fields = normalizeFlight(records, { slug: "odon-anonimizalt" });
+    expect(fields.name).toBeDefined();
+    expect(fields.email).toBeDefined();
   });
 
-  it("returns an object rather than throwing on a payload with none of its keys", () => {
-    expect(() => normalizeFlight(recordsFrom("rsc-profile.json"))).not.toThrow();
+  it("returns an object rather than throwing, whatever it is handed", () => {
+    expect(() => normalizeFlight(records)).not.toThrow();
   });
 });
 
@@ -169,7 +172,7 @@ describe("it degrades rather than guessing", () => {
  * The scoping is therefore the property worth testing, more than the extraction.
  */
 describe("a name is read from the right person's record", () => {
-  const records = recordsFrom("profile-full.json");
+  const records = recordsFrom("profile-full-2.json");
 
   it("finds the name in the record whose url is that profile", () => {
     const fields = normalizeFlight(records, { slug: "odon-anonimizalt" });
