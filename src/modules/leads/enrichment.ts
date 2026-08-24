@@ -1,5 +1,6 @@
 import { prismaUnsafe } from "@/lib/db";
 import { parseRobots, isAllowed, VENTURE_USER_AGENT } from "@/lib/robots";
+import { safeFetch, isBlockedHostname } from "@/lib/safe-fetch";
 // One implementation of "is this a usable email / phone", shared with the
 // extension capture path — two copies would drift.
 import { normalizeEmail, normalizePhone } from "@/modules/capture/contact";
@@ -142,86 +143,82 @@ export function extractSiteContacts(html: string): SiteContacts {
   };
 }
 
+export type SiteSkipReason =
+  | "no_domain"
+  | "robots"
+  | "unreachable"
+  | "empty"
+  /** The host is not a public website — see `src/lib/safe-fetch.ts`. */
+  | "blocked";
+
 export interface EnrichmentResult {
   /** Contacts read out of the same page, when it was reachable. */
   contacts?: SiteContacts;
   text: string | null;
   /** Why there is no text, when there is none. */
-  skipped: "no_domain" | "robots" | "unreachable" | "empty" | null;
+  skipped: SiteSkipReason | null;
   fromCache: boolean;
 }
 
+export interface SiteRead {
+  text: string | null;
+  contacts: SiteContacts;
+  skipped: SiteSkipReason | null;
+}
+
+const NO_CONTACTS: SiteContacts = { emails: [], phones: [] };
+
 /**
- * Fetch and cache the homepage text for a company. Never throws: enrichment is
- * a bonus, and a site being down must not fail a research run.
+ * Read one public website: robots first, then the homepage, then at most one
+ * contact page. Touches no database, so the domain lookup can point it at a
+ * hostname the operator has typed but not yet saved, and both callers share one
+ * set of crawl manners rather than two.
  */
-export async function enrichCompanySite(companyId: string): Promise<EnrichmentResult> {
-  const company = await prismaUnsafe.company.findUnique({
-    where: { id: companyId },
-    select: { id: true, domain: true, website: true, siteText: true, siteFetchedAt: true },
-  });
-  if (!company) return { text: null, skipped: "no_domain", fromCache: false };
-
-  const fresh =
-    company.siteFetchedAt && Date.now() - company.siteFetchedAt.getTime() < CACHE_MS;
-  if (fresh) {
-    return { text: company.siteText, skipped: company.siteText ? null : "empty", fromCache: true };
-  }
-
-  const raw = company.website ?? company.domain;
-  if (!raw) return { text: null, skipped: "no_domain", fromCache: false };
-
+export async function readSite(raw: string): Promise<SiteRead> {
   let origin: string;
   let path: string;
   try {
     const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
     origin = u.origin;
     path = u.pathname || "/";
+    if (isBlockedHostname(u.hostname)) {
+      return { text: null, contacts: NO_CONTACTS, skipped: "blocked" };
+    }
   } catch {
-    return { text: null, skipped: "no_domain", fromCache: false };
+    return { text: null, contacts: NO_CONTACTS, skipped: "no_domain" };
   }
 
   let robotRules: ReturnType<typeof parseRobots> | null = null;
   // robots.txt first. A site that asks us not to read a page does not get read,
   // even though this is a single request on a company we are researching.
-  try {
-    const res = await fetch(`${origin}/robots.txt`, {
-      headers: { "User-Agent": VENTURE_USER_AGENT },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (res.ok) {
-      const rules = parseRobots(await res.text(), VENTURE_USER_AGENT);
-      // Kept, so the contact-page attempt below is judged by the same rules
-      // rather than re-fetching robots.txt or quietly ignoring it.
-      robotRules = rules;
-      if (!isAllowed(rules, path)) {
-        await stampFetch(company.id, null);
-        return { text: null, skipped: "robots", fromCache: false };
-      }
+  const robotsRes = await safeFetch(`${origin}/robots.txt`, {
+    timeoutMs: FETCH_TIMEOUT_MS,
+    userAgent: VENTURE_USER_AGENT,
+  });
+  if (robotsRes?.ok) {
+    // Kept, so the contact-page attempt below is judged by the same rules
+    // rather than re-fetching robots.txt or quietly ignoring it.
+    robotRules = parseRobots(await robotsRes.text(), VENTURE_USER_AGENT);
+    if (!isAllowed(robotRules, path)) {
+      return { text: null, contacts: NO_CONTACTS, skipped: "robots" };
     }
-    // A missing or erroring robots.txt means no restrictions.
-  } catch {
-    /* unreachable robots.txt is not a prohibition */
   }
+  // A missing or erroring robots.txt means no restrictions.
 
   let text: string | null = null;
-  let contacts: SiteContacts = { emails: [], phones: [] };
-  try {
-    const res = await fetch(`${origin}${path}`, {
-      headers: { "User-Agent": VENTURE_USER_AGENT, Accept: "text/html" },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      redirect: "follow",
-    });
-    if (res.ok && (res.headers.get("content-type") ?? "").includes("text/html")) {
-      const html = await res.text();
-      text = extractReadableText(html) || null;
-      // From the RAW html: mailto:/tel: live in the markup that the text
-      // extraction above strips out.
-      contacts = extractSiteContacts(html);
-    }
-  } catch {
-    await stampFetch(company.id, null);
-    return { text: null, skipped: "unreachable", fromCache: false };
+  let contacts: SiteContacts = NO_CONTACTS;
+  const res = await safeFetch(`${origin}${path}`, {
+    timeoutMs: FETCH_TIMEOUT_MS,
+    userAgent: VENTURE_USER_AGENT,
+    accept: "text/html",
+  });
+  if (!res) return { text: null, contacts: NO_CONTACTS, skipped: "unreachable" };
+  if (res.ok && (res.headers.get("content-type") ?? "").includes("text/html")) {
+    const html = await res.text();
+    text = extractReadableText(html) || null;
+    // From the RAW html: mailto:/tel: live in the markup that the text
+    // extraction above strips out.
+    contacts = extractSiteContacts(html);
   }
 
   /**
@@ -250,8 +247,42 @@ export async function enrichCompanySite(companyId: string): Promise<EnrichmentRe
     }
   }
 
-  await stampFetch(company.id, text);
-  return { text, skipped: text ? null : "empty", fromCache: false, contacts };
+  return { text, contacts, skipped: text ? null : "empty" };
+}
+
+/**
+ * Fetch and cache the homepage text for a company. Never throws: enrichment is
+ * a bonus, and a site being down must not fail a research run.
+ */
+export async function enrichCompanySite(companyId: string): Promise<EnrichmentResult> {
+  const company = await prismaUnsafe.company.findUnique({
+    where: { id: companyId },
+    select: { id: true, domain: true, website: true, siteText: true, siteFetchedAt: true },
+  });
+  if (!company) return { text: null, skipped: "no_domain", fromCache: false };
+
+  const fresh =
+    company.siteFetchedAt && Date.now() - company.siteFetchedAt.getTime() < CACHE_MS;
+  if (fresh) {
+    return { text: company.siteText, skipped: company.siteText ? null : "empty", fromCache: true };
+  }
+
+  const raw = company.website ?? company.domain;
+  if (!raw) return { text: null, skipped: "no_domain", fromCache: false };
+
+  const read = await readSite(raw);
+  if (read.skipped === "no_domain") {
+    return { text: null, skipped: "no_domain", fromCache: false };
+  }
+  // Record the attempt either way — including a refusal — so a dead or
+  // unreachable site is not refetched on every research run.
+  await stampFetch(company.id, read.text);
+  return {
+    text: read.text,
+    skipped: read.skipped,
+    fromCache: false,
+    contacts: read.contacts,
+  };
 }
 
 /** Paths that carry contact details, commonest first. */
@@ -277,19 +308,16 @@ async function fetchContactPage(
 ): Promise<SiteContacts | null> {
   for (const path of CONTACT_PATHS) {
     if (rules && !isAllowed(rules, path)) continue;
-    try {
-      const res = await fetch(`${origin}${path}`, {
-        headers: { "User-Agent": VENTURE_USER_AGENT, Accept: "text/html" },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        redirect: "follow",
-      });
-      if (!res.ok) continue;
-      if (!(res.headers.get("content-type") ?? "").includes("text/html")) continue;
-      const found = extractSiteContacts(await res.text());
-      if (found.emails.length > 0) return found;
-    } catch {
-      // Unreachable, timed out, or refused — try the next candidate.
-    }
+    // Unreachable, timed out, or refused — safeFetch answers null, try the next.
+    const res = await safeFetch(`${origin}${path}`, {
+      timeoutMs: FETCH_TIMEOUT_MS,
+      userAgent: VENTURE_USER_AGENT,
+      accept: "text/html",
+    });
+    if (!res?.ok) continue;
+    if (!(res.headers.get("content-type") ?? "").includes("text/html")) continue;
+    const found = extractSiteContacts(await res.text());
+    if (found.emails.length > 0) return found;
   }
   return null;
 }

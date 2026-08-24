@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { attempt } from "@/lib/client/server-action";
 import { lookupTaxpayer } from "@/modules/registry/actions";
+import { lookupCompanySite } from "@/modules/leads/site-lookup";
 import { runResearch } from "@/modules/leads/actions";
 import type { Stage } from "@prisma/client";
 import {
@@ -143,6 +144,66 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
       });
     });
   }
+
+  /**
+   * Fill the company's website — and what is on it — from the Domain field.
+   *
+   * With a domain typed in, this reads the site and nothing else: no model
+   * call, no cost. With the field empty it asks Claude to search the web for
+   * the company's own site, which is the one case where a click spends money,
+   * so the button says so in its tooltip before it is pressed.
+   *
+   * Same discipline as the adószám lookup: only ever fills a field the operator
+   * LEFT EMPTY, and saves nothing — Save changes is still a deliberate press.
+   */
+  function lookupDomain() {
+    if (!form) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await attempt(
+        lookupCompanySite({
+          leadId: form.id,
+          domain: form.companyDomain,
+          companyName: form.companyName,
+          city: form.companyCity,
+          taxId: form.companyTaxId,
+        }),
+      );
+      if (!res.ok) {
+        setMsg({ kind: "err", text: res.error });
+        return;
+      }
+
+      const filled: string[] = [];
+      if (res.domain !== form.companyDomain.trim()) filled.push("domain");
+      const email = form.email.trim() ? form.email : (res.emails[0] ?? "");
+      const phone = form.phone.trim() ? form.phone : (res.phones[0] ?? "");
+      if (email !== form.email) filled.push("email");
+      if (phone !== form.phone) filled.push("phone");
+      patch({ companyDomain: res.domain, email, phone });
+
+      const found =
+        res.source === "web_search"
+          ? `Found ${res.domain} (${res.confidence} confidence)${res.reason ? ` — ${res.reason}` : ""}`
+          : `Read ${res.domain}`;
+      const parts = [
+        found,
+        res.siteNote ? `The site gave nothing: ${res.siteNote}.` : null,
+        filled.length > 0
+          ? `Filled: ${filled.join(", ")}. Press Save changes to keep it.`
+          : "Nothing new to fill in.",
+      ].filter(Boolean);
+      setMsg({ kind: "ok", text: parts.join(" ") });
+    });
+  }
+
+  /**
+   * Something to go on: either a domain to read, or a name to search for.
+   * Two characters is the shortest name a search could mean anything with.
+   */
+  const canLookupDomain =
+    (form?.companyDomain ?? "").trim().length > 0 ||
+    (form?.companyName ?? "").trim().length >= 2;
 
   /**
    * The domain the audit should run against.
@@ -408,13 +469,34 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
                 value={form.companyName}
                 onChange={(e) => patch({ companyName: e.target.value })}
               />
-              <input
-                className={INPUT}
-                placeholder="Domain"
-                data-testid="lead-company-domain"
-                value={form.companyDomain}
-                onChange={(e) => patch({ companyDomain: e.target.value })}
-              />
+              <div className="flex gap-1.5">
+                <input
+                  className={INPUT}
+                  placeholder="Domain"
+                  data-testid="lead-company-domain"
+                  value={form.companyDomain}
+                  onChange={(e) => patch({ companyDomain: e.target.value })}
+                />
+                {/*
+                  Read the site, or find it. With a domain present this is a
+                  plain fetch; with the field empty it is a web search, which
+                  costs — hence the two different tooltips.
+                */}
+                <button
+                  type="button"
+                  className={BTN}
+                  data-testid="lead-domain-lookup"
+                  disabled={pending || !canLookupDomain}
+                  title={
+                    form.companyDomain.trim()
+                      ? "Read this site and fill in what it says"
+                      : "Search the web for this company's site (uses Claude)"
+                  }
+                  onClick={lookupDomain}
+                >
+                  Lookup
+                </button>
+              </div>
               <input
                 className={INPUT}
                 placeholder="City"

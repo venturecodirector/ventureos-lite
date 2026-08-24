@@ -3,7 +3,11 @@ import { prismaUnsafe, getWorkspaceClient } from "../db";
 import { getAnthropic } from "./client";
 import type { ModelId, UseCase } from "./models";
 import { modelForUseCase, DEFAULT_MAX_TOKENS } from "./models";
-import { computeCostUsd, type ClaudeUsageTokens } from "./cost";
+import {
+  computeCostUsd,
+  type ClaudeUsageTokens,
+  type ClaudeServerToolUse,
+} from "./cost";
 import { assertWithinBudget } from "./budget";
 import { ClaudeRefusalError, ClaudeJsonError } from "./errors";
 import { resolveIntegration } from "../../modules/integrations/resolve";
@@ -29,16 +33,38 @@ interface SystemBlock {
   cache_control?: { type: "ephemeral" };
 }
 
+/**
+ * Anthropic's own server-side search tool. It runs INSIDE the one API call —
+ * there is no client tool loop to write — but it bills per search, so it only
+ * ever appears when a use case asked for it explicitly.
+ */
+export interface WebSearchTool {
+  type: "web_search_20250305";
+  name: "web_search";
+  max_uses: number;
+}
+
+/*
+ * NO `user_location`. The obvious thing to send with it was
+ * `{ type: "approximate", country: "HU" }` — and the API rejects that outright
+ * with "Country code HU is not supported." Localisation of the search therefore
+ * has to come from the prompt, which is where it now lives. Do not add the
+ * field back on the assumption that it works.
+ */
+
 export interface ClaudeRequest {
   model: string;
   max_tokens: number;
   system?: SystemBlock[];
   messages: ClaudeMessage[];
+  tools?: WebSearchTool[];
 }
 
 export interface ClaudeResponse {
   content: Array<{ type: string; text?: string }>;
   usage: ClaudeUsageTokens;
+  /** Per-request server tool billing (web search), when any ran. */
+  serverToolUse?: ClaudeServerToolUse | null;
   stop_reason: string | null;
   model: string;
 }
@@ -51,6 +77,8 @@ export interface UsageLogEntry {
   tokensOut: number;
   costUsd: number;
   usage: ClaudeUsageTokens;
+  /** Searches billed on this call, so the log shows where the cost came from. */
+  webSearches: number;
 }
 
 export interface CallClaudeDeps {
@@ -73,6 +101,11 @@ export interface CallClaudeParams<T> {
   modelOverride?: ModelId;
   /** Mark the static system block for prompt caching (default true). */
   cacheSystem?: boolean;
+  /**
+   * Let Claude search the web, capped at `maxUses` searches. Billed per search
+   * on top of tokens, so the cap is required rather than optional.
+   */
+  webSearch?: { maxUses: number };
 }
 
 export interface CallClaudeResult<T> {
@@ -170,9 +203,22 @@ export async function callClaude<T = string>(
       "\n\nRespond with ONLY a JSON value matching the required schema — no markdown, no prose.";
   }
 
+  const tools: WebSearchTool[] | undefined = params.webSearch
+    ? [
+        {
+          type: "web_search_20250305",
+          name: "web_search",
+          max_uses: params.webSearch.maxUses,
+        },
+      ]
+    : undefined;
+
   let usage = ZERO_USAGE;
+  // Counted across the first call AND the repair retry: a retry can search
+  // again, and an uncounted search is spend the daily cap never sees.
+  let webSearches = 0;
   const finalizeAndLog = async (): Promise<number> => {
-    const costUsd = computeCostUsd(model, usage);
+    const costUsd = computeCostUsd(model, usage, { web_search_requests: webSearches });
     await deps.logUsage({
       workspaceId: params.workspaceId,
       useCase: params.useCase,
@@ -181,6 +227,7 @@ export async function callClaude<T = string>(
       tokensOut: usage.output_tokens,
       costUsd,
       usage,
+      webSearches,
     });
     return costUsd;
   };
@@ -189,10 +236,11 @@ export async function callClaude<T = string>(
   const apiKey = await deps.apiKeyFor(params.workspaceId);
 
   let res = await deps.createMessage(
-    { model, max_tokens: maxTokens, system, messages },
+    { model, max_tokens: maxTokens, system, messages, ...(tools ? { tools } : {}) },
     apiKey,
   );
   usage = addUsage(usage, res.usage);
+  webSearches += res.serverToolUse?.web_search_requests ?? 0;
 
   if (res.stop_reason === "refusal") {
     await finalizeAndLog();
@@ -221,10 +269,17 @@ export async function callClaude<T = string>(
     },
   ];
   res = await deps.createMessage(
-    { model, max_tokens: maxTokens, system, messages: repairMessages },
+    {
+      model,
+      max_tokens: maxTokens,
+      system,
+      messages: repairMessages,
+      ...(tools ? { tools } : {}),
+    },
     apiKey,
   );
   usage = addUsage(usage, res.usage);
+  webSearches += res.serverToolUse?.web_search_requests ?? 0;
 
   if (res.stop_reason === "refusal") {
     await finalizeAndLog();
@@ -264,10 +319,14 @@ export const defaultDeps: CallClaudeDeps = {
       model: req.model,
       max_tokens: req.max_tokens,
       ...(req.system ? { system: req.system } : {}),
+      ...(req.tools ? { tools: req.tools } : {}),
       messages: req.messages,
     });
     return {
       content: res.content as unknown as Array<{ type: string; text?: string }>,
+      serverToolUse: res.usage.server_tool_use
+        ? { web_search_requests: res.usage.server_tool_use.web_search_requests }
+        : null,
       usage: {
         input_tokens: res.usage.input_tokens,
         output_tokens: res.usage.output_tokens,

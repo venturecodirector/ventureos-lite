@@ -40,6 +40,7 @@ const LEAD_PREFIXES = [
   "Kovacs Anna ",
   "Inline ",
   "Merge ",
+  "Domain Lead ",
 ];
 const COMPANY_PREFIXES = [
   "E2E ",
@@ -51,6 +52,7 @@ const COMPANY_PREFIXES = [
   "Undo Co ",
   "Inline Co",
   "Merge Co",
+  "Domain Co ",
 ];
 
 teardown("remove the rows the suite created", async () => {
