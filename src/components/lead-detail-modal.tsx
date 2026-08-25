@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { attempt } from "@/lib/client/server-action";
 import { lookupTaxpayer } from "@/modules/registry/actions";
 import { lookupCompanySite } from "@/modules/leads/site-lookup";
+import { verifyLeadEmail } from "@/modules/verification/actions";
 import { runResearch } from "@/modules/leads/actions";
 import type { Stage } from "@prisma/client";
 import {
@@ -194,6 +195,38 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
           : "Nothing new to fill in.",
       ].filter(Boolean);
       setMsg({ kind: "ok", text: parts.join(" ") });
+    });
+  }
+
+  /**
+   * Check the address before it costs the sending domain anything.
+   *
+   * The same layered check the cold-campaign gate runs — spelling, throwaway
+   * domain, role address, MX record — so the answer here is the answer the gate
+   * will give, not a second opinion from a second code path. Verifies the SAVED
+   * address: a freshly typed one has to be saved first, which the message says.
+   */
+  function verifyEmail() {
+    if (!form) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await attempt(verifyLeadEmail({ leadId: form.id, force: true }));
+      if (!res.ok) {
+        setMsg({ kind: "err", text: res.error });
+        return;
+      }
+      const label =
+        res.status === "valid"
+          ? "Deliverable"
+          : res.status === "risky"
+            ? "Risky"
+            : res.status === "invalid"
+              ? "Not deliverable"
+              : "Could not tell";
+      setMsg({
+        kind: res.status === "invalid" ? "err" : "ok",
+        text: `${label} — ${res.message}`,
+      });
     });
   }
 
@@ -410,13 +443,29 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
                 value={form.headline}
                 onChange={(e) => patch({ headline: e.target.value })}
               />
-              <input
-                className={INPUT}
-                placeholder="Email"
-                data-testid="lead-email"
-                value={form.email}
-                onChange={(e) => patch({ email: e.target.value })}
-              />
+              <div className="flex gap-1.5">
+                <input
+                  className={INPUT}
+                  placeholder="Email"
+                  data-testid="lead-email"
+                  value={form.email}
+                  onChange={(e) => patch({ email: e.target.value })}
+                />
+                {/*
+                  Checks the SAVED address, not the one being typed — the whole
+                  point is what a mail server will do with what we hold.
+                */}
+                <button
+                  type="button"
+                  className={BTN}
+                  data-testid="lead-verify-email"
+                  disabled={pending || form.email.trim().length === 0}
+                  title="Check whether this address can receive mail"
+                  onClick={verifyEmail}
+                >
+                  Verify
+                </button>
+              </div>
               <input
                 className={INPUT}
                 placeholder="Phone"

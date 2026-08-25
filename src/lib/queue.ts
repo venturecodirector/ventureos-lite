@@ -16,6 +16,7 @@ export const ERASURE_QUEUE = "erasures";
 /** Access-log parsing (P2/8): long-running, streamed, one job per upload. */
 export const LOGS_QUEUE = "logs";
 export const VISITS_QUEUE = "visits";
+export const VERIFY_QUEUE = "verify";
 
 let connection: IORedis | null = null;
 export function getRedisConnection(): IORedis {
@@ -90,6 +91,15 @@ export function visitsQueue(): Queue {
     visits = new Queue(VISITS_QUEUE, { connection: getRedisConnection() });
   }
   return visits;
+}
+
+let verify: Queue | null = null;
+/** Batch email verification for a large cold audience (playbook-v3 P9/2). */
+export function verifyQueue(): Queue {
+  if (!verify) {
+    verify = new Queue(VERIFY_QUEUE, { connection: getRedisConnection() });
+  }
+  return verify;
 }
 
 let erasures: Queue | null = null;

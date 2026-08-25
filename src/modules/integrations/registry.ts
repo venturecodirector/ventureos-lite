@@ -164,6 +164,25 @@ export const INTEGRATION_GROUPS: IntegrationGroup[] = [
     ],
   },
   {
+    id: "verifier",
+    title: "E-mail-cím ellenőrző (opcionális)",
+    description:
+      "Csak akkor kell, ha hideg kampányt indítasz. Nélküle is fut minden ellenőrzés — helyesírás, eldobható postafiók, szerep-cím, MX-rekord —, ez a szolgáltatás annyit tesz hozzá, hogy a postafiók létezését is megerősíti, címenként pár tized centért. ZeroBounce API-kulcs.",
+    // Nothing to test on its own: the check that matters is a real address,
+    // and the campaign audience screen already shows what it decided.
+    testable: false,
+    fields: [
+      {
+        key: "verifier.apiKey",
+        label: "ZeroBounce API-kulcs",
+        kind: "secret",
+        envVar: "VERIFIER_API_KEY",
+        placeholder: "üresen hagyva a beépített ellenőrzések futnak",
+        help: "zerobounce.net → API → API Key. Üresen hagyva semmi nem megy ki külső szolgáltatóhoz.",
+      },
+    ],
+  },
+  {
     id: "nav",
     title: "NAV Online Számla (cégadatok)",
     description:

@@ -12,6 +12,7 @@ import {
   ERASURE_QUEUE,
   LOGS_QUEUE,
   VISITS_QUEUE,
+  VERIFY_QUEUE,
 } from "../lib/queue";
 import { processFollowup, processWakeupSweep } from "../modules/pipeline/jobs";
 import {
@@ -47,6 +48,7 @@ import {
   processRawIpPurge,
   processVisitRetention,
 } from "../modules/tracking/jobs";
+import { processAudienceVerification } from "../modules/verification/jobs";
 
 /**
  * Background worker (BullMQ + Redis). Runs in its own Docker service.
@@ -171,6 +173,23 @@ async function main(): Promise<void> {
   visitWorker.on("failed", (job, err) => {
     // eslint-disable-next-line no-console
     console.error(`[worker] visit enrichment failed for ${job?.data?.visitId}`, err);
+  });
+
+  // The tail of a large cold audience (v3 P9/2). The action verifies the first
+  // hundred so the operator sees an answer; the rest has no request timeout to
+  // run into here.
+  const verifyWorker = new Worker(
+    VERIFY_QUEUE,
+    async (job) => {
+      const n = await processAudienceVerification(job.data.campaignId as string);
+      // eslint-disable-next-line no-console
+      console.log(`[worker] verified ${n} address(es) for campaign ${job.data.campaignId}`);
+    },
+    { connection },
+  );
+  verifyWorker.on("failed", (job, err) => {
+    // eslint-disable-next-line no-console
+    console.error(`[worker] audience verification failed for ${job?.data?.campaignId}`, err);
   });
 
   const wakeupWorker = new Worker(

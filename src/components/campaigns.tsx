@@ -9,9 +9,12 @@ import {
   activateCampaign,
   pauseCampaign,
   sendNow,
+  checkCampaignAudience,
+  acceptRiskyRecipient,
   type CampaignView,
   type ColdStatus,
 } from "@/modules/campaigns/actions";
+import type { AudienceBreakdown } from "@/modules/verification/store";
 import { EmptyState } from "./empty-state";
 
 const INPUT =
@@ -24,6 +27,82 @@ const STATUS_CHIP: Record<string, string> = {
   COMPLETED: "bg-panel text-muted",
   DISABLED: "bg-panel text-muted",
 };
+
+/**
+ * The audience, verified (playbook-v3 P9/2).
+ *
+ * The two lists below the counts are the whole design: invalid addresses are
+ * reported as already handled — there is no judgement to make about a domain
+ * with no mail server — while risky ones are a list of decisions, one per
+ * address, each with the reason it is risky. "Accept all" is deliberately not
+ * offered: it would collapse the distinction the two categories exist for.
+ */
+function AudiencePanel({
+  breakdown,
+  busy,
+  onAccept,
+}: {
+  breakdown: AudienceBreakdown | undefined;
+  busy: boolean;
+  onAccept: (recipientId: string) => void;
+}) {
+  if (!breakdown) return null;
+  const chip = (label: string, n: number, cls: string) => (
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${cls}`}>
+      {n} {label}
+    </span>
+  );
+  return (
+    <div className="mt-3 grid gap-2 rounded-[10px] border border-line bg-panel-2 p-3" data-testid="audience-panel">
+      <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+        <span className="mr-1 text-muted">Címellenőrzés:</span>
+        {chip("kézbesíthető", breakdown.valid, "bg-[rgba(61,220,151,0.12)] text-[#3DDC97]")}
+        {chip("kockázatos", breakdown.risky, "bg-[rgba(245,184,65,0.14)] text-warn")}
+        {chip("érvénytelen", breakdown.invalid, "bg-[rgba(255,92,122,0.14)] text-[#FFB3C2]")}
+        {breakdown.unknown > 0 && chip("bizonytalan", breakdown.unknown, "bg-panel text-muted")}
+        {breakdown.suppressed > 0 && chip("tiltólistás", breakdown.suppressed, "bg-panel text-muted")}
+        {breakdown.pending > 0 &&
+          chip("háttérben fut", breakdown.pending, "bg-[rgba(116,39,198,0.2)] text-[#E4D3FF]")}
+      </div>
+
+      <p className="text-[11px] text-muted">
+        Ellenőrző: {breakdown.providerName === "none" ? "beépített (helyszíni + MX)" : breakdown.providerName}
+        {breakdown.estimatedCostUsd > 0 && ` · ${breakdown.estimatedCostUsd.toFixed(3)} USD`}
+      </p>
+
+      {breakdown.excluded.length > 0 && (
+        <p className="text-[11.5px] text-[#FFB3C2]">
+          {breakdown.excluded.length} cím automatikusan kizárva — nincs mérlegelnivaló egy
+          létező postafiók nélküli domainen.
+        </p>
+      )}
+
+      {breakdown.awaitingConfirmation.length > 0 && (
+        <div className="grid gap-1" data-testid="risky-list">
+          <p className="text-[11.5px] font-semibold text-warn">
+            {breakdown.awaitingConfirmation.length} kockázatos cím döntésre vár:
+          </p>
+          {breakdown.awaitingConfirmation.map((r) => (
+            <div key={r.id} className="flex items-center justify-between gap-2 text-[11.5px]">
+              <span className="truncate text-ink">
+                {r.email}
+                <span className="text-muted"> · {r.reason.replace(/_/g, " ")}</span>
+              </span>
+              <button
+                onClick={() => onAccept(r.id)}
+                disabled={busy}
+                data-testid="accept-risky"
+                className="shrink-0 rounded-[8px] border border-line px-2 py-1 text-[11px] font-semibold hover:border-accent disabled:opacity-50"
+              >
+                Mehet neki
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function Campaigns({ status, campaigns }: { status: ColdStatus; campaigns: CampaignView[] }) {
   const router = useRouter();
@@ -38,6 +117,8 @@ export function Campaigns({ status, campaigns }: { status: ColdStatus; campaigns
   const [minScore, setMinScore] = useState("");
   const [dailyCap, setDailyCap] = useState("20");
   const [preview, setPreview] = useState<number | null>(null);
+  // Verification results per campaign (playbook-v3 P9/2).
+  const [audience, setAudience] = useState<Record<string, AudienceBreakdown>>({});
 
   function segment() {
     return {
@@ -71,6 +152,43 @@ export function Campaigns({ status, campaigns }: { status: ColdStatus; campaigns
     await fn();
     setBusy(false);
     router.refresh();
+  }
+
+  /**
+   * Arm the campaign, or say exactly what is standing in the way.
+   *
+   * The gate refuses while any risky address is undecided and hands back the
+   * breakdown, so the refusal and the list of decisions to make arrive together
+   * rather than as an error the operator has to go and investigate.
+   */
+  async function arm(id: string) {
+    setMsg(null);
+    await act(async () => {
+      const res = await activateCampaign(id);
+      if (res.breakdown) setAudience((m) => ({ ...m, [id]: res.breakdown! }));
+      if (!res.ok) setMsg(res.error);
+      else setMsg(null);
+    });
+  }
+
+  async function check(id: string) {
+    setMsg(null);
+    await act(async () => {
+      const breakdown = await checkCampaignAudience(id);
+      setAudience((m) => ({ ...m, [id]: breakdown }));
+    });
+  }
+
+  async function accept(campaignId: string, recipientId: string) {
+    await act(async () => {
+      const res = await acceptRiskyRecipient(recipientId);
+      if (!res.ok) {
+        setMsg(res.error);
+        return;
+      }
+      const breakdown = await checkCampaignAudience(campaignId);
+      setAudience((m) => ({ ...m, [campaignId]: breakdown }));
+    });
   }
 
   // ---- LOCKED STATE (prototype compliance banner) ----
@@ -179,12 +297,19 @@ export function Campaigns({ status, campaigns }: { status: ColdStatus; campaigns
             <div className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-[#3DDC97]" />Bounce rate: {c.sent > 0 ? `${Math.round(c.bounceRate * 100)}%` : "—"} (circuit breaker armed)</div>
           </div>
 
+          <AudiencePanel
+            breakdown={audience[c.id]}
+            busy={busy}
+            onAccept={(recipientId) => accept(c.id, recipientId)}
+          />
+
           <div className="mt-3 flex flex-wrap gap-2">
             {c.status !== "ACTIVE" ? (
-              <button onClick={() => act(() => activateCampaign(c.id))} disabled={busy} className="rounded-[9px] border border-accent bg-accent-soft px-3 py-1.5 text-[12px] font-semibold text-[#E4D3FF] disabled:opacity-60">Activate</button>
+              <button onClick={() => arm(c.id)} disabled={busy} data-testid="campaign-activate" className="rounded-[9px] border border-accent bg-accent-soft px-3 py-1.5 text-[12px] font-semibold text-[#E4D3FF] disabled:opacity-60">Activate</button>
             ) : (
               <button onClick={() => act(() => pauseCampaign(c.id))} disabled={busy} className="rounded-[9px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2">Pause</button>
             )}
+            <button onClick={() => check(c.id)} disabled={busy} data-testid="campaign-check-audience" className="rounded-[9px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2 disabled:opacity-60">Check audience</button>
             <button onClick={() => act(async () => { const r = await sendNow(c.id); if (!r.ok) setMsg(r.error); })} disabled={busy || c.status !== "ACTIVE"} className="rounded-[9px] border border-line bg-panel px-3 py-1.5 text-[12px] hover:bg-panel-2 disabled:opacity-60">Send next batch</button>
           </div>
         </div>

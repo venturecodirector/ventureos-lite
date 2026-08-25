@@ -21,6 +21,8 @@ import {
 } from "./logic";
 import { previewSegment, describeSegment, type SegmentQuery } from "./segment";
 import { suppressAddress, runCampaignSend, ColdGateError } from "./send";
+import { verifyAudience, type AudienceBreakdown } from "@/modules/verification/store";
+import { enqueueAudienceVerification } from "@/modules/verification/enqueue";
 
 
 async function loadWs(workspaceId: string) {
@@ -206,12 +208,106 @@ export async function createCampaign(
 
 // ---- lifecycle (all gated) ------------------------------------------------
 
-export async function activateCampaign(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+/**
+ * Arming a campaign — the gate (playbook-v3 P9/2).
+ *
+ * ── WHY VERIFICATION HAPPENS HERE AND NOT AT SEND TIME ─────────────────────
+ *
+ * The bounce circuit breaker is the last line of defence and it works, but it
+ * only fires once the damage has started: by the time 3% have bounced, the
+ * sending domain has already told every receiving server that we mail dead
+ * addresses. Reputation is not recoverable by apologising.
+ *
+ * So the audience is verified BEFORE the campaign can be armed. Invalid
+ * addresses are excluded automatically — there is no judgement to make about a
+ * domain with no mail server. Risky ones are not: a role address at a
+ * ten-person bakery IS the owner's inbox, and whether to mail it is a decision
+ * a person makes, one address at a time.
+ */
+export async function activateCampaign(
+  id: string,
+): Promise<
+  | { ok: true; breakdown: AudienceBreakdown }
+  | { ok: false; error: string; breakdown?: AudienceBreakdown }
+> {
   const { workspaceId } = await getActiveContext();
   const ws = await loadWs(workspaceId);
   if (!coldEmailAllowed(ws?.featureFlags)) return { ok: false, error: "Cold email is locked." };
   const db = getWorkspaceClient(workspaceId);
+
+  const breakdown = await verifyAudience(db, workspaceId, id);
+
+  // A cap the operator cannot see reads as "all verified". This one is stated
+  // and it blocks arming until the worker has finished the rest.
+  if (breakdown.pending > 0) {
+    await enqueueAudienceVerification(id);
+    return {
+      ok: false,
+      error: `${breakdown.pending} address is still being checked in the background. Try again in a moment.`,
+      breakdown,
+    };
+  }
+
+  if (breakdown.awaitingConfirmation.length > 0) {
+    return {
+      ok: false,
+      error:
+        `${breakdown.awaitingConfirmation.length} risky address needs a decision before this can be armed. ` +
+        `${breakdown.excluded.length} invalid address was excluded automatically.`,
+      breakdown,
+    };
+  }
+
+  const mailable = breakdown.valid + breakdown.risky + breakdown.unknown;
+  if (mailable === 0) {
+    return {
+      ok: false,
+      error: "Nothing left to send to — every address was excluded or suppressed.",
+      breakdown,
+    };
+  }
+
   await db.campaign.update({ where: { id }, data: { status: "ACTIVE", startedAt: new Date() } });
+  revalidatePath("/campaigns");
+  return { ok: true, breakdown };
+}
+
+/** Verify without arming — the operator wants to see the audience first. */
+export async function checkCampaignAudience(
+  id: string,
+  force = false,
+): Promise<AudienceBreakdown> {
+  const { workspaceId } = await getActiveContext();
+  const db = getWorkspaceClient(workspaceId);
+  const breakdown = await verifyAudience(db, workspaceId, id, { force });
+  if (breakdown.pending > 0) await enqueueAudienceVerification(id);
+  revalidatePath("/campaigns");
+  return breakdown;
+}
+
+/**
+ * Accept one risky address, by name.
+ *
+ * Per address on purpose: "accept all risky" would be one click that undoes the
+ * whole point of separating risky from invalid.
+ */
+export async function acceptRiskyRecipient(
+  recipientId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { workspaceId, userId } = await getActiveContext();
+  const db = getWorkspaceClient(workspaceId);
+  const recipient = await db.campaignRecipient.findUnique({
+    where: { id: recipientId },
+    select: { verifyStatus: true },
+  });
+  if (!recipient) return { ok: false, error: "Recipient not found." };
+  if (recipient.verifyStatus !== "risky") {
+    return { ok: false, error: "Only a risky address needs accepting." };
+  }
+  await db.campaignRecipient.update({
+    where: { id: recipientId },
+    data: { riskAcceptedAt: new Date(), riskAcceptedBy: userId },
+  });
   revalidatePath("/campaigns");
   return { ok: true };
 }

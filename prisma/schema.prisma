@@ -474,6 +474,15 @@ model Lead {
   /// it, and discarding it was how a captured location became a blank field.
   locationRaw        String?    @map("location_raw")
   email              String?
+  /// Email verification (playbook-v3 P9/2): valid | risky | invalid | unknown.
+  /// Held on the CONTACT rather than on the campaign, so an address checked for
+  /// one campaign is not re-checked — and re-paid for — by the next.
+  emailStatus        String?    @map("email_status")
+  /// Why, in the verifier's own vocabulary. Rendered through REASON_TEXT.
+  emailReason        String?    @map("email_reason")
+  /// Stale after 90 days: a domain that resolved in spring is not evidence
+  /// about autumn.
+  emailCheckedAt     DateTime?  @map("email_checked_at")
   phone              String?
   linkedinUrl        String?    @map("linkedin_url")
   source             LeadSource @default(MANUAL)
@@ -1389,16 +1398,24 @@ model CampaignStep {
 }
 
 model CampaignRecipient {
-  id          String    @id @default(cuid())
-  workspaceId String    @map("workspace_id")
-  campaignId  String    @map("campaign_id")
-  leadId      String?   @map("lead_id")
-  email       String
-  suppressed  Boolean   @default(false)
-  bounced     Boolean   @default(false)
-  stepSent    Int       @default(0) @map("step_sent")
-  repliedAt   DateTime? @map("replied_at")
-  sentAt      DateTime? @map("sent_at")
+  id             String    @id @default(cuid())
+  workspaceId    String    @map("workspace_id")
+  campaignId     String    @map("campaign_id")
+  leadId         String?   @map("lead_id")
+  email          String
+  suppressed     Boolean   @default(false)
+  bounced        Boolean   @default(false)
+  /// The verdict at the moment this audience was checked (P9/2). A snapshot,
+  /// not a link: what the campaign was armed on is what an audit needs to see,
+  /// even after the lead's address has been re-verified since.
+  verifyStatus   String?   @map("verify_status")
+  verifyReason   String?   @map("verify_reason")
+  /// A risky address only goes out after a human says so, per address.
+  riskAcceptedAt DateTime? @map("risk_accepted_at")
+  riskAcceptedBy String?   @map("risk_accepted_by")
+  stepSent       Int       @default(0) @map("step_sent")
+  repliedAt      DateTime? @map("replied_at")
+  sentAt         DateTime? @map("sent_at")
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
