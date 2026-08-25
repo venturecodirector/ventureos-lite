@@ -29,6 +29,7 @@ import {
   CampaignsIcon,
   DocumentsIcon,
   ProjectsIcon,
+  ReportsIcon,
   TemplatesIcon,
   PublicIcon,
   ContentIcon,
@@ -66,6 +67,8 @@ const NAV: NavItem[] = [
   // Between Documents and Templates on purpose: a project is the thing that
   // carries a signed contract to its certificate (P11/2).
   { label: "Projects", icon: <ProjectsIcon />, href: "/projects" },
+  // The sector-report builder (v4 P12/2). Owner-gated at the page itself.
+  { label: "Sector reports", icon: <ReportsIcon />, href: "/reports-admin" },
   // Quote/contract/certificate bodies AND the transactional email bodies —
   // one editor, switched by type. It had no nav entry, so neither was
   // reachable even though both were built and seeded.

@@ -32,6 +32,7 @@ export type PaletteActionId =
   | "go-referrers"
   | "go-templates"
   | "go-public-pages"
+  | "go-sector-reports"
   | "go-revenue"
   | "go-settings"
   | "go-admin-settings"
@@ -112,6 +113,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "go-campaigns", label: "Go to Campaigns", keywords: ["cold", "email", "sequence"], href: "/campaigns", group: "navigate" },
   { id: "go-referrers", label: "Go to Referrers", keywords: ["referral", "partner", "ledger"], href: "/referrers", group: "navigate" },
   { id: "go-templates", label: "Go to Templates", keywords: ["quote", "contract", "letter", "email body"], href: "/templates", group: "navigate" },
+  { id: "go-sector-reports", label: "Go to Sector reports", keywords: ["industry", "report", "batch", "szektor", "lead magnet"], href: "/reports-admin", group: "navigate" },
   { id: "go-public-pages", label: "Go to Public Pages", keywords: ["share", "links", "who viewed"], href: "/public-pages", group: "navigate" },
   { id: "go-revenue", label: "Go to Revenue", keywords: ["mrr", "subscription", "commission", "health"], href: "/analytics?tab=revenue", group: "navigate" },
   {

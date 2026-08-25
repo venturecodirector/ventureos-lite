@@ -82,6 +82,7 @@ const PUBLIC_PREFIXES = [
    */
   "/api/e",
   "/privacy", // the notice on every tracked page links here
+  "/reports", // published sector reports (v4 P12/2c) — read by anyone
 ];
 
 function detectSurface(req: NextRequest): Surface | null {
@@ -140,6 +141,9 @@ export function middleware(req: NextRequest) {
       // reader is on the public host — without this the bare-slug fallback
       // below would redirect /privacy to /r/privacy and 404 the disclosure.
       pathname === "/privacy" ||
+      // Published reports live on the audit host as a real section, not a slug.
+      pathname === "/reports" ||
+      pathname.startsWith("/reports/") ||
       pathname.startsWith("/api") ||
       pathname.startsWith("/_next") ||
       pathname.includes(".")

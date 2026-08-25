@@ -51,6 +51,10 @@ import {
 import { processAudienceVerification } from "../modules/verification/jobs";
 import { processQuoteRuleSweep } from "../modules/quote-rules/jobs";
 import { processEmailTrackRetention } from "../modules/email/track-jobs";
+import {
+  processSectorBatch,
+  processSectorAggregation,
+} from "../modules/sector-reports/jobs";
 
 /**
  * Background worker (BullMQ + Redis). Runs in its own Docker service.
@@ -84,6 +88,15 @@ async function main(): Promise<void> {
   const auditWorker = new Worker(
     AUDIT_QUEUE,
     async (job) => {
+      // Sector batches ride the audit queue on purpose: they ARE audits, and
+      // sharing the queue means one concurrency limit governs how hard we ever
+      // hit other people's websites (v4 P12/2a).
+      if (job.name === "sector-batch") {
+        const n = await processSectorBatch(job.data.reportId as string);
+        // eslint-disable-next-line no-console
+        console.log(`[worker] sector batch queued ${n} audit(s)`);
+        return;
+      }
       await processAudit(job.data);
     },
     { connection, concurrency: 2 },
@@ -257,6 +270,10 @@ async function main(): Promise<void> {
         const n = await processNotificationRetention();
         // eslint-disable-next-line no-console
         console.log(`[worker] purged ${n} expired notification(s)`);
+      } else if (job.name === "sector-aggregate") {
+        const n = await processSectorAggregation();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] ${n} sector report(s) became ready`);
       } else if (job.name === "quote-rules") {
         const n = await processQuoteRuleSweep();
         // eslint-disable-next-line no-console
@@ -302,6 +319,19 @@ async function main(): Promise<void> {
     "notification-retention",
     {},
     { repeat: { pattern: "45 3 * * *" }, jobId: "notification-retention" },
+  );
+  /**
+   * Notice when a sector batch has finished, every ten minutes.
+   *
+   * The audits run asynchronously and there is no single moment they all land,
+   * so the aggregation is a sweep rather than a callback — and ten minutes is
+   * fast enough for something an Owner started deliberately and will come back
+   * to.
+   */
+  await wakeupsQueue().add(
+    "sector-aggregate",
+    {},
+    { repeat: { pattern: "*/10 * * * *" }, jobId: "sector-aggregate" },
   );
   // Quote-behaviour rules at 08:30 — before the working day, so a "call them"
   // task is on the list when the list is first read (v4 P14/3).

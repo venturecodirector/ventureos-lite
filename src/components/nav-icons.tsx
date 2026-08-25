@@ -107,6 +107,16 @@ export const ProjectsIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+/** A bar chart: an aggregate, which is all a sector report ever contains. */
+export const ReportsIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M3 21h18" />
+    <rect x="5" y="12" width="3.5" height="6" rx="1" />
+    <rect x="10.25" y="7" width="3.5" height="11" rx="1" />
+    <rect x="15.5" y="14" width="3.5" height="4" rx="1" />
+  </svg>
+);
+
 export const TemplatesIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <rect x="3" y="3" width="18" height="18" rx="2" />

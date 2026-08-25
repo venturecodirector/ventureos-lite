@@ -2375,3 +2375,79 @@ model EmailTrackEvent {
   @@index([leadId])
   @@map("email_track_events")
 }
+
+/// A sector-wide digital state report (playbook-v4 P12/2).
+///
+/// The lead magnet and the PR engine — and, deliberately, the data-collection
+/// engine for the P15 digital index: every site it audits lands in the same
+/// AuditResult store as everything else.
+///
+/// ── THE OUTPUT NAMES NOBODY ────────────────────────────────────────────────
+///
+/// `stats` holds counts, medians and percentages. No company name, domain or
+/// URL is ever written into it, and a test asserts that on the rendered
+/// artifact: a report that identifies the businesses it measured is not a
+/// report, it is a list, and publishing one would end the goodwill this is
+/// meant to build.
+model SectorReport {
+  id           String    @id @default(cuid())
+  workspaceId  String    @map("workspace_id")
+  /// What was searched for, e.g. "fogorvos".
+  sector       String
+  /// Where, e.g. "Budapest".
+  location     String
+  title        String
+  /// draft | running | ready | published
+  status       String    @default("draft")
+  /// Public slug, set on publish.
+  slug         String?   @unique
+  /// How many sites the batch was allowed to audit.
+  cap          Int       @default(60)
+  /// Businesses the search found.
+  foundCount   Int       @default(0)
+  /// …of which these had a site we could actually measure.
+  auditedCount Int       @default(0)
+  /// Deterministic aggregates. Never anything that names a company.
+  stats        Json?
+  /// The prose between the numbers — one Sonnet call, Owner-edited.
+  narrative    Json?
+  pdfPath      String?   @map("pdf_path")
+  /// What the batch cost, so a second one is a decision with a number on it.
+  costUsd      Decimal   @default(0) @map("cost_usd")
+  publishedAt  DateTime? @map("published_at")
+  createdBy    String?   @map("created_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  downloads SectorReportDownload[]
+
+  @@index([workspaceId, status])
+  @@map("sector_reports")
+}
+
+/// Someone who asked for a sector report (playbook-v4 P12/2c).
+///
+/// The same dual-consent shape as the self-serve audit: a required box to
+/// deliver the file, and a separate, unchecked marketing box that is the only
+/// lawful basis for writing to them afterwards.
+model SectorReportDownload {
+  id                 String    @id @default(cuid())
+  workspaceId        String    @map("workspace_id")
+  reportId           String    @map("report_id")
+  name               String
+  email              String
+  companyName        String?   @map("company_name")
+  serviceConsent     Boolean   @default(true) @map("service_consent")
+  marketingConsent   Boolean   @default(false) @map("marketing_consent")
+  consentTextVersion String    @map("consent_text_version")
+  ip                 String?
+  userAgent          String?   @map("user_agent")
+  leadId             String?   @map("lead_id")
+  sentAt             DateTime? @map("sent_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  report SectorReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, reportId])
+  @@map("sector_report_downloads")
+}

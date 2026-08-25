@@ -23,7 +23,8 @@ export type UseCase =
   | "doc_scope" // Haiku  — document scope paragraph
   | "person_brief" // Haiku  — 2-3 sentence factual summary on extension capture (P1/1e)
   | "site_lookup" // Haiku  — find a company's own website (web search, on click)
-  | "meeting_followup"; // Sonnet — the email after a meeting (P13/2)
+  | "meeting_followup" // Sonnet — the email after a meeting (P13/2)
+  | "sector_report"; // Sonnet — the prose between a report's numbers (P12/2)
 
 export const USE_CASE_MODEL: Record<UseCase, ModelId> = {
   lead_research: "claude-sonnet-4-6",
@@ -48,6 +49,9 @@ export const USE_CASE_MODEL: Record<UseCase, ModelId> = {
   // this is the first message after a conversation — where a wrong register
   // costs the deal.
   meeting_followup: "claude-sonnet-4-6",
+  // Sonnet: this is published writing that carries the company's name in
+  // public. One call per report, Owner-triggered and Owner-edited.
+  sector_report: "claude-sonnet-4-6",
 };
 
 export function modelForUseCase(useCase: UseCase): ModelId {

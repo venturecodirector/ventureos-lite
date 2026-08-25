@@ -46,6 +46,23 @@ export function auditShareLink(slug: string): string {
     : `${origin}/r/${encoded}`;
 }
 
+/** Published sector report — audit.ventureco.agency/reports/<slug>. */
+export function sectorReportLink(slug: string): string {
+  const app = appUrl();
+  const origin = auditUrl();
+  const encoded = encodeURIComponent(slug);
+  return origin.toLowerCase() === app.toLowerCase()
+    ? `${app}/reports/${encoded}`
+    : `${origin}/reports/${encoded}`;
+}
+
+/** The reports index on the audit domain. */
+export function sectorReportsIndexLink(): string {
+  const app = appUrl();
+  const origin = auditUrl();
+  return origin.toLowerCase() === app.toLowerCase() ? `${app}/reports` : `${origin}/reports`;
+}
+
 /** Public quote acceptance page — quote.ventureco.agency/<slug>. */
 export function quoteAcceptLink(slug: string): string {
   return build(quoteUrl(), SURFACE_PATHS.quote, slug);

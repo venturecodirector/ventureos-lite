@@ -30,6 +30,9 @@ const BUSINESS_TABLES = [
   "quote_rule_runs",
   // Open/click events on mail we sent (P9/1).
   "email_track_events",
+  // Sector reports (P12/2). The report itself is tenant data;
+  // its downloads are written by anonymous visitors, hence the intake list.
+  "sector_reports",
   "leads",
   "activities",
   "messages",
@@ -110,6 +113,7 @@ const PUBLIC_INTAKE_TABLES = [
   // A visit is recorded by the anonymous reader of a shared page, before any
   // user context exists — same shape as the two above (playbook-v3 P8/a).
   "page_visits",
+  "sector_report_downloads",
 ];
 
 const CURRENT_WS = "current_setting('app.current_workspace', true)";

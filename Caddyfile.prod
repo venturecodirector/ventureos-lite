@@ -91,6 +91,8 @@
 	@slug {
 		path_regexp slug ^/([^/.]+)$
 		not path /privacy
+		not path /reports
+		not path /reports/*
 	}
 	rewrite @slug /share/{http.regexp.slug.1}
 	import app_upstream
@@ -106,6 +108,8 @@
 	@slug {
 		path_regexp slug ^/([^/.]+)$
 		not path /privacy
+		not path /reports
+		not path /reports/*
 	}
 	rewrite @slug /accept/{http.regexp.slug.1}
 	import app_upstream
@@ -121,6 +125,8 @@
 	@slug {
 		path_regexp slug ^/([^/.]+)$
 		not path /privacy
+		not path /reports
+		not path /reports/*
 	}
 	rewrite @slug /book/{http.regexp.slug.1}
 	import app_upstream

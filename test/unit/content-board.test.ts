@@ -151,6 +151,9 @@ describe("model routing (CLAUDE.md hard rule #3)", () => {
    *   meeting_followup   — an outreach draft: the first message after a
    *                        conversation, where the wrong register costs the
    *                        deal (playbook-v4 P13/2 allows it by name)
+   *   sector_report      — published writing that carries the company's name
+   *                        in public; one call per report, Owner-triggered and
+   *                        Owner-edited (playbook-v4 P12/2b allows it by name)
    */
   it("drafts content on Haiku — Sonnet is reserved for the named use cases", () => {
     expect(USE_CASE_MODEL.content_draft).toBe("claude-haiku-4-5");
@@ -164,6 +167,7 @@ describe("model routing (CLAUDE.md hard rule #3)", () => {
       "meeting_brief",
       "meeting_followup",
       "outreach_draft",
+      "sector_report",
       "signal_engine",
     ]);
   });
