@@ -13,6 +13,7 @@ import {
   type BackfillPlan,
 } from "./backfill";
 import { BACKFILL_BATCH, EMAIL_LOOKUP_CAP } from "./backfill-limits";
+import { isTrustedMember } from "@/lib/grants";
 
 /**
  * The backfill, against the database (P4/1e).
@@ -343,11 +344,15 @@ export async function applyPlans(
   };
 }
 
-/** Owner or Admin: this rewrites company names and spends the Places budget. */
+/**
+ * A seated member of the workspace. This rewrites company names and spends the
+ * Places budget, so it is not for somebody merely signed in — but it is
+ * ordinary prospecting work, which is the BDR's job before it is anybody's.
+ */
 export async function isBackfillOperator(workspaceId: string, userId: string): Promise<boolean> {
   const membership = await prismaUnsafe.membership.findUnique({
     where: { userId_workspaceId: { userId, workspaceId } },
     select: { role: true },
   });
-  return membership?.role === "OWNER" || membership?.role === "ADMIN";
+  return isTrustedMember(membership?.role);
 }

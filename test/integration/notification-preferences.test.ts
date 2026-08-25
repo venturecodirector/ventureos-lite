@@ -110,7 +110,12 @@ describe("the email-digest channel", () => {
     expect(await countDigestableUnread(db(), fanni, "OWNER")).toBe(0);
   });
 
-  it("does not count an Owner-only type for a BDR", async () => {
+  /**
+   * `ownerOnly` now means "a seated member", the BDR included. What the flag
+   * still keeps out is somebody with no membership — whose preference row can
+   * easily outlive their seat.
+   */
+  it("does not count a restricted type for somebody with no seat", async () => {
     await prismaUnsafe.notification.create({
       data: {
         workspaceId: ws,
@@ -121,7 +126,8 @@ describe("the email-digest channel", () => {
         dedupeKey: "proposal_pending:x:",
       },
     });
-    expect(await countDigestableUnread(db(), fanni, "BDR")).toBe(0);
+    expect(await countDigestableUnread(db(), fanni, "GUEST")).toBe(0);
+    expect(await countDigestableUnread(db(), fanni, "BDR")).toBe(1);
     expect(await countDigestableUnread(db(), fanni, "OWNER")).toBe(1);
   });
 });

@@ -4,6 +4,7 @@ import { serverActionError } from "@/lib/client/server-action";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { setGrant, type Member } from "@/modules/settings/actions";
+import { DOCUMENT_GRANTS, isTrustedMember, type Grant } from "@/lib/grants";
 
 const GROUPS: Array<{ module: string; grants: string[] }> = [
   {
@@ -54,8 +55,11 @@ export function SettingsGrants({
         users &amp; grants
       </h2>
       <p className="mb-4 text-[12.5px] text-muted">
-        Capabilities are per user per workspace. Owner-only by default. Every
-        change is written to the audit log — <span className="text-accent-ink">logged</span>.
+        Capabilities are per user per workspace. The document ones — quotes,
+        contracts, certificates, sending, and the templates they render from —
+        are Owner-only until handed over here. Everything else every member
+        already carries. Each change is written to the audit log —{" "}
+        <span className="text-accent-ink">logged</span>.
       </p>
       {!isOwner && (
         <div className="mb-3 rounded-[10px] border border-line bg-panel px-3.5 py-2.5 text-[12.5px] text-warn">
@@ -70,7 +74,16 @@ export function SettingsGrants({
 
       <div className="grid gap-3">
         {members.map((m) => {
-          const implicit = m.role === "OWNER" || m.role === "ADMIN";
+          /**
+           * A tick nobody can untick, because the role already carries it.
+           *
+           * Owner and Admin carry everything. A BDR carries everything except
+           * the document capabilities — so showing those as grantable, and the
+           * rest as already held, is the only honest rendering of the rule in
+           * `grantAllowed`.
+           */
+          const roleCarriesAll = m.role === "OWNER" || m.role === "ADMIN";
+          const seated = isTrustedMember(m.role);
           return (
             <div key={m.userId} className="rounded-card border border-line bg-panel p-[18px]">
               <div className="mb-3 flex items-center gap-2">
@@ -93,6 +106,8 @@ export function SettingsGrants({
                       {g.module}
                     </div>
                     {g.grants.map((grant) => {
+                      const implicit =
+                        roleCarriesAll || (seated && !DOCUMENT_GRANTS.includes(grant as Grant));
                       const checked = implicit || m.grants.includes(grant);
                       const key = `${m.userId}:${grant}`;
                       return (

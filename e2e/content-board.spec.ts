@@ -107,7 +107,17 @@ test("an illegal jump is refused and the card snaps back", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("a BDR dragging into Approved is refused by the server", async ({ browser }) => {
+/**
+ * Approval widened with the BDR role.
+ *
+ * Content is the workspace's own marketing, not a legal document, and the two
+ * things a BDR still may not do are manage users and handle documents. This
+ * used to assert the refusal; the refusal itself is still pinned, one layer
+ * down, by `canTransition(..., isApprover: false)` in the unit tests — which is
+ * where a rule with no seat belongs, since somebody with no membership cannot
+ * reach this board at all.
+ */
+test("a BDR may approve a post", async ({ browser }) => {
   const title = `E2E board grant ${Date.now()}`;
   const workspaceId = await seedPost(title, "IN_REVIEW");
 
@@ -134,14 +144,13 @@ test("a BDR dragging into Approved is refused by the server", async ({ browser }
 
     await dragCardTo(page, title, "APPROVED");
 
-    await expect(page.getByText(/Only an Owner or Admin can approve/i)).toBeVisible();
-    // Snapped back: still in review, and a reload agrees.
+    // It stays where it was dropped, and a reload agrees — the server took it.
     await expect(
-      page.getByTestId("content-col-IN_REVIEW").locator('[data-testid="content-card"]', { hasText: title }),
+      page.getByTestId("content-col-APPROVED").locator('[data-testid="content-card"]', { hasText: title }),
     ).toBeVisible();
     await page.reload();
     await expect(
-      page.getByTestId("content-col-IN_REVIEW").locator('[data-testid="content-card"]', { hasText: title }),
+      page.getByTestId("content-col-APPROVED").locator('[data-testid="content-card"]', { hasText: title }),
     ).toBeVisible();
   } finally {
     await context.close();

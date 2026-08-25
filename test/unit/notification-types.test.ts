@@ -76,25 +76,35 @@ describe("default channels", () => {
 });
 
 describe("who may receive what", () => {
-  it("keeps the Signal Engine proposal for Owners", () => {
+  /**
+   * `ownerOnly` now means "a seated member", which is every role there is —
+   * the BDR was widened to whatever an Admin gets. The flag and the filter stay
+   * because the answer belongs in one place: a read-only role would be one edit
+   * to `isTrustedMember`, not a hunt through five files.
+   */
+  it("shows the Signal Engine proposal to every seated member, and to nobody else", () => {
     expect(NOTIFICATION_TYPE_DEFS.proposal_pending.ownerOnly).toBe(true);
-    expect(visibleTypesFor("BDR")).not.toContain("proposal_pending");
     expect(visibleTypesFor("OWNER")).toContain("proposal_pending");
+    expect(visibleTypesFor("ADMIN")).toContain("proposal_pending");
+    expect(visibleTypesFor("BDR")).toContain("proposal_pending");
+    expect(visibleTypesFor("GUEST")).not.toContain("proposal_pending");
+    expect(visibleTypesFor("")).not.toContain("proposal_pending");
   });
 
-  it("gives a BDR everything that is not Owner-only", () => {
+  it("gives a BDR the everyday types too", () => {
     const bdr = visibleTypesFor("BDR");
     expect(bdr).toContain("callback_due");
     expect(bdr).toContain("reply_received");
   });
 
-  it("silences an Owner-only type for a BDR on every channel", () => {
-    // Belt and braces: even a stored preference row cannot opt a BDR into a
-    // type they are not allowed to see.
+  it("silences a restricted type for somebody with no seat, on every channel", () => {
+    // Belt and braces: a stored preference row cannot opt a non-member into a
+    // type they are not allowed to see. That row outlives the membership, which
+    // is exactly when this matters.
     const channels = resolveChannels(
       "proposal_pending",
       { inApp: true, push: true, emailDigest: true },
-      "BDR",
+      "GUEST",
     );
     expect(channels).toEqual({ inApp: false, push: false, emailDigest: false });
   });

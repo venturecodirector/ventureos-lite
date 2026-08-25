@@ -208,12 +208,14 @@ describe("applying", () => {
 });
 
 describe("who may run it", () => {
-  it("admits an Owner and refuses a BDR", async () => {
+  /** Ordinary prospecting work — the BDR's job before it is anybody else's. */
+  it("admits every seated member", async () => {
     expect(await isBackfillOperator(wsA, ownerId)).toBe(true);
-    expect(await isBackfillOperator(wsA, bdrId)).toBe(false);
+    expect(await isBackfillOperator(wsA, bdrId)).toBe(true);
   });
 
   it("refuses somebody with no membership at all", async () => {
     expect(await isBackfillOperator(wsB, ownerId)).toBe(false);
+    expect(await isBackfillOperator(wsB, bdrId)).toBe(false);
   });
 });

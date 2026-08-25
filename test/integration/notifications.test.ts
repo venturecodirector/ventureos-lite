@@ -120,17 +120,38 @@ describe("delivering", () => {
     expect(await unreadCount(wsA, fanni)).toBe(0);
   });
 
-  it("never delivers an Owner-only type to a BDR, whatever the stored row says", async () => {
+  /**
+   * `ownerOnly` now means "a seated member", so the BDR receives it — the role
+   * was widened to whatever an Admin gets. The delivery-side check stays: it is
+   * what stops a preference row that outlived a membership from resurrecting a
+   * notification for somebody who no longer belongs here.
+   */
+  it("delivers a restricted type to every seated member, and to nobody else", async () => {
     await prismaUnsafe.notificationPreference.create({
       data: { workspaceId: wsA, userId: fanni, type: "proposal_pending", inApp: true },
     });
     const res = await deliverNotification(
       input({ type: "proposal_pending", userIds: [fanni, tamas], entityId: "prop-1" }),
     );
-    // Only the Owner got it.
-    expect(res.created).toBe(1);
-    expect(await unreadCount(wsA, fanni)).toBe(0);
+    expect(res.created).toBe(2);
+    expect(await unreadCount(wsA, fanni)).toBe(1);
     expect(await unreadCount(wsA, tamas)).toBe(1);
+  });
+
+  it("does not deliver one to somebody with no membership here", async () => {
+    const stranger = await prismaUnsafe.user.create({
+      data: { email: "notif-stranger@iso.test", name: "Stranger", passwordHash: "x" },
+    });
+    try {
+      const res = await deliverNotification(
+        input({ type: "proposal_pending", userIds: [stranger.id], entityId: "prop-2" }),
+      );
+      expect(res.created).toBe(0);
+      expect(await unreadCount(wsA, stranger.id)).toBe(0);
+    } finally {
+      await prismaUnsafe.notification.deleteMany({ where: { userId: stranger.id } });
+      await prismaUnsafe.user.delete({ where: { id: stranger.id } });
+    }
   });
 
   it("reports which recipients want a push, without sending one", async () => {

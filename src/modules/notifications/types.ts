@@ -19,6 +19,8 @@
  *     of the playbook's "import/sync failures" and is named for what it is.
  */
 
+import { isTrustedMember } from "@/lib/grants";
+
 export const NOTIFICATION_TYPES = [
   "reply_received",
   "escalation",
@@ -182,7 +184,7 @@ export function defaultChannels(type: NotificationType): Channels {
 
 /** Owner-only types are hidden from everyone else, in the UI and in delivery. */
 export function visibleTypesFor(role: string): NotificationType[] {
-  const privileged = role === "OWNER" || role === "ADMIN";
+  const privileged = isTrustedMember(role);
   return NOTIFICATION_TYPES.filter(
     (t) => privileged || !NOTIFICATION_TYPE_DEFS[t].ownerOnly,
   );
@@ -206,7 +208,7 @@ export function resolveChannels(
   role: string,
 ): Channels {
   if (!isNotificationType(type)) return { ...ALL_OFF };
-  if (NOTIFICATION_TYPE_DEFS[type].ownerOnly && !(role === "OWNER" || role === "ADMIN")) {
+  if (NOTIFICATION_TYPE_DEFS[type].ownerOnly && !isTrustedMember(role)) {
     return { ...ALL_OFF };
   }
   const resolved = defaultChannels(type);

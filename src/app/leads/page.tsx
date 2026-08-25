@@ -9,6 +9,7 @@ import { listViews } from "@/modules/leads/view-store";
 import { parseColumns, parseFilterSet, parseSort } from "@/modules/leads/view-params";
 import { listFieldDefs } from "@/modules/fields/store";
 import { columnKeysWithCustom } from "@/modules/leads/columns";
+import { isTrustedMember } from "@/lib/grants";
 
 // Reads tenant data per request — never statically cached.
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export default async function LeadsPage({
     isOwner(),
     hasGrant("exports.run"),
   ]);
-  const canCurateViews = membership?.role === "OWNER" || membership?.role === "ADMIN";
+  const canCurateViews = isTrustedMember(membership?.role);
 
   return (
     <AppShell activePath="/leads">

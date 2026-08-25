@@ -36,7 +36,7 @@ describe("transitions", () => {
     expect(denied.allowed).toBe(false);
     if (!denied.allowed) {
       expect(denied.reason).toBe("forbidden");
-      expect(denied.message).toMatch(/Owner or Admin/);
+      expect(denied.message).toMatch(/member of this workspace/);
     }
   });
 

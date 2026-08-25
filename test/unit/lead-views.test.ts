@@ -56,10 +56,18 @@ describe("who can edit a view", () => {
     expect(canEditView(view(), "tamas", "BDR")).toBe(false);
   });
 
-  it("does not let a BDR edit someone else's SHARED view either", () => {
-    // Being able to see a shared tab is not the same as being able to redefine
-    // it under the person who made it.
-    expect(canEditView(view({ shared: true }), "tamas", "BDR")).toBe(false);
+  /**
+   * Curation is now every seated member's, the BDR included — the tabs are the
+   * workspace's shared furniture, not the Owner's. What did NOT widen is the
+   * line above: a PERSONAL view still belongs to whoever made it.
+   */
+  it("lets a BDR curate someone else's SHARED view", () => {
+    expect(canEditView(view({ shared: true }), "tamas", "BDR")).toBe(true);
+  });
+
+  it("refuses somebody with no seat, shared or not", () => {
+    expect(canEditView(view({ shared: true }), "tamas", "GUEST")).toBe(false);
+    expect(canEditView(view(), "tamas", "GUEST")).toBe(false);
   });
 
   it("lets an Owner or Admin curate the workspace's shared tabs", () => {

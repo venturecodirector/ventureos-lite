@@ -24,6 +24,7 @@ import {
   validateForStatus,
   type ContentStatus,
 } from "./board";
+import { isTrustedMember } from "@/lib/grants";
 
 /**
  * Content Hub (spec §4.12). Every read and write goes through
@@ -97,7 +98,7 @@ export async function getContentBoard(): Promise<ContentBoardView> {
   const names = await nameMap(posts.flatMap((p) => [p.authorUserId, p.approvedBy]));
 
   return {
-    isApprover: membership?.role === "OWNER" || membership?.role === "ADMIN",
+    isApprover: isTrustedMember(membership?.role),
     posts: posts.map((p) => {
       const variants = toVariantViews(p.variants);
       return {
@@ -357,7 +358,7 @@ export async function movePost(
   ]);
   if (!post) return { ok: false, error: "Post not found." };
 
-  const isApprover = membership?.role === "OWNER" || membership?.role === "ADMIN";
+  const isApprover = isTrustedMember(membership?.role);
   const check = canTransition(post.status as ContentStatus, parsed.data.to, isApprover);
   if (!check.allowed) return { ok: false, error: check.message };
 

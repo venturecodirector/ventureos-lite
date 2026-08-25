@@ -66,7 +66,7 @@ export function canTransition(
     return {
       allowed: false,
       reason: "forbidden",
-      message: "Only an Owner or Admin can approve or reopen a post.",
+      message: "Only a member of this workspace can approve or reopen a post.",
     };
   }
   return { allowed: true };

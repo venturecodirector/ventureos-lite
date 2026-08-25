@@ -10,6 +10,7 @@
 
 import { serializeFilterSet, serializeSort, serializeColumns } from "./view-params";
 import type { FilterCondition, FilterSet, SortSpec } from "./filters";
+import { isTrustedMember } from "@/lib/grants";
 
 export interface LeadView {
   id: string;
@@ -30,13 +31,20 @@ export function canSeeView(view: LeadView, userId: string): boolean {
 
 /**
  * Seeing a shared tab is not the same as being able to redefine it under the
- * person who made it. Only the creator edits their own; Owners and Admins may
- * curate the workspace's shared tabs, which is what makes them shared rather
+ * person who made it. Only the creator edits their own; a seated member may
+ * curate the workspace's SHARED tabs, which is what makes them shared rather
  * than merely visible.
+ *
+ * The `shared` test is load-bearing and was not always here. It did not need to
+ * be while curation was an Owner/Admin power: a BDR could edit nothing but
+ * their own, so a colleague's personal tab was safe by accident. Widening
+ * curation to every seated member removed that accident — without this line, one
+ * BDR could rewrite another's private tab out from under them.
  */
 export function canEditView(view: LeadView, userId: string, role: string): boolean {
   if (view.ownerId === userId) return true;
-  return role === "OWNER" || role === "ADMIN";
+  if (!view.shared) return false;
+  return isTrustedMember(role);
 }
 
 export const MAX_VIEW_NAME = 60;

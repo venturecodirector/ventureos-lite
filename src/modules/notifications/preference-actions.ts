@@ -18,6 +18,7 @@ import {
   saveSubscription,
   vapidConfigured,
 } from "./push";
+import { isTrustedMember } from "@/lib/grants";
 
 /**
  * The preference matrix and push registration (playbook-v2 P6/1).
@@ -102,7 +103,7 @@ export async function setNotificationPreference(
   const role = await roleOf(userId, workspaceId);
   // A BDR cannot switch on a type they may not receive — the resolver would
   // silence it anyway, and an switch that does nothing is worse than no switch.
-  if (NOTIFICATION_TYPE_DEFS[type].ownerOnly && !(role === "OWNER" || role === "ADMIN")) {
+  if (NOTIFICATION_TYPE_DEFS[type].ownerOnly && !isTrustedMember(role)) {
     return { ok: false, error: "That notification is Owner-only." };
   }
 

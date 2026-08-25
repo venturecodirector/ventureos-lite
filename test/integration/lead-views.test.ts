@@ -204,6 +204,18 @@ describe("editing and deleting", () => {
     return res.view.id;
   }
 
+  async function seedPersonal(name: string) {
+    const res = await createView(wsA, fanni, {
+      name,
+      shared: false,
+      filters: FILTERS,
+      sort: { field: "createdAt", direction: "desc" },
+      columns: ["contact"],
+    });
+    if (!res.ok) throw new Error(res.error);
+    return res.view.id;
+  }
+
   it("lets the creator rename their own view", async () => {
     const id = await seedShared("Rename me");
     const res = await updateView(wsA, fanni, "BDR", id, { name: "Renamed" });
@@ -218,8 +230,12 @@ describe("editing and deleting", () => {
     expect(res.ok).toBe(true);
   });
 
-  it("refuses a BDR editing a colleague's view", async () => {
-    const id = await seedShared("Hands off");
+  /**
+   * A PERSONAL view belongs to whoever made it, and that did not widen when
+   * curation did. Shared tabs are the workspace's furniture; this one is not.
+   */
+  it("refuses a BDR editing a colleague's PERSONAL view", async () => {
+    const id = await seedPersonal("Hands off");
     // A second BDR in the same workspace.
     const other = await prismaUnsafe.user.create({
       data: { email: "views-other@iso.test", name: "Other", passwordHash: "x" },
@@ -244,8 +260,27 @@ describe("editing and deleting", () => {
     expect(await prismaUnsafe.savedView.findUnique({ where: { id } })).toBeNull();
   });
 
-  it("refuses to delete someone else's view", async () => {
-    const id = await seedShared("Keep me");
+  it("lets a BDR curate a SHARED tab somebody else made", async () => {
+    const id = await seedShared("Shared furniture");
+    const other = await prismaUnsafe.user.create({
+      data: { email: "views-curator@iso.test", name: "Curator", passwordHash: "x" },
+    });
+    await prismaUnsafe.membership.create({
+      data: { userId: other.id, workspaceId: wsA, role: "BDR" },
+    });
+    try {
+      const res = await updateView(wsA, other.id, "BDR", id, { name: "Curated by a BDR" });
+      expect(res.ok, res.ok ? "" : res.error).toBe(true);
+      const row = await prismaUnsafe.savedView.findUnique({ where: { id } });
+      expect(row?.name).toBe("Curated by a BDR");
+    } finally {
+      await prismaUnsafe.membership.deleteMany({ where: { userId: other.id } });
+      await prismaUnsafe.user.delete({ where: { id: other.id } });
+    }
+  });
+
+  it("refuses to delete someone else's personal view", async () => {
+    const id = await seedPersonal("Keep me");
     const other = await prismaUnsafe.user.create({
       data: { email: "views-thief@iso.test", name: "Thief", passwordHash: "x" },
     });
