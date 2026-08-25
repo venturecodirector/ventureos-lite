@@ -12,6 +12,7 @@ import { DEFAULT_LOCALE, type Locale } from "@/lib/locale";
 import type { AuditCheck } from "@/modules/audit/types";
 import { botVerdict, MIN_FILL_MS } from "@/modules/meetings/botcheck";
 import { checkUrl, judgeSubmission, ipPrefix, type RefusalReason } from "./guard";
+import { resolvesToPublicAddress } from "@/lib/safe-fetch";
 import { getPublicIntakeWorkspaceId, ownDomains, clientDomains, PublicIntakeUnavailable } from "./intake";
 
 /**
@@ -146,6 +147,39 @@ export async function submitPublicAudit(
       reason: verdict.reason,
       friendly: verdict.friendly,
       message: MESSAGES[verdict.reason],
+    };
+  }
+
+  /**
+   * WHERE THE HOSTNAME ACTUALLY POINTS.
+   *
+   * `checkUrl` judges the host as text, which catches `localhost` and `10.0.0.1`
+   * and nothing else. A domain whose A record answers 127.0.0.1 — or the cloud
+   * metadata address — reads as an ordinary website, and this form is open to
+   * anyone with the URL. Resolving it here means the refusal is immediate and
+   * honest instead of a queued audit that fails strangely later.
+   *
+   * The browser has its own guard for everything after this point (redirects,
+   * subresources, script-driven navigation); this one exists so the person
+   * gets told, and so the worker is never woken for it at all.
+   */
+  if (!(await resolvesToPublicAddress(new URL(url.normalizedUrl).hostname))) {
+    await prismaUnsafe.publicAudit.create({
+      data: {
+        workspaceId,
+        url: url.normalizedUrl,
+        domain: url.domain,
+        status: "blocked",
+        blockedReason: "not_public_host",
+        ipPrefix: prefix,
+        userAgent,
+      },
+    });
+    return {
+      ok: false,
+      reason: "not_public_host",
+      friendly: false,
+      message: MESSAGES.not_public_host,
     };
   }
 

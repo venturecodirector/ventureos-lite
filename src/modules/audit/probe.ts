@@ -5,6 +5,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { VENTURE_USER_AGENT } from "@/lib/robots";
 import type { PageProbe } from "./types";
+import { guardPublicNavigation } from "./navigation-guard";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
 const NAV_TIMEOUT = 20_000;
@@ -29,6 +30,7 @@ export async function probeSite(url: string): Promise<PageProbe> {
   let pageWeightBytes = 0;
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await guardPublicNavigation(context);
     const page = await context.newPage();
     page.on("response", async (res) => {
       try {
@@ -190,6 +192,7 @@ export async function probePagesDeep(
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await guardPublicNavigation(context);
     for (const url of urls) {
       try {
         const page = await context.newPage();
@@ -257,6 +260,7 @@ export async function createRenderedFetcher(perPageTimeoutMs = 15_000): Promise<
     viewport: { width: 1280, height: 800 },
     userAgent: `Mozilla/5.0 (compatible; ${VENTURE_USER_AGENT})`,
   });
+  await guardPublicNavigation(context);
 
   return {
     async render(url) {
@@ -320,6 +324,7 @@ export async function captureScreenshots(
     const mobileRel = `audits/${auditId}-mobile.png`;
 
     const dctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await guardPublicNavigation(dctx);
     const dp = await dctx.newPage();
     await dp.goto(target, { waitUntil: "networkidle", timeout: NAV_TIMEOUT });
     await dp.screenshot({ path: join(FILES_DIR, desktopRel) });
@@ -329,6 +334,7 @@ export async function captureScreenshots(
       viewport: { width: 390, height: 844 },
       isMobile: true,
     });
+    await guardPublicNavigation(mctx);
     const mp = await mctx.newPage();
     await mp.goto(target, { waitUntil: "networkidle", timeout: NAV_TIMEOUT });
     await mp.screenshot({ path: join(FILES_DIR, mobileRel) });
