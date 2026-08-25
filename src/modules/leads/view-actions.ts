@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prismaUnsafe } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import { filterSetSchema, sortSchema } from "./view-params";
-import { createView, deleteView, listViews, updateView } from "./view-store";
+import { createView, deleteView, updateView } from "./view-store";
 import type { LeadView } from "./views";
 import type { FilterSet, SortSpec } from "./filters";
 
@@ -32,10 +32,6 @@ async function roleOf(userId: string, workspaceId: string): Promise<string> {
   return membership?.role ?? "BDR";
 }
 
-export async function listLeadViews(): Promise<LeadView[]> {
-  const { workspaceId, userId } = await getActiveContext();
-  return listViews(workspaceId, userId);
-}
 
 export async function saveLeadView(
   raw: unknown,

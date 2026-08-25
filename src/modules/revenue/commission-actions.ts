@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { prismaUnsafe } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
-import { isOwner, requireOwner } from "@/lib/authz";
+import { requireOwner } from "@/lib/authz";
 import { enqueueCommissionPdf } from "./enqueue";
 import {
   buildCommissionReport,
@@ -25,9 +25,6 @@ import {
 
 const monthSchema = z.string().regex(/^\d{4}-\d{2}$/, "Expected YYYY-MM");
 
-export async function canSeeCommission(): Promise<boolean> {
-  return isOwner();
-}
 
 export async function getCommissionReport(
   raw: unknown,

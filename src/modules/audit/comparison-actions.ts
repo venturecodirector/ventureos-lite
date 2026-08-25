@@ -53,15 +53,6 @@ export interface CompetitorSuggestions {
   unavailable: "no_company" | "no_category" | "no_key" | "none_found" | null;
 }
 
-/**
- * What it would cost to look for competitors: one Text Search page.
- *
- * Separate from running it so the button can say the price first — the same
- * contract the Prospector has, for the same reason (this is the owner's money).
- */
-export async function previewCompetitorSearchCost(): Promise<number> {
-  return TEXT_SEARCH_COST_USD;
-}
 
 /**
  * Nearby businesses in the same category, with a website of their own.

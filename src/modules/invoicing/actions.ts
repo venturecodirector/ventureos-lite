@@ -109,12 +109,6 @@ export interface InvoiceState {
   pdfUrl: string | null;
 }
 
-export async function getInvoiceForDocument(documentId: string): Promise<InvoiceState | null> {
-  const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
-  const inv = await db.invoice.findFirst({ where: { documentId }, orderBy: { at: "desc" } });
-  return inv ? { status: inv.status, number: inv.number, pdfUrl: inv.pdfUrl } : null;
-}
 
 // ---- config (Owner) -------------------------------------------------------
 

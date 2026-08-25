@@ -238,20 +238,3 @@ export async function deleteRule(
   return { ok: true };
 }
 
-/** The full execution log for one rule, for the detail view. */
-export async function getRuleRuns(ruleId: string): Promise<RunView[]> {
-  const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
-  const runs = await db.workflowRun.findMany({
-    where: { ruleId },
-    orderBy: { at: "desc" },
-    take: 50,
-  });
-  return runs.map((r) => ({
-    id: r.id,
-    status: r.status,
-    detail: r.detail,
-    at: r.at.toISOString(),
-    ruleVersion: r.ruleVersion,
-  }));
-}

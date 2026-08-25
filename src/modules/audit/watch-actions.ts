@@ -122,24 +122,6 @@ export async function clearAuditWatch(companyId: string): Promise<{ ok: true }> 
   return { ok: true };
 }
 
-export async function getAuditWatch(companyId: string): Promise<WatchView | null> {
-  const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
-  const w = await db.auditWatch.findUnique({
-    where: { companyId },
-    include: { company: { select: { name: true } } },
-  });
-  if (!w) return null;
-  return {
-    companyId: w.companyId,
-    companyName: w.company.name,
-    url: w.url,
-    frequencyDays: w.frequencyDays,
-    enabled: w.enabled,
-    nextRunAt: w.nextRunAt.toISOString(),
-    lastRunAt: w.lastRunAt?.toISOString() ?? null,
-  };
-}
 
 /**
  * Turn a watch on for a lead that has just reached a stage worth watching.

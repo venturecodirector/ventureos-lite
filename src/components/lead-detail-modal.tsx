@@ -24,6 +24,7 @@ import { PIPELINE_STAGES, SIDE_STAGES, STAGE_LABELS } from "@/modules/pipeline/t
 import { LeadAvatar } from "./lead-avatar";
 import { CustomFieldsEditor } from "./custom-fields-editor";
 import { CaptureDiagnosticsPanel } from "./capture-diagnostics";
+import { SearchVisibility } from "./search-visibility";
 import { duplicatesForLead } from "@/modules/merge/actions";
 import { Modal } from "./modal";
 
@@ -583,6 +584,14 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
             <p className="text-[11px] text-muted">
               These apply to the company record, shared by every lead there.
             </p>
+
+            {/*
+              Keyword rank tracking (P2/7). The whole feature was built — the
+              provider, the weekly job, the history, the sparkline — and the
+              component was mounted nowhere, so every position it recorded was
+              written and never seen. A company's own page is where it belongs.
+            */}
+            {form.companyId && <SearchVisibility companyId={form.companyId} />}
           </section>
 
           <section className="grid gap-2 rounded-[11px] border border-line p-3">

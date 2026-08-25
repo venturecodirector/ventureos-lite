@@ -75,15 +75,6 @@ export async function getDealsBoard(
   };
 }
 
-export async function createDeal(raw: unknown): Promise<DealResult> {
-  const { workspaceId, userId } = await getActiveContext();
-  const res = await createDealIn(workspaceId, userId, raw);
-  if (res.ok) {
-    revalidatePath("/deals");
-    revalidatePath("/pipeline");
-  }
-  return res;
-}
 
 export async function convertLeadToDeal(raw: unknown): Promise<DealResult> {
   const { workspaceId } = await getActiveContext();
@@ -121,13 +112,6 @@ export async function updateDeal(raw: unknown): Promise<MoveResult> {
   return res;
 }
 
-/** Every pipeline + stage, for the convert dialog and the board tabs. */
-export async function listPipelinesForUi(): Promise<PipelineView[]> {
-  const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
-  const pipelines = await listPipelines(db);
-  return pipelines.length ? pipelines : ensurePipelines(workspaceId, DEFAULT_PIPELINES);
-}
 
 export interface LeadDealLink {
   id: string;
@@ -157,8 +141,3 @@ export async function getDealsForLead(leadId: string): Promise<LeadDealLink[]> {
   }));
 }
 
-/** Workspace members, for the owner picker on a deal. */
-export async function listDealOwners(): Promise<Array<{ id: string; name: string }>> {
-  const { workspaceId } = await getActiveContext();
-  return workspaceMembers(workspaceId);
-}

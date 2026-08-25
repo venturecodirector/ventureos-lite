@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
+import { MAX_UPLOAD_BYTES } from "./limits";
 import { logsQueue } from "@/lib/queue";
 import { RAW_RETENTION_DAYS } from "./jobs";
 import type { LogAnalysis } from "./analyze";
@@ -12,7 +13,6 @@ import type { LogAnalysis } from "./analyze";
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
 
 /** 200 MB. A gzipped month of a small-business site is far under this. */
-export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 export interface LogUploadView {
   id: string;
@@ -119,16 +119,4 @@ export async function listLogUploads(companyId?: string): Promise<LogUploadView[
   return rows.map(toView);
 }
 
-export async function getLogUpload(uploadId: string): Promise<LogUploadView | null> {
-  const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
-  const row = await db.logUpload.findUnique({ where: { id: uploadId } });
-  return row ? toView(row) : null;
-}
 
-export async function deleteLogUpload(uploadId: string): Promise<{ ok: true }> {
-  const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
-  await db.logUpload.deleteMany({ where: { id: uploadId } });
-  return { ok: true };
-}

@@ -8,6 +8,9 @@ import { ApiCosts } from "@/components/api-costs";
 import { SettingsHealthRules } from "@/components/settings-health-rules";
 import { SettingsProjectTemplates } from "@/components/settings-project-templates";
 import { SettingsQuoteRules } from "@/components/settings-quote-rules";
+import { AuditLogPanel } from "@/components/audit-log";
+import { SettingsTargets } from "@/components/settings-targets";
+import { SettingsAuditWatches } from "@/components/settings-audit-watches";
 import { SettingsBranding } from "@/components/settings-branding";
 import { SettingsFields } from "@/components/settings-fields";
 import { SettingsDataQuality } from "@/components/settings-data-quality";
@@ -22,6 +25,7 @@ import { hasSzamlazzKey } from "@/modules/invoicing/actions";
 import { listMembers } from "@/modules/settings/actions";
 import { listProjectTemplates } from "@/modules/projects/actions";
 import { getQuoteRulesView } from "@/modules/quote-rules/actions";
+import { listTargets } from "@/modules/targets/actions";
 import { getSecurityStatus } from "@/modules/auth/actions";
 import { listWorkspaceUsers } from "@/modules/users/actions";
 import { getIntegrations } from "@/modules/integrations/actions";
@@ -93,6 +97,7 @@ export default async function AdminSettingsPage() {
   const healthRules = await getHealthRules();
   const projectTemplates = await listProjectTemplates();
   const quoteRules = await getQuoteRulesView();
+  const targets = await listTargets();
   // Workspace-wide letterhead (audit-v2 item 6).
   const brand = await getWorkspaceBrand();
   // Owner-defined fields (P5/1).
@@ -127,7 +132,10 @@ export default async function AdminSettingsPage() {
         <SettingsWorkflows view={workflows} />
         <SettingsHealthRules initial={healthRules} isOwner={owner} />
         <SettingsProjectTemplates templates={projectTemplates} />
+        <SettingsTargets targets={targets} isOwner={owner} />
         <SettingsQuoteRules view={quoteRules} isOwner={owner} />
+        <SettingsAuditWatches />
+        {owner && <AuditLogPanel />}
         {owner && (
           <SettingsUsers
             users={managedUsers}

@@ -1,11 +1,11 @@
 "use client";
-import { serverActionError } from "@/lib/client/server-action";
 
 import { useEffect, useRef, useState } from "react";
+import { serverActionError } from "@/lib/client/server-action";
+import { MAX_UPLOAD_BYTES } from "@/modules/logs/limits";
 import {
   uploadAccessLog,
   listLogUploads,
-  MAX_UPLOAD_BYTES,
   type LogUploadView,
 } from "@/modules/logs/actions";
 

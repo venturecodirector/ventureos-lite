@@ -114,14 +114,6 @@ export async function snoozeTask(taskId: string, days: number): Promise<{ ok: tr
   return { ok: true };
 }
 
-export async function deleteTask(taskId: string): Promise<{ ok: true }> {
-  const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
-  await db.task.deleteMany({ where: { id: taskId } });
-  revalidatePath("/");
-  revalidatePath("/leads");
-  return { ok: true };
-}
 
 /**
  * Resolve the polymorphic link to something displayable.

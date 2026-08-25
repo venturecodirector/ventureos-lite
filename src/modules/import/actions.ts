@@ -158,16 +158,4 @@ export async function saveTemplate(
   return res;
 }
 
-export async function removeTemplate(
-  id: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { workspaceId } = await getActiveContext();
-  const res = await deleteImportTemplate(workspaceId, id);
-  if (res.ok) revalidatePath("/leads");
-  return res;
-}
 
-export async function getImportBatches(): Promise<BatchRow[]> {
-  const { workspaceId } = await getActiveContext();
-  return listImportBatches(workspaceId);
-}

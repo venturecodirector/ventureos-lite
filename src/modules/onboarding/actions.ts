@@ -82,10 +82,3 @@ export async function hideChecklist(): Promise<{ ok: true }> {
   return { ok: true };
 }
 
-/** Show the tour again — from Settings, or after a colleague asks about it. */
-export async function replayTour(): Promise<{ ok: true }> {
-  const { userId } = await getActiveContext();
-  await prismaUnsafe.user.update({ where: { id: userId }, data: { tourSeenAt: null } });
-  revalidatePath("/");
-  return { ok: true };
-}

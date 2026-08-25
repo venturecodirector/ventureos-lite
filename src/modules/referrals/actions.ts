@@ -56,25 +56,6 @@ export async function createReferrer(
   return { ok: true, id: r.id };
 }
 
-export async function updateReferrer(
-  id: string,
-  raw: unknown,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const parsed = referrerSchema.safeParse(raw);
-  if (!parsed.success) return { ok: false, error: "A referrer name and type are required." };
-  const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
-  await db.referrer.update({
-    where: { id },
-    data: {
-      name: parsed.data.name,
-      kind: parsed.data.kind as ReferrerKind,
-      linkedCompanyId: parsed.data.linkedCompanyId || null,
-    },
-  });
-  revalidatePath("/referrers");
-  return { ok: true };
-}
 
 // ---- lead source + referrer assignment (editable) --------------------------
 

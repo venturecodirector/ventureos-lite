@@ -44,15 +44,6 @@ export async function addSubscription(
   return { ok: true };
 }
 
-export async function repriceSubscription(
-  subscriptionId: string,
-  monthlyNet: number,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { workspaceId } = await getActiveContext();
-  const res = await changeSubscriptionAmount(workspaceId, subscriptionId, Math.round(monthlyNet));
-  if (res.ok) revalidatePath("/analytics");
-  return res;
-}
 
 const statusSchema = z.object({
   subscriptionId: z.string().min(1),

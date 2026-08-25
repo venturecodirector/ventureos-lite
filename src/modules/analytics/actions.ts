@@ -127,25 +127,6 @@ async function computeAnalytics(workspaceId: string): Promise<AnalyticsView> {
   };
 }
 
-/** Handed-off leads that don't yet have a recorded outcome (need closing). */
-export async function listOpenHandoffs(): Promise<
-  Array<{ id: string; name: string; company: string }>
-> {
-  const { workspaceId } = await getActiveContext();
-  const db = getWorkspaceClient(workspaceId);
-  const leads = await db.lead.findMany({
-    where: { stage: "HANDED_OFF" },
-    include: { company: { select: { name: true } }, outcomes: { select: { id: true } } },
-    orderBy: { stageEnteredAt: "desc" },
-  });
-  return leads
-    .filter((l) => l.outcomes.length === 0)
-    .map((l) => ({
-      id: l.id,
-      name: l.contactName ?? l.company?.name ?? "Unnamed lead",
-      company: l.company?.name ?? "",
-    }));
-}
 
 /**
  * Export the analytics currently on screen as a branded PDF.

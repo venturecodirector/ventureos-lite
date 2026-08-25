@@ -101,9 +101,6 @@ export async function getShellContext(): Promise<ShellContext> {
   };
 }
 
-export async function listMyWorkspaces(): Promise<WorkspaceOption[]> {
-  return (await getShellContext()).workspaces;
-}
 
 // ---- switch (membership-validated, stored server-side) --------------------
 

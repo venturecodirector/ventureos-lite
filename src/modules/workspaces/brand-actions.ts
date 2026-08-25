@@ -64,10 +64,6 @@ export async function getWorkspaceBrand(): Promise<WorkspaceBrand> {
   return brandFrom(ws?.brand);
 }
 
-/** The seed, so the form can offer "restore the defaults". */
-export async function getSeedBrand(): Promise<WorkspaceBrand> {
-  return VENTURE_BRAND;
-}
 
 async function writeBrand(
   workspaceId: string,
