@@ -8,6 +8,7 @@ import { ApiCosts } from "@/components/api-costs";
 import { SettingsEmail } from "@/components/settings-email";
 import { SettingsHealthRules } from "@/components/settings-health-rules";
 import { SettingsProjectTemplates } from "@/components/settings-project-templates";
+import { SettingsQuoteRules } from "@/components/settings-quote-rules";
 import { SettingsBranding } from "@/components/settings-branding";
 import { SettingsFields } from "@/components/settings-fields";
 import { SettingsDataQuality } from "@/components/settings-data-quality";
@@ -21,6 +22,7 @@ import { getColdStatus } from "@/modules/campaigns/actions";
 import { hasSzamlazzKey } from "@/modules/invoicing/actions";
 import { listMembers } from "@/modules/settings/actions";
 import { listProjectTemplates } from "@/modules/projects/actions";
+import { getQuoteRulesView } from "@/modules/quote-rules/actions";
 import { getSecurityStatus } from "@/modules/auth/actions";
 import { listWorkspaceUsers } from "@/modules/users/actions";
 import { getIntegrations } from "@/modules/integrations/actions";
@@ -91,6 +93,7 @@ export default async function AdminSettingsPage() {
   // whole team works from (P11/1c).
   const healthRules = await getHealthRules();
   const projectTemplates = await listProjectTemplates();
+  const quoteRules = await getQuoteRulesView();
   // Workspace-wide letterhead (audit-v2 item 6).
   const brand = await getWorkspaceBrand();
   // Owner-defined fields (P5/1).
@@ -125,6 +128,7 @@ export default async function AdminSettingsPage() {
         <SettingsWorkflows view={workflows} />
         <SettingsHealthRules initial={healthRules} isOwner={owner} />
         <SettingsProjectTemplates templates={projectTemplates} />
+        <SettingsQuoteRules view={quoteRules} isOwner={owner} />
         {owner && (
           <SettingsUsers
             users={managedUsers}

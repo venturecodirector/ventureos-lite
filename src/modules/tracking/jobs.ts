@@ -1,9 +1,7 @@
 import { prismaUnsafe, getWorkspaceClient } from "@/lib/db";
 import { identifyVisitor } from "./identify";
 import { notifyVisitorSignal } from "./notify";
-import { createTaskFromSignal } from "@/modules/tasks/from-signal";
-import { safeDeliver } from "@/modules/notifications/notify";
-import { leadRecipients } from "@/modules/notifications/recipients";
+import { runRulesForQuote } from "@/modules/quote-rules/store";
 import { PAGE_TYPE_LABEL, SIGNAL_CONFIDENCES, type Confidence, type PageType } from "./types";
 
 /**
@@ -40,17 +38,24 @@ export async function processVisitEnrichment(visitId: string): Promise<boolean> 
   const db = getWorkspaceClient(visit.workspaceId);
 
   /**
-   * A quote read three times and still not signed (P8/c).
+   * Quote behaviour, evaluated on every new reading session (P8/c → P14/3).
    *
-   * Checked for EVERY new session, identified or not — "somebody has opened
-   * this quote three times" is actionable on its own, and most visitors are
-   * never identified. This is the signal the playbook singles out as the one
-   * worth acting on.
+   * This used to be one hard-coded rule here — "three opens without an
+   * acceptance". It is now the rule ENGINE, which subsumes that rule and adds
+   * the other two the playbook names. Evaluated for identified and
+   * unidentified readers alike: "somebody opened this three times" is
+   * actionable on its own, and most visitors are never identified.
    */
   if (visit.pageType === "quote") {
-    await raiseRepeatOpenSignal(visit.workspaceId, visit.pageSlug).catch(() => {
-      /* the visit is recorded either way */
+    const doc = await db.document.findFirst({
+      where: { acceptSlug: visit.pageSlug, type: "QUOTE" },
+      select: { id: true },
     });
+    if (doc) {
+      await runRulesForQuote(visit.workspaceId, doc.id).catch(() => {
+        /* the visit is recorded either way */
+      });
+    }
   }
 
   // Opted out, or the raw address has already been purged: nothing to identify,
@@ -194,64 +199,4 @@ export async function processVisitRetention(): Promise<number> {
     data: { ipHash: null, ipRaw: null, referrer: null, sections: {}, sessionToken: "expired" },
   });
   return res.count;
-}
-
-/** Distinct sessions before a quote's repeat-open signal fires. */
-const REPEAT_OPEN_THRESHOLD = 3;
-
-/**
- * "Harmadszor nézte meg — hívd fel" (playbook-v3 P8/c).
- *
- * Fires ONCE per quote: the task is idempotent by source, and the notification
- * carries the document id as its discriminator, so the fourth and fifth reads
- * do not each ring the bell. An accepted quote raises nothing — the reading was
- * the client checking what they signed.
- */
-export async function raiseRepeatOpenSignal(
-  workspaceId: string,
-  slug: string,
-): Promise<boolean> {
-  const db = getWorkspaceClient(workspaceId);
-  const doc = await db.document.findFirst({
-    where: { acceptSlug: slug },
-    select: { id: true, leadId: true, number: true },
-  });
-  if (!doc?.leadId) return false;
-
-  const accepted = await db.quoteAcceptance.findFirst({
-    where: { documentId: doc.id },
-    select: { id: true },
-  });
-  if (accepted) return false;
-
-  const sessions = await db.pageVisit.count({
-    where: { pageType: "quote", pageSlug: slug },
-  });
-  if (sessions < REPEAT_OPEN_THRESHOLD) return false;
-
-  const label = doc.number ?? "az ajánlat";
-  await createTaskFromSignal(db, {
-    workspaceId,
-    title: `Hívd fel — ${label} ${sessions}× megnyitva, még nincs elfogadva`,
-    note: "Az ajánlatot többször is megnyitották, de nem fogadták el. Ez a legjobb pillanat egy hívásra.",
-    type: "call",
-    entityType: "lead",
-    entityId: doc.leadId,
-    source: "quote_repeat_open",
-    dueInDays: 0,
-  });
-
-  await safeDeliver({
-    workspaceId,
-    userIds: await leadRecipients(workspaceId, doc.leadId),
-    type: "visitor_signal",
-    title: `${label}: ${sessions}. megnyitás, elfogadás nélkül`,
-    body: "Hívd fel — most van nyitva előttük.",
-    href: `/leads?lead=${doc.leadId}`,
-    entityType: "lead",
-    entityId: doc.leadId,
-    // Once per document, however many further opens arrive.
-    discriminator: `repeat-open:${doc.id}`,
-  });
-  return true;
 }

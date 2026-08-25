@@ -26,6 +26,8 @@ const BUSINESS_TABLES = [
   "project_templates",
   "projects",
   "milestones",
+  // Quote-behaviour rule firings (P14/3).
+  "quote_rule_runs",
   "leads",
   "activities",
   "messages",

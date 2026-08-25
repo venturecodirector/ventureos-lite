@@ -2310,3 +2310,31 @@ model Milestone {
   @@index([workspaceId, projectId])
   @@map("milestones")
 }
+
+/// One firing of a quote-behaviour rule (playbook-v4 P14/3).
+///
+/// Kept for two reasons. The first is the once-per-quote-per-rule guarantee:
+/// without a record, a daily sweep would raise the same task every day until
+/// somebody signed. The second is the point of the whole feature — `acceptedAt`
+/// is filled in if the quote is accepted afterwards, so the quarterly review can
+/// say which rules actually save quotes instead of which ones fire most.
+model QuoteRuleRun {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  documentId  String    @map("document_id")
+  ruleId      String    @map("rule_id")
+  /// The sentence shown to the operator, kept as it was at firing time.
+  reason      String
+  taskId      String?   @map("task_id")
+  /// The prepared draft, if the rule was configured to write one. A human
+  /// reads and sends it — nothing here sends anything.
+  draftId     String?   @map("draft_id")
+  firedAt     DateTime  @default(now()) @map("fired_at")
+  /// Set when the quote was accepted after this fired. Null means it was not
+  /// (yet), which is the honest default rather than a zero.
+  acceptedAt  DateTime? @map("accepted_at")
+
+  @@unique([documentId, ruleId])
+  @@index([workspaceId, firedAt])
+  @@map("quote_rule_runs")
+}

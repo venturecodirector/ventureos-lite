@@ -49,6 +49,7 @@ import {
   processVisitRetention,
 } from "../modules/tracking/jobs";
 import { processAudienceVerification } from "../modules/verification/jobs";
+import { processQuoteRuleSweep } from "../modules/quote-rules/jobs";
 
 /**
  * Background worker (BullMQ + Redis). Runs in its own Docker service.
@@ -255,6 +256,10 @@ async function main(): Promise<void> {
         const n = await processNotificationRetention();
         // eslint-disable-next-line no-console
         console.log(`[worker] purged ${n} expired notification(s)`);
+      } else if (job.name === "quote-rules") {
+        const n = await processQuoteRuleSweep();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] quote rules fired ${n} time(s)`);
       } else if (job.name === "visitor-ip-purge") {
         const n = await processRawIpPurge();
         // eslint-disable-next-line no-console
@@ -292,6 +297,13 @@ async function main(): Promise<void> {
     "notification-retention",
     {},
     { repeat: { pattern: "45 3 * * *" }, jobId: "notification-retention" },
+  );
+  // Quote-behaviour rules at 08:30 — before the working day, so a "call them"
+  // task is on the list when the list is first read (v4 P14/3).
+  await wakeupsQueue().add(
+    "quote-rules",
+    {},
+    { repeat: { pattern: "30 8 * * *" }, jobId: "quote-rules" },
   );
   /**
    * The raw-IP purge, HOURLY (v3 P8/e).
