@@ -193,6 +193,7 @@ describe("isPageType", () => {
 // ---------------------------------------------------------------------------
 
 import { readFileSync, existsSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { join } from "node:path";
 
 describe("the measurement surface is public", () => {
@@ -251,4 +252,39 @@ describe("the disclosure survives the proxy too", () => {
     expect(caddy).toContain("rewrite @slug /accept/{http.regexp.slug.1}");
     expect(caddy).toContain("rewrite @slug /book/{http.regexp.slug.1}");
   });
+});
+
+describe("every queued job id is one BullMQ will accept", () => {
+  /**
+   * `jobId: \`visit:${id}\`` threw "Custom Id cannot contain :" at enqueue time —
+   * BullMQ builds its Redis keys with that separator. The throw was swallowed
+   * by the enqueue's own catch (correctly: a dead Redis must not break a
+   * prospect's page view), so the beacon kept answering 204 and not one visitor
+   * was ever identified. Nothing failed. Nothing was logged anywhere a test
+   * could see. It took reading the production log.
+   *
+   * Every other enqueue in the codebase already used a hyphen; this pins the
+   * convention so the next one cannot drift.
+   */
+  const files = execSync(
+    "grep -rl 'jobId:' src --include=*.ts",
+    { encoding: "utf8" },
+  )
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+
+  it("finds the enqueue sites it means to check", () => {
+    expect(files.length).toBeGreaterThanOrEqual(6);
+  });
+
+  for (const file of files) {
+    it(`${file} builds no job id containing a colon`, () => {
+      const source = readFileSync(file, "utf8");
+      const ids = [...source.matchAll(/jobId:\s*(`[^`]*`|"[^"]*"|'[^']*')/g)].map((m) => m[1]!);
+      for (const id of ids) {
+        expect(id.slice(1, -1), `${file} → ${id}`).not.toContain(":");
+      }
+    });
+  }
 });

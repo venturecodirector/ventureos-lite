@@ -19,8 +19,17 @@ export async function enqueueVisitEnrichment(
       "enrich-visit",
       { visitId, workspaceId },
       {
-        // One job per visit, however many times this is called.
-        jobId: `visit:${visitId}`,
+        /**
+         * One job per visit, however many times this is called.
+         *
+         * A HYPHEN, not a colon: BullMQ refuses a custom id containing ":"
+         * ("Custom Id cannot contain :") because it builds its Redis keys with
+         * that separator. It refuses by throwing at enqueue time, which the
+         * catch below swallowed — so the beacon kept answering 204 and not one
+         * visitor was ever identified. Found in the production log, not in a
+         * test.
+         */
+        jobId: `visit-${visitId}`,
         delay: ENRICH_DELAY_MS,
         removeOnComplete: true,
         attempts: 2,
