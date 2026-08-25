@@ -138,7 +138,16 @@ describe(".env.production.example completeness", () => {
       "POSTGRES_USER",
       "POSTGRES_PASSWORD",
       "POSTGRES_DB",
-      "APP_DB_PASSWORD",
+      /**
+       * APP_DB_PASSWORD is deliberately NOT here any more.
+       *
+       * It used to be interpolated into the app service's DATABASE_URL. That
+       * line is the owner's connection now (see the comment in
+       * docker-compose.prod.yml), and the variable is read by the application
+       * instead — src/lib/rls.ts builds the app_user connection from it when
+       * DB_RLS is on. The sibling test above, which scans src for
+       * `process.env.X`, is what covers it.
+       */
       "BACKUP_DIR",
       "RETENTION_DAYS",
     ];
