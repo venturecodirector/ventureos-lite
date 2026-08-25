@@ -617,6 +617,48 @@ docker image prune -a -f   # a nem használt képek törlése
 
 ---
 
+## Sor-szintű védelem (RLS) — be- és kikapcsolás
+
+A bérlő-elválasztásnak két öve van (CLAUDE.md #1): a Prisma tenant-guard, ami
+mindig fut, és a Postgres sor-szintű védelme, ami az adatbázisban is elutasítja
+az idegen workspace sorait — **akkor is, ha a guard hibázna**. A másodikat egy
+kapcsoló vezérli:
+
+```bash
+# BE
+sed -i 's/^DB_RLS=.*/DB_RLS=on/' .env || echo "DB_RLS=on" >> .env
+docker compose -f docker-compose.prod.yml up -d app worker
+
+# KI (azonnali visszaállás, újraépítés nélkül)
+sed -i 's/^DB_RLS=.*/DB_RLS=off/' .env
+docker compose -f docker-compose.prod.yml up -d app worker
+```
+
+Bekapcsolva a workspace-hez kötött lekérdezések egy külön kapcsolat-medencén,
+`app_user` szerepként futnak (nem superuser, nem kerülheti meg a szabályokat), és
+minden lekérdezés elé bekerül a workspace deklarálása. Ehhez az `APP_DB_PASSWORD`
+értékének egyeznie kell azzal, amivel a `migrate` lépés a szerepet létrehozta.
+
+**Az `app` és `worker` DATABASE_URL-je szándékosan a tulajdonosé marad.** A
+bejelentkezés a workspace létezése ELŐTT olvas globális táblákat, a publikus
+oldalak pedig bérlőkön átnyúlva oldják fel a nem listázott slugot — egyik sem
+lehetséges workspace-hez kötött szabály alatt. A védelem nem ezen a soron múlik.
+
+Ellenőrzés bekapcsolás után (csak olvas, semmit nem ír):
+
+```bash
+WS=$(docker compose -f docker-compose.prod.yml exec -T db psql -U venture -d ventureos -t -A -c "select id from workspaces limit 1")
+PW=$(grep "^APP_DB_PASSWORD=" .env | cut -d= -f2-)
+# 1) deklaráció nélkül 0 sor, 2) a workspace deklarálva a valódi darabszám
+docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$PW" db \
+  psql -U app_user -d ventureos -c "select count(*) from leads;" \
+  -c "select set_config('app.current_workspace','$WS',false); select count(*) from leads;"
+```
+
+Ha az első `0`, a második pedig a valós szám, a réteg működik.
+
+---
+
 ## Hibaelhárítás
 
 ### 1. „port is already allocated" — foglalt port
