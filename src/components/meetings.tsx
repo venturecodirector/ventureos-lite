@@ -14,7 +14,83 @@ import {
   type MeetingRow,
   type MeetingDetail,
 } from "@/modules/meetings/actions";
+import Link from "next/link";
 import { EmptyState } from "./empty-state";
+
+/**
+ * The service catalogue, as picks. Same keys the audit uses, so a finding and a
+ * meeting produce the SAME quote line rather than two wordings of one service.
+ */
+const SERVICE_PICKS = [
+  { key: "seo", label: "Keresőoptimalizálás" },
+  { key: "performance", label: "Sebesség" },
+  { key: "conversion", label: "Mérés, megkeresés" },
+  { key: "legal", label: "Jogi megfelelés" },
+  { key: "security", label: "Biztonság" },
+  { key: "email", label: "E-mail hitelesítés" },
+  { key: "accessibility", label: "Akadálymentesítés" },
+  { key: "structure", label: "Oldalszerkezet" },
+] as const;
+
+/**
+ * What was assembled after the meeting, and what has been done with it (P13/2).
+ *
+ * A CHECKLIST, not an outbox: every line is something a person still has to
+ * press. The done-state is read from the draft, the quote and the task
+ * themselves, so it cannot claim something was sent that was not.
+ */
+function FollowupKitPanel({ detail }: { detail: MeetingDetail }) {
+  const f = detail.followup;
+  if (!f) return null;
+
+  const Line = ({ done, children }: { done: boolean; children: React.ReactNode }) => (
+    <li className="flex items-start gap-2 text-[12px]">
+      <span className={done ? "text-[#3DDC97]" : "text-muted"}>{done ? "✓" : "○"}</span>
+      <span className={done ? "text-muted line-through" : "text-ink"}>{children}</span>
+    </li>
+  );
+
+  return (
+    <div className="mt-3 rounded-[10px] border border-line bg-panel-2 p-3" data-testid="followup-kit">
+      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+        Follow-up csomag
+      </div>
+      <ul className="grid gap-1">
+        {f.draftMessageId ? (
+          <Line done={f.draftSent}>
+            Köszönő levél piszkozata elkészült —{" "}
+            <Link href={`/outreach?lead=${detail.leadId}`} className="underline hover:text-ink">
+              megnyitás a szerkesztőben
+            </Link>
+          </Line>
+        ) : (
+          <Line done={false}>{f.draftError ?? "A levél piszkozata nem készült el."}</Line>
+        )}
+
+        {f.attachments.map((a) => (
+          <Line key={a.path} done={false}>
+            Csatolható: {a.label}
+          </Line>
+        ))}
+
+        {f.quoteLines.length > 0 && (
+          <Line done={f.quoteCreated}>
+            Ajánlat váza {f.quoteLines.length} tétellel (
+            {f.quoteLines.map((l) => l.description.split(" ")[0]).join(", ")}) —{" "}
+            <Link href={`/documents?lead=${detail.leadId}`} className="underline hover:text-ink">
+              ajánlat készítése
+            </Link>
+          </Line>
+        )}
+
+        <Line done={f.taskDone}>Emlékeztető 3 nap múlva, ha nincs válasz</Line>
+      </ul>
+      <p className="mt-2 text-[11px] text-muted">
+        Semmi nem megy ki magától — minden sor egy gomb, amit valakinek meg kell nyomnia.
+      </p>
+    </div>
+  );
+}
 
 const BRIEF_BADGE: Record<string, { label: string; cls: string }> = {
   none: { label: "no brief", cls: "bg-panel-2 text-muted" },
@@ -63,6 +139,10 @@ export function Meetings({
   const [value, setValue] = useState("");
   const [reason, setReason] = useState("");
   const [competitor, setCompetitor] = useState("");
+  // What actually came up, and in the operator's own words (P13/2). Both feed
+  // the follow-up kit: the notes become the draft, the picks become quote lines.
+  const [notes, setNotes] = useState("");
+  const [discussed, setDiscussed] = useState<string[]>([]);
 
   useEffect(() => {
     if (!selected) {
@@ -147,6 +227,8 @@ export function Meetings({
       reason: reason || undefined,
       value: value ? Number(value) : undefined,
       competitor: competitor || undefined,
+      notes: notes || undefined,
+      discussed,
     });
     setBusy(false);
     if (!res.ok) setError(res.error);
@@ -154,6 +236,8 @@ export function Meetings({
       setValue("");
       setReason("");
       setCompetitor("");
+      setNotes("");
+      setDiscussed([]);
       await reload();
     }
   }
@@ -433,9 +517,12 @@ export function Meetings({
                   Post-meeting outcome → handoff
                 </div>
                 {detail.outcome ? (
-                  <p className="text-[12.5px] text-[#3DDC97]">
-                    Logged: {detail.outcome}. Lead handed off.
-                  </p>
+                  <>
+                    <p className="text-[12.5px] text-[#3DDC97]">
+                      Logged: {detail.outcome}. Lead handed off.
+                    </p>
+                    <FollowupKitPanel detail={detail} />
+                  </>
                 ) : (
                   <div className="grid gap-2 sm:grid-cols-2">
                     <select
@@ -466,6 +553,45 @@ export function Meetings({
                       placeholder="Reason / notes"
                       className="rounded-[7px] border border-line bg-[rgba(0,5,29,0.5)] px-2 py-1.5 text-[12px] text-ink outline-none focus:border-accent"
                     />
+                    {/*
+                      The two fields the follow-up kit is built from (P13/2).
+                      Notes become the drafted email; the picks become quote
+                      lines from the workspace's own service catalogue.
+                    */}
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      rows={3}
+                      data-testid="outcome-notes"
+                      placeholder="Jegyzetek a találkozóról — ebből készül a köszönő levél"
+                      className="rounded-[7px] border border-line bg-[rgba(0,5,29,0.5)] px-2 py-1.5 text-[12px] text-ink outline-none focus:border-accent sm:col-span-2"
+                    />
+                    <div className="sm:col-span-2">
+                      <div className="mb-1 text-[10.5px] uppercase tracking-[0.1em] text-muted">
+                        Miről volt szó? (ebből lesz az ajánlat váza)
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {SERVICE_PICKS.map((c) => (
+                          <button
+                            key={c.key}
+                            type="button"
+                            data-testid={`discussed-${c.key}`}
+                            onClick={() =>
+                              setDiscussed((d) =>
+                                d.includes(c.key) ? d.filter((x) => x !== c.key) : [...d, c.key],
+                              )
+                            }
+                            className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                              discussed.includes(c.key)
+                                ? "border-accent bg-accent-soft text-[#E4D3FF]"
+                                : "border-line text-muted hover:border-accent"
+                            }`}
+                          >
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <button
                       onClick={submitOutcome}
                       disabled={busy}

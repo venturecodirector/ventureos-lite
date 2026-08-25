@@ -22,7 +22,8 @@ export type UseCase =
   //                                the four Sonnet use cases and this is not one)
   | "doc_scope" // Haiku  — document scope paragraph
   | "person_brief" // Haiku  — 2-3 sentence factual summary on extension capture (P1/1e)
-  | "site_lookup"; // Haiku  — find a company's own website (web search, on click)
+  | "site_lookup" // Haiku  — find a company's own website (web search, on click)
+  | "meeting_followup"; // Sonnet — the email after a meeting (P13/2)
 
 export const USE_CASE_MODEL: Record<UseCase, ModelId> = {
   lead_research: "claude-sonnet-4-6",
@@ -43,6 +44,10 @@ export const USE_CASE_MODEL: Record<UseCase, ModelId> = {
   // Finding a URL is a lookup, not writing: rule #3 names the four Sonnet use
   // cases and this is not one of them.
   site_lookup: "claude-haiku-4-5",
+  // Sonnet: rule #3 names outreach drafting as a writing-quality use case, and
+  // this is the first message after a conversation — where a wrong register
+  // costs the deal.
+  meeting_followup: "claude-sonnet-4-6",
 };
 
 export function modelForUseCase(useCase: UseCase): ModelId {

@@ -140,7 +140,19 @@ describe("validation on the way out of Draft", () => {
 });
 
 describe("model routing (CLAUDE.md hard rule #3)", () => {
-  it("drafts content on Haiku — Sonnet is reserved for four other use cases", () => {
+  /**
+   * The list stays EXPLICIT rather than becoming a rule about categories.
+   * CLAUDE.md names four kinds — research cards, outreach drafts, meeting
+   * briefs, weekly analysis — and every entry below has to be defensible as one
+   * of them. Adding a row here should feel like a decision, which is the whole
+   * point of pinning it.
+   *
+   *   campaign_frame     — an outreach draft, written once per campaign
+   *   meeting_followup   — an outreach draft: the first message after a
+   *                        conversation, where the wrong register costs the
+   *                        deal (playbook-v4 P13/2 allows it by name)
+   */
+  it("drafts content on Haiku — Sonnet is reserved for the named use cases", () => {
     expect(USE_CASE_MODEL.content_draft).toBe("claude-haiku-4-5");
     const sonnet = Object.entries(USE_CASE_MODEL)
       .filter(([, m]) => m === "claude-sonnet-4-6")
@@ -150,6 +162,7 @@ describe("model routing (CLAUDE.md hard rule #3)", () => {
       "campaign_frame",
       "lead_research",
       "meeting_brief",
+      "meeting_followup",
       "outreach_draft",
       "signal_engine",
     ]);

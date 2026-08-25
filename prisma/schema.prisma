@@ -631,6 +631,11 @@ model Meeting {
   briefStatus   String   @default("none") @map("brief_status")
   briefPdfPath  String?  @map("brief_pdf_path")
   outcome       String?
+  /// The follow-up kit assembled when the outcome was logged (playbook-v4
+  /// P13/2): the drafted thank-you, the attachments worth sending, and the
+  /// quote lines that were discussed. A CHECKLIST, not an outbox — nothing in
+  /// it leaves the building without a person pressing something.
+  followupKit   Json?    @map("followup_kit")
   createdAt     DateTime @default(now()) @map("created_at")
 
   lead Lead? @relation(fields: [leadId], references: [id], onDelete: SetNull)

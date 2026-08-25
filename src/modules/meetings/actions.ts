@@ -11,6 +11,7 @@ import { getWriteAccount, saveRefreshedTokens } from "./credentials";
 import { calendarFailureActivity, type BriefStatus } from "./logic";
 import { enqueueMeetingBrief } from "./enqueue";
 import { notifyMeetingBooked } from "../notifications/notify";
+import { buildFollowupKit, kitFrom } from "./followup";
 
 // ---- views (plain data for the client) ------------------------------------
 
@@ -31,6 +32,23 @@ export interface MeetingDetail extends MeetingRow {
   brief: string | null;
   briefPdfPath: string | null;
   eventUrl: string | null;
+  /**
+   * The follow-up kit and what has been DONE with it (playbook-v4 P13/2).
+   *
+   * The done-state is read from the things themselves — the draft's status, the
+   * quote's existence, the task's done flag — rather than stored, so the
+   * checklist cannot disagree with what it describes.
+   */
+  followup: {
+    builtAt: string;
+    draftMessageId: string | null;
+    draftSent: boolean;
+    draftError: string | null;
+    attachments: Array<{ label: string; path: string }>;
+    quoteLines: Array<{ category: string; description: string; suggestedNet: number }>;
+    quoteCreated: boolean;
+    taskDone: boolean;
+  } | null;
 }
 
 function leadName(lead: { contactName: string | null; company: { name: string } | null } | null): string {
@@ -191,6 +209,10 @@ const outcomeSchema = z.object({
   reason: z.string().optional(),
   value: z.coerce.number().int().min(0).optional(),
   competitor: z.string().optional(),
+  /** Pasted notes from the meeting — the follow-up draft's raw material. */
+  notes: z.string().max(8000).optional(),
+  /** Service-map categories that actually came up (P13/2). */
+  discussed: z.array(z.string()).max(12).optional(),
 });
 
 export async function logMeetingOutcome(
@@ -234,6 +256,33 @@ export async function logMeetingOutcome(
     // The handoff point — advance to Handed off.
     await moveLeadStage(meeting.leadId, "HANDED_OFF");
   }
+  /**
+   * The follow-up kit (playbook-v4 P13/2).
+   *
+   * Built AFTER the outcome is safely recorded and the lead has moved, and
+   * wrapped so it cannot undo either: the meeting happened whatever the drafter
+   * does, and losing that fact because a Claude call failed would be a much
+   * worse trade than a kit with one part missing.
+   */
+  try {
+    const kit = await buildFollowupKit(db, workspaceId, {
+      meetingId: input.meetingId,
+      leadId: meeting.leadId,
+      outcome: input.result,
+      reason: input.reason,
+      value: input.value,
+      notes: input.notes,
+      discussed: input.discussed ?? [],
+    });
+    await db.meeting.update({
+      where: { id: input.meetingId },
+      data: { followupKit: kit as unknown as object },
+    });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[meetings] follow-up kit failed", e);
+  }
+
   // Workflow rules (P7/5), best-effort and last.
   await onMeetingOutcome(workspaceId, meeting.leadId, input.result);
 
@@ -274,7 +323,39 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
     include: { lead: { include: { company: true } } },
   });
   if (!m) return null;
+
+  const kit = kitFrom(m.followupKit);
+  let followup: MeetingDetail["followup"] = null;
+  if (kit) {
+    const [draft, quote, task] = await Promise.all([
+      kit.draftMessageId
+        ? db.message.findUnique({ where: { id: kit.draftMessageId }, select: { status: true } })
+        : Promise.resolve(null),
+      // A quote written after the meeting is the one this kit led to.
+      m.leadId
+        ? db.document.findFirst({
+            where: { leadId: m.leadId, type: "QUOTE", createdAt: { gte: new Date(kit.builtAt) } },
+            select: { id: true },
+          })
+        : Promise.resolve(null),
+      kit.taskId
+        ? db.task.findUnique({ where: { id: kit.taskId }, select: { doneAt: true } })
+        : Promise.resolve(null),
+    ]);
+    followup = {
+      builtAt: kit.builtAt,
+      draftMessageId: kit.draftMessageId,
+      draftSent: draft?.status === "SENT",
+      draftError: kit.draftError,
+      attachments: kit.attachments,
+      quoteLines: kit.quoteLines,
+      quoteCreated: !!quote,
+      taskDone: !!task?.doneAt,
+    };
+  }
+
   return {
+    followup,
     id: m.id,
     leadId: m.leadId,
     leadName: leadName(m.lead),
