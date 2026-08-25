@@ -27,16 +27,32 @@ x-logging: &logging
 # `.env` is the single source of truth; the overrides below swap host-facing
 # values for in-network ones.
 #
-# TENANCY (CLAUDE.md hard rule #1): app and worker connect as `app_user`, a
-# NOSUPERUSER NOBYPASSRLS role created by scripts/apply-rls.ts. A superuser
-# silently bypasses every row-level-security policy, so connecting the app as
-# ${POSTGRES_USER} would quietly reduce tenancy to guard-only. Only the one-shot
-# `migrate` service — which needs DDL — uses the superuser.
+# TENANCY (CLAUDE.md hard rule #1) — and why this connection is the OWNER's.
+#
+# This line used to read `app_user`, on the reasoning that a superuser bypasses
+# every row-level-security policy. The reasoning was right and the line was
+# still wrong, because nothing in the app ever set the session variables the
+# policies read: as `app_user` every policy evaluated against NULL and the
+# application saw zero rows — no workspaces, no memberships, no templates. It
+# was hand-edited to the superuser ON THE SERVER to get the deployment up,
+# which left production diverging from git with a change that no repository
+# backup captured. A `git checkout` of this file would have blacked the whole
+# app out.
+#
+# Resolved by making the repository state the deliberate one. `prismaUnsafe`
+# genuinely needs the owner connection: it signs users in before any workspace
+# exists and resolves public pages by unlisted slug ACROSS tenants, neither of
+# which is possible under a workspace-scoped policy.
+#
+# The second belt is no longer this line's job. With DB_RLS=on,
+# getWorkspaceClient() opens its OWN pool as app_user and declares the
+# workspace on every query (src/lib/rls-client.ts) — so workspace-scoped
+# traffic never touches this connection at all.
 x-app-env: &app-env
   env_file: .env
   environment:
     NODE_ENV: production
-    DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:?set APP_DB_PASSWORD}@db:5432/${POSTGRES_DB:?set POSTGRES_DB}?schema=public
+    DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:?set POSTGRES_DB}?schema=public
     REDIS_URL: redis://redis:6379
     FILES_DIR: /data/files
 
