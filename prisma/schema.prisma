@@ -388,39 +388,39 @@ model Workspace {
 // ============================================================================
 
 model Company {
-  id           String       @id @default(cuid())
-  workspaceId  String       @map("workspace_id")
-  name         String
-  domain       String?
-  website      String?
-  industry     String?
-  sizeBand     String?      @map("size_band")
-  phone        String?
-  address      String?
-  city         String?
-  taxId        String?      @map("tax_id") // adószám — dedupe key within a workspace
+  id            String       @id @default(cuid())
+  workspaceId   String       @map("workspace_id")
+  name          String
+  domain        String?
+  website       String?
+  industry      String?
+  sizeBand      String?      @map("size_band")
+  phone         String?
+  address       String?
+  city          String?
+  taxId         String?      @map("tax_id") // adószám — dedupe key within a workspace
   /// Google's own id for the place this company was prospected from. The only
   /// EXACT dedupe key the Prospector has: a business with neither a website nor
   /// a phone number — and there are plenty — matched nothing before, so it could
   /// be added twice with no duplicate warning at all.
-  googlePlaceId String?     @map("google_place_id")
+  googlePlaceId String?      @map("google_place_id")
   /// How this company entered the workspace, when it was not a prospect we
   /// chose: "competitor_audit" for one pulled in by a comparison (P2/3). Null
   /// for everything created the ordinary way.
-  source       String?
-  notes        String?      @db.Text
+  source        String?
+  notes         String?      @db.Text
   /// Client lifecycle (playbook-v3 P11/1a). The playbook promotes a company on
   /// "first deal won"; there is no Deal model yet (v2 P4 is not started), so
   /// promotion happens on the first thing that means the same in practice — a
   /// subscription starting, or an invoice being paid. When Deal arrives it
   /// becomes a third trigger rather than a replacement.
-  clientStatus ClientStatus @default(PROSPECT) @map("client_status")
-  clientSince  DateTime?    @map("client_since")
+  clientStatus  ClientStatus @default(PROSPECT) @map("client_status")
+  clientSince   DateTime?    @map("client_since")
   /// Manual "something is wrong here" toggle. One of the four health inputs,
   /// and the only one a person sets by hand (P11/1c).
-  supportFlag  Boolean      @default(false) @map("support_flag")
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
+  supportFlag   Boolean      @default(false) @map("support_flag")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
 
   leads         Lead[]
   audits        AuditResult[]
@@ -456,57 +456,57 @@ model Company {
 }
 
 model Lead {
-  id             String     @id @default(cuid())
-  workspaceId    String     @map("workspace_id")
-  companyId      String?    @map("company_id")
-  referrerId     String?    @map("referrer_id")
-  contactName    String?    @map("contact_name")
-  title          String?
+  id                 String     @id @default(cuid())
+  workspaceId        String     @map("workspace_id")
+  companyId          String?    @map("company_id")
+  referrerId         String?    @map("referrer_id")
+  contactName        String?    @map("contact_name")
+  title              String?
   /// The LinkedIn headline — free prose the person wrote about themselves, e.g.
   /// "VP Sales @ Metaview | Startup Advisor and Investor". Its OWN column, not a
   /// fallback for `title`: the capture used to collapse the two, so a profile with
   /// no Experience section got its headline filed as its job title and the form
   /// rendered it in the job-title input beside an empty Name field.
-  headline       String?    @db.Text
+  headline           String?    @db.Text
   /// The location line exactly as LinkedIn showed it — "San Francisco Bay Area",
   /// "Miskolc és környéke". Kept RAW and always, even when the gazetteer cannot
   /// resolve a city out of it: the string was on the profile, an operator can read
   /// it, and discarding it was how a captured location became a blank field.
-  locationRaw    String?    @map("location_raw")
-  email          String?
-  phone          String?
-  linkedinUrl    String?    @map("linkedin_url")
-  source         LeadSource @default(MANUAL)
+  locationRaw        String?    @map("location_raw")
+  email              String?
+  phone              String?
+  linkedinUrl        String?    @map("linkedin_url")
+  source             LeadSource @default(MANUAL)
   /// Who works this lead (playbook-v2 P3/2 — a filter field and a bulk action).
   /// A plain column rather than a relation, like Activity.byUserId and
   /// Task.assigneeId: users are global and leads are tenant-scoped, so a real
   /// foreign key would tie a business table to the identity tables across the
   /// tenancy boundary. Null means unassigned, which is a state worth filtering
   /// FOR ("nobody owns these") rather than hiding.
-  ownerId        String?    @map("owner_id")
+  ownerId            String?    @map("owner_id")
   /// Language to write to this contact in. Feeds the outreach drafter, which
   /// previously always assumed Hungarian.
-  language       Lang       @default(HU)
+  language           Lang       @default(HU)
   /// How the language was decided: "high" / "medium" / "low" from detection, or
   /// "manual" once a human has chosen. The default alone was the bug — every lead
   /// inherited the workspace's language, so an English profile in California came
   /// out Hungarian and its outreach draft would have been written in Hungarian.
   /// "manual" is never overwritten by a later capture.
-  languageConfidence String? @map("language_confidence")
-  stage          Stage      @default(RESEARCHED)
-  stageEnteredAt DateTime   @default(now()) @map("stage_entered_at")
-  stageReason    String?    @map("stage_reason")
-  icpScore       Int?       @map("icp_score")
-  scoreBreakdown Json?      @map("score_breakdown")
-  signals        Json       @default("[]") // string[] of trigger signals
-  qualification  Json? // { authority, history, budget, timeline } booleans
-  escalatedAt    DateTime?  @map("escalated_at")
-  notes          String?    @db.Text
-  wakeUpAt       DateTime?  @map("wake_up_at")
-  lastActivityAt DateTime?  @map("last_activity_at")
-  anonymizedAt   DateTime?  @map("anonymized_at")
-  createdAt      DateTime   @default(now()) @map("created_at")
-  updatedAt      DateTime   @updatedAt @map("updated_at")
+  languageConfidence String?    @map("language_confidence")
+  stage              Stage      @default(RESEARCHED)
+  stageEnteredAt     DateTime   @default(now()) @map("stage_entered_at")
+  stageReason        String?    @map("stage_reason")
+  icpScore           Int?       @map("icp_score")
+  scoreBreakdown     Json?      @map("score_breakdown")
+  signals            Json       @default("[]") // string[] of trigger signals
+  qualification      Json? // { authority, history, budget, timeline } booleans
+  escalatedAt        DateTime?  @map("escalated_at")
+  notes              String?    @db.Text
+  wakeUpAt           DateTime?  @map("wake_up_at")
+  lastActivityAt     DateTime?  @map("last_activity_at")
+  anonymizedAt       DateTime?  @map("anonymized_at")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
 
   company       Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
   referrer      Referrer?     @relation(fields: [referrerId], references: [id], onDelete: SetNull)
@@ -746,22 +746,22 @@ model ContentPost {
 /// the published URL are all per channel — a 3000-character LinkedIn cap says
 /// nothing about the blog version.
 model ContentVariant {
-  id          String    @id @default(cuid())
-  workspaceId String    @map("workspace_id")
-  postId      String    @map("post_id")
+  id           String    @id @default(cuid())
+  workspaceId  String    @map("workspace_id")
+  postId       String    @map("post_id")
   /// linkedin | blog | newsletter
-  channel     String
-  body        String    @default("") @db.Text
+  channel      String
+  body         String    @default("") @db.Text
   /// True when Claude produced the first version of THIS text.
-  aiDrafted   Boolean   @default(false) @map("ai_drafted")
+  aiDrafted    Boolean   @default(false) @map("ai_drafted")
   /// Exactly what Claude produced, so "did a human edit it?" is answered by
   /// comparison rather than by a flag (same reasoning as outreach messages).
-  aiDraftBody String?   @map("ai_draft_body") @db.Text
+  aiDraftBody  String?   @map("ai_draft_body") @db.Text
   /// Where this channel's version was posted, and when.
-  publishedAt DateTime? @map("published_at")
-  publishedUrl String?  @map("published_url")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  publishedAt  DateTime? @map("published_at")
+  publishedUrl String?   @map("published_url")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
@@ -2129,4 +2129,83 @@ model SavedView {
   /// A person's own views, for the personal/shared split.
   @@index([workspaceId, ownerId])
   @@map("saved_views")
+}
+
+/// One visitor's session on one public page (playbook-v3 P8/a).
+///
+/// No cookie is set anywhere in this feature: continuity within a session comes
+/// from a random token in sessionStorage, which is why the tracked pages carry
+/// a notice line and not a consent banner. The reasoning is written out in
+/// src/modules/tracking/README-ish comments for counsel review.
+model PageVisit {
+  id          String  @id @default(cuid())
+  workspaceId String  @map("workspace_id")
+  /// audit_share | quote | booking | public_audit
+  pageType    String  @map("page_type")
+  pageSlug    String  @map("page_slug")
+  /// Who the page was made FOR, when it was made for someone. This is what
+  /// makes "did the recipient open the quote?" answerable at all.
+  leadId      String? @map("lead_id")
+  companyId   String? @map("company_id")
+  documentId  String? @map("document_id")
+  auditId     String? @map("audit_id")
+
+  /// sessionStorage token — distinct sessions, no cross-site identity.
+  sessionToken String   @map("session_token")
+  referrer     String?
+  /// mobile | desktop, from the viewport width. Not a fingerprint.
+  viewport     String?
+  startedAt    DateTime @default(now()) @map("started_at")
+  lastSeenAt   DateTime @map("last_seen_at")
+  durationMs   Int      @default(0) @map("duration_ms")
+  scrollPct    Int      @default(0) @map("scroll_pct")
+  /// { "<section name>": milliseconds visible }
+  sections     Json     @default("{}")
+
+  /// Salted hash, kept for as long as the visit is. The RAW address lives in
+  /// ipRaw for at most 24 hours so the enrichment worker can read it, and the
+  /// nightly purge deletes it — enforced by a test.
+  ipHash String? @map("ip_hash")
+  ipRaw  String? @map("ip_raw")
+
+  /// Enrichment result (P8/b). Never a fact: `confidence` qualifies it and the
+  /// UI says "valószínűleg" for anything below high.
+  enrichedAt     DateTime? @map("enriched_at")
+  orgName        String?   @map("org_name")
+  guessCompanyId String?   @map("guess_company_id")
+  /// high | medium | low | none
+  confidence     String?
+
+  /// The visitor asked not to be tracked (DNT or GPC): a bare view and nothing
+  /// else — no duration, no sections, no address, not even a hash.
+  doNotTrack Boolean @default(false) @map("do_not_track")
+
+  @@index([workspaceId, pageType, pageSlug])
+  @@index([workspaceId, startedAt])
+  @@index([workspaceId, sessionToken, pageSlug])
+  @@index([leadId])
+  @@map("page_visits")
+}
+
+/// "Danubia Kft. megnézte az ajánlatot" — an identified company on a page we
+/// published (playbook-v3 P8/b).
+model VisitorSignal {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  companyId   String   @map("company_id")
+  leadId      String?  @map("lead_id")
+  visitId     String   @map("visit_id")
+  pageType    String   @map("page_type")
+  pageSlug    String   @map("page_slug")
+  /// high | medium — low and none never become a signal.
+  confidence  String
+  durationMs  Int      @default(0) @map("duration_ms")
+  at          DateTime @default(now())
+  /// The lead card shows a warm flag until this moment (7 days).
+  warmUntil   DateTime @map("warm_until")
+
+  @@index([workspaceId, at])
+  @@index([workspaceId, companyId])
+  @@index([leadId])
+  @@map("visitor_signals")
 }

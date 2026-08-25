@@ -7,6 +7,7 @@ import { getActiveContext } from "@/lib/session";
 import { requireOwner } from "@/lib/authz";
 import { auditShareLink, bookingLink, quoteAcceptLink } from "@/lib/public-links";
 import { isShareExpired } from "@/modules/audit/share";
+import { pageStatsBatch, type PageStats } from "@/modules/tracking/data";
 
 /**
  * The Public Pages screen (spec §4.4 / §4.9 / §4.21) — one place to see every
@@ -20,6 +21,22 @@ import { isShareExpired } from "@/modules/audit/share";
  * Everything here is workspace-scoped through getWorkspaceClient (hard rule #1).
  */
 
+/**
+ * What the signal layer adds to a row (playbook-v3 P8/d).
+ *
+ * `openCount` on a share used to be the whole story: one integer, no idea who,
+ * no idea for how long. These four fields are the answer to "did the RECIPIENT
+ * read it", which is the question the page exists for.
+ */
+export interface PageActivity {
+  views: number;
+  lastViewAt: string | null;
+  avgDurationMs: number;
+  viewers: Array<{ name: string; confidence: string; views: number }>;
+  unidentified: number;
+  recipientViewed: { viewed: boolean; times: number; confidence: string } | null;
+}
+
 export interface AuditShareRow {
   id: string;
   slug: string;
@@ -31,6 +48,7 @@ export interface AuditShareRow {
   expired: boolean;
   firstOpenedAt: string | null;
   openCount: number;
+  activity: PageActivity | null;
 }
 
 export interface QuoteLinkRow {
@@ -41,6 +59,8 @@ export interface QuoteLinkRow {
   status: string;
   acceptedByName: string | null;
   acceptedAt: string | null;
+  slug: string;
+  activity: PageActivity | null;
 }
 
 export interface BookingPageRow {
@@ -51,6 +71,7 @@ export interface BookingPageRow {
   hostName: string;
   active: boolean;
   upcomingMeetings: number;
+  activity: PageActivity | null;
 }
 
 export interface PublicPagesView {
@@ -77,14 +98,18 @@ export async function getPublicPages(): Promise<PublicPagesView> {
     db.auditShare.findMany({
       orderBy: { createdAt: "desc" },
       take: 100,
-      include: { audit: { select: { url: true, score: true, company: { select: { name: true } } } } },
+      include: {
+        audit: {
+          select: { url: true, score: true, companyId: true, company: { select: { name: true } } },
+        },
+      },
     }),
     db.document.findMany({
       where: { type: "QUOTE", acceptSlug: { not: null } },
       orderBy: { createdAt: "desc" },
       take: 100,
       include: {
-        lead: { select: { contactName: true, company: { select: { name: true } } } },
+        lead: { select: { contactName: true, companyId: true, company: { select: { name: true } } } },
         acceptances: { orderBy: { at: "desc" }, take: 1 },
       },
     }),
@@ -102,6 +127,50 @@ export async function getPublicPages(): Promise<PublicPagesView> {
       })
     : [];
   const hostName = new Map(hosts.map((h) => [h.id, h.name]));
+
+  /**
+   * One query for every page's readership (P8/d), not one per row.
+   *
+   * Slugs from all three kinds go in together: a visit row is keyed by slug and
+   * slugs are unique across the three, so the buckets cannot collide.
+   */
+  const activity = await pageStatsBatch(workspaceId, [
+    ...shares.map((s) => s.slug),
+    ...quotes.map((d) => d.acceptSlug!).filter(Boolean),
+    ...bookings.map((b) => b.slug),
+  ]);
+
+  /** Company the page was addressed to, so "did THEY read it" is answerable. */
+  const shareTarget = new Map(shares.map((s) => [s.slug, s.audit.companyId ?? null]));
+  const quoteTarget = new Map(
+    quotes.map((d) => [d.acceptSlug!, d.lead?.companyId ?? null]),
+  );
+
+  const toActivity = (slug: string, targetCompanyId: string | null): PageActivity | null => {
+    const stats: PageStats | undefined = activity.get(slug);
+    if (!stats) return null;
+    const recipient = targetCompanyId
+      ? stats.viewers.find((v) => v.companyId === targetCompanyId)
+      : undefined;
+    return {
+      views: stats.views,
+      lastViewAt: stats.lastViewAt?.toISOString() ?? null,
+      avgDurationMs: stats.avgDurationMs,
+      viewers: stats.viewers.slice(0, 6).map((v) => ({
+        name: v.name,
+        confidence: v.confidence,
+        views: v.views,
+      })),
+      unidentified: stats.unidentified,
+      recipientViewed: targetCompanyId
+        ? {
+            viewed: !!recipient,
+            times: recipient?.views ?? 0,
+            confidence: recipient?.confidence ?? "none",
+          }
+        : null,
+    };
+  };
 
   const counts = await Promise.all(
     bookings.map((b) =>
@@ -124,6 +193,7 @@ export async function getPublicPages(): Promise<PublicPagesView> {
       expired: isShareExpired(s.expiresAt, now),
       firstOpenedAt: s.firstOpenedAt?.toISOString() ?? null,
       openCount: s.openCount,
+      activity: toActivity(s.slug, shareTarget.get(s.slug) ?? null),
     })),
     quotes: quotes.map((d) => ({
       id: d.id,
@@ -133,6 +203,8 @@ export async function getPublicPages(): Promise<PublicPagesView> {
       status: d.status,
       acceptedByName: d.acceptances[0]?.acceptedByName ?? null,
       acceptedAt: d.acceptances[0]?.at.toISOString() ?? null,
+      slug: d.acceptSlug!,
+      activity: toActivity(d.acceptSlug!, quoteTarget.get(d.acceptSlug!) ?? null),
     })),
     bookings: bookings.map((b, i) => ({
       id: b.id,
@@ -142,6 +214,9 @@ export async function getPublicPages(): Promise<PublicPagesView> {
       hostName: hostName.get(b.hostUserId) ?? "—",
       active: b.active,
       upcomingMeetings: counts[i] ?? 0,
+      // A booking page is not addressed to anyone, so there is no recipient
+      // question to answer — only how many people opened it.
+      activity: toActivity(b.slug, null),
     })),
   };
 }

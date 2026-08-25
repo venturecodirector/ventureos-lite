@@ -87,6 +87,16 @@ export async function eraseLeadData(
   // address belongs to this person.
   deleted.addressLinks = (await db.addressLink.deleteMany({ where: { leadId } })).count;
   deleted.auditShares = (await db.auditShare.deleteMany({ where: { leadId } })).count;
+  /**
+   * The signal layer (v3 P8/e).
+   *
+   * A page visit tied to this lead says a named person's employer read a
+   * document we addressed to them, on a date, for a length of time. That is
+   * personal data about the erased person even though no name is stored in the
+   * row, so it goes with them — and so does the signal derived from it.
+   */
+  deleted.visitorSignals = (await db.visitorSignal.deleteMany({ where: { leadId } })).count;
+  deleted.pageVisits = (await db.pageVisit.deleteMany({ where: { leadId } })).count;
   deleted.campaignRecipients = (await db.campaignRecipient.deleteMany({ where: { leadId } })).count;
 
   // Documents: per retention policy — purge (with PDFs) or retain detached.

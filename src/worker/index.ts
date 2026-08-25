@@ -11,6 +11,7 @@ import {
   BRIEFS_QUEUE,
   ERASURE_QUEUE,
   LOGS_QUEUE,
+  VISITS_QUEUE,
 } from "../lib/queue";
 import { processFollowup, processWakeupSweep } from "../modules/pipeline/jobs";
 import {
@@ -41,6 +42,11 @@ import {
   processNotificationRetention,
   processTaskDueSweep,
 } from "../modules/notifications/jobs";
+import {
+  processVisitEnrichment,
+  processRawIpPurge,
+  processVisitRetention,
+} from "../modules/tracking/jobs";
 
 /**
  * Background worker (BullMQ + Redis). Runs in its own Docker service.
@@ -149,6 +155,24 @@ async function main(): Promise<void> {
     console.error(`[worker] log upload ${job?.id} failed`, err);
   });
 
+  // Visitor identification (v3 P8/b). One job per visit, a minute after it
+  // opened, so the reading time it reports is real.
+  const visitWorker = new Worker(
+    VISITS_QUEUE,
+    async (job) => {
+      const identified = await processVisitEnrichment(job.data.visitId as string);
+      if (identified) {
+        // eslint-disable-next-line no-console
+        console.log(`[worker] visitor signal raised for visit ${job.data.visitId}`);
+      }
+    },
+    { connection },
+  );
+  visitWorker.on("failed", (job, err) => {
+    // eslint-disable-next-line no-console
+    console.error(`[worker] visit enrichment failed for ${job?.data?.visitId}`, err);
+  });
+
   const wakeupWorker = new Worker(
     WAKEUPS_QUEUE,
     async (job) => {
@@ -212,6 +236,14 @@ async function main(): Promise<void> {
         const n = await processNotificationRetention();
         // eslint-disable-next-line no-console
         console.log(`[worker] purged ${n} expired notification(s)`);
+      } else if (job.name === "visitor-ip-purge") {
+        const n = await processRawIpPurge();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] purged raw IP from ${n} visit(s)`);
+      } else if (job.name === "visitor-retention") {
+        const n = await processVisitRetention();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] anonymised ${n} expired visit(s)`);
       } else if (job.name === "daily-insight") {
         const n = await processDailyInsight();
         // eslint-disable-next-line no-console
@@ -241,6 +273,24 @@ async function main(): Promise<void> {
     "notification-retention",
     {},
     { repeat: { pattern: "45 3 * * *" }, jobId: "notification-retention" },
+  );
+  /**
+   * The raw-IP purge, HOURLY (v3 P8/e).
+   *
+   * The promise on the privacy page is 24 hours, and a nightly job would make
+   * that "up to 48" for an address recorded just after it ran. Hourly makes the
+   * sentence true with an hour to spare.
+   */
+  await wakeupsQueue().add(
+    "visitor-ip-purge",
+    {},
+    { repeat: { pattern: "20 * * * *" }, jobId: "visitor-ip-purge" },
+  );
+  // Visit detail beyond 90 days at 03:50 — the count survives, the session does not.
+  await wakeupsQueue().add(
+    "visitor-retention",
+    {},
+    { repeat: { pattern: "50 3 * * *" }, jobId: "visitor-retention" },
   );
   // Daily wake-up sweep at 06:00. Idempotent — repeat jobs dedupe by key.
   await wakeupsQueue().add(

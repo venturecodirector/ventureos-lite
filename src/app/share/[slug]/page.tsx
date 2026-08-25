@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageTracker } from "@/components/page-tracker";
 import { prismaUnsafe } from "@/lib/db";
 import { isShareExpired } from "@/modules/audit/share";
 import { auditRowToView } from "@/modules/audit/view";
@@ -260,6 +261,8 @@ export default async function SharePage({
             </p>
           </div>
         )}
+        {/* Not on an expired link: there is nothing there to have read. */}
+        {!expired && <PageTracker pageType="audit_share" slug={slug} />}
       </div>
     </main>
   );

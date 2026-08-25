@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getPublicQuote } from "@/modules/documents/acceptance";
 import { AcceptForm } from "@/components/accept-form";
 import { BrandFooter, BrandMark, brandPanelStyle, brandStyle } from "@/components/brand-mark";
+import { PageTracker } from "@/components/page-tracker";
 
 // Public, prospect-facing, no product chrome (spec §4.9). Cross-tenant read by
 // the unlisted slug.
@@ -33,12 +34,15 @@ export default async function AcceptPage({
             {q.validUntil ? ` · érvényes: ${q.validUntil}` : ""}
           </div>
 
+          <div data-track-section="scope">
           {q.items.map((it, i) => (
             <div key={i} className="flex justify-between border-b border-line py-1.5 text-[12px] text-[var(--brand-ink-soft)]">
               <span>{it.description}</span>
               <span className="tabular-nums">{it.line}</span>
             </div>
           ))}
+          </div>
+          <div data-track-section="pricing">
           <div className="flex justify-between py-2 text-[13px]">
             <b>Összesen (nettó)</b>
             <b className="tabular-nums">{q.net}</b>
@@ -52,7 +56,9 @@ export default async function AcceptPage({
             <b className="tabular-nums">{q.gross}</b>
           </div>
 
-          <div className="mt-6">
+          </div>
+
+          <div className="mt-6" data-track-section="accept">
             {q.accepted ? (
               <div className="rounded-[10px] border border-[rgba(61,220,151,0.35)] bg-[rgba(61,220,151,0.1)] px-3.5 py-3 text-[13px] text-[#8FE9C3]">
                 Elfogadva{q.acceptedByName ? ` — köszönjük, ${q.acceptedByName}!` : "."}
@@ -68,6 +74,7 @@ export default async function AcceptPage({
           </p>
         </div>
         <BrandFooter brand={q.brand} />
+        <PageTracker pageType="quote" slug={slug} />
       </div>
     </main>
   );

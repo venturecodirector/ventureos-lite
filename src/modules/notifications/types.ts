@@ -33,6 +33,10 @@ export const NOTIFICATION_TYPES = [
   /// A sign-in on this account (v2 P6/2). The one notification about the person
   /// rather than about the work.
   "new_login",
+  /// An identified company read one of our public pages (v3 P8/b). The whole
+  /// point of the signal layer: it fires while the prospect is still at their
+  /// desk with the quote open.
+  "visitor_signal",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -95,6 +99,17 @@ export const NOTIFICATION_TYPE_DEFS: Record<NotificationType, NotificationTypeDe
     "Price escalation",
     "A reply mentioned price, a proposal or a contract.",
     { emailDigest: true },
+  ),
+  visitor_signal: def(
+    "visitor_signal",
+    "Someone read a page",
+    "A company we could identify opened an audit report, quote or booking page.",
+    // Its value is measured in minutes — a quote being read right now is a
+    // reason to pick up the phone — so this is the type most worth switching
+    // push ON for. It still defaults OFF: push needs a browser permission
+    // nobody has granted yet, and a default that promises an undeliverable
+    // notification is worse than one the user turns on deliberately.
+    {},
   ),
   callback_due: def(
     "callback_due",

@@ -8,6 +8,7 @@ import {
   revokeAuditShare,
   setBookingPageActive,
   type PublicPagesView,
+  type PageActivity,
 } from "@/modules/public-pages/actions";
 
 const CARD = "rounded-card border border-line bg-panel p-4";
@@ -50,6 +51,58 @@ function Url({ url }: { url: string }) {
 
 function when(iso: string | null): string {
   return iso ? iso.slice(0, 16).replace("T", " ") : "—";
+}
+
+/** "2 perc 40 mp" — a reading time, not a number of milliseconds. */
+function readingTime(ms: number): string {
+  const total = Math.round(ms / 1000);
+  if (total <= 0) return "—";
+  if (total < 60) return `${total} mp`;
+  const min = Math.floor(total / 60);
+  const sec = total % 60;
+  return sec === 0 ? `${min} perc` : `${min}p ${sec}mp`;
+}
+
+/**
+ * Who read it (playbook-v3 P8/d).
+ *
+ * Confidence is never hidden. A medium identification is a company name that
+ * matches a reverse-DNS domain — a good guess, not evidence — so it renders as
+ * "valószínűleg", and unidentified visitors are shown as the ordinary outcome
+ * they are rather than as a gap.
+ */
+function Viewers({ activity }: { activity: PageActivity | null }) {
+  if (!activity || activity.views === 0) {
+    return <span className="text-muted">—</span>;
+  }
+  return (
+    <div className="grid gap-0.5">
+      {activity.recipientViewed && (
+        <span
+          className={`text-[11.5px] font-semibold ${
+            activity.recipientViewed.viewed ? "text-[#3DDC97]" : "text-muted"
+          }`}
+        >
+          {activity.recipientViewed.viewed
+            ? `A címzett cég megtekintette: igen, ${activity.recipientViewed.times}×${
+                activity.recipientViewed.confidence === "high" ? " (nagy bizonyosság)" : " (valószínűleg)"
+              }`
+            : "címzett általi megtekintés nem igazolt"}
+        </span>
+      )}
+      {activity.viewers.map((v) => (
+        <span key={v.name} className="text-[11.5px] text-ink">
+          {v.confidence === "high" ? v.name : `valószínűleg ${v.name}`}
+          <span className="text-muted"> · {v.views}×</span>
+        </span>
+      ))}
+      {activity.unidentified > 0 && (
+        <span className="text-[11.5px] text-muted">
+          {activity.unidentified} azonosítatlan látogató
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function PublicPages({
@@ -164,6 +217,7 @@ export function PublicPages({
                   <th className="px-2 py-1.5 font-semibold">Company</th>
                   <th className="px-2 py-1.5 font-semibold">Link</th>
                   <th className="px-2 py-1.5 font-semibold">Opens</th>
+                  <th className="px-2 py-1.5 font-semibold">Ki nézte?</th>
                   <th className="px-2 py-1.5 font-semibold">Expires</th>
                   <th className="px-2 py-1.5" />
                 </tr>
@@ -192,6 +246,14 @@ export function PublicPages({
                       ) : (
                         <span className="text-muted">not opened</span>
                       )}
+                      {s.activity && s.activity.avgDurationMs > 0 && (
+                        <span className="block text-[11px] text-muted">
+                          átlag {readingTime(s.activity.avgDurationMs)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2">
+                      <Viewers activity={s.activity} />
                     </td>
                     <td className="px-2 py-2 tabular-nums">
                       {s.expired ? (
@@ -283,6 +345,8 @@ export function PublicPages({
                   <th className="px-2 py-1.5 font-semibold">Quote</th>
                   <th className="px-2 py-1.5 font-semibold">Client</th>
                   <th className="px-2 py-1.5 font-semibold">Link</th>
+                  <th className="px-2 py-1.5 font-semibold">Olvasás</th>
+                  <th className="px-2 py-1.5 font-semibold">Ki nézte?</th>
                   <th className="px-2 py-1.5 font-semibold">Status</th>
                   <th className="px-2 py-1.5" />
                 </tr>
@@ -294,6 +358,22 @@ export function PublicPages({
                     <td className="px-2 py-2">{q.clientName}</td>
                     <td className="max-w-[220px] px-2 py-2">
                       <Url url={q.url} />
+                    </td>
+                    <td className="px-2 py-2 tabular-nums">
+                      {q.activity && q.activity.views > 0 ? (
+                        <span className="text-ink">
+                          {q.activity.views}×
+                          <span className="block text-[11px] text-muted">
+                            átlag {readingTime(q.activity.avgDurationMs)} · utoljára{" "}
+                            {when(q.activity.lastViewAt)}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-muted">not opened</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2">
+                      <Viewers activity={q.activity} />
                     </td>
                     <td className="px-2 py-2">
                       {q.acceptedByName ? (

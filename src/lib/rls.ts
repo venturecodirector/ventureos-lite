@@ -20,6 +20,8 @@ const APP_PASSWORD = process.env.APP_DB_PASSWORD ?? "app_pw";
 // Every tenant-scoped table (snake_case @@map names in schema.prisma).
 const BUSINESS_TABLES = [
   "companies",
+  // Written by the enrichment worker with a workspace in hand (P8/b).
+  "visitor_signals",
   "leads",
   "activities",
   "messages",
@@ -94,7 +96,13 @@ const BUSINESS_TABLES = [
  * membership-scoped the moment one is — so a signed-in tenant can only ever see
  * their own workspace's rows.
  */
-const PUBLIC_INTAKE_TABLES = ["public_audits", "public_audit_consents"];
+const PUBLIC_INTAKE_TABLES = [
+  "public_audits",
+  "public_audit_consents",
+  // A visit is recorded by the anonymous reader of a shared page, before any
+  // user context exists — same shape as the two above (playbook-v3 P8/a).
+  "page_visits",
+];
 
 const CURRENT_WS = "current_setting('app.current_workspace', true)";
 const CURRENT_USER = "current_setting('app.current_user', true)";

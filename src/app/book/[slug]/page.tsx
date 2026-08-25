@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getBookingHost, getAvailability } from "@/modules/meetings/public-booking";
 import { BookingWidget } from "@/components/booking-widget";
 import { BrandFooter, BrandMark, brandPanelStyle, brandStyle } from "@/components/brand-mark";
+import { PageTracker } from "@/components/page-tracker";
 
 /**
  * Public booking page (spec §4.21): meet.{domain}/{slug} → /book/{slug} (see
@@ -44,6 +45,7 @@ export default async function BookPage({
           />
         </div>
         <BrandFooter brand={host.brand} />
+        <PageTracker pageType="booking" slug={slug} />
       </div>
     </main>
   );

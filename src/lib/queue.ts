@@ -15,6 +15,7 @@ export const BRIEFS_QUEUE = "briefs";
 export const ERASURE_QUEUE = "erasures";
 /** Access-log parsing (P2/8): long-running, streamed, one job per upload. */
 export const LOGS_QUEUE = "logs";
+export const VISITS_QUEUE = "visits";
 
 let connection: IORedis | null = null;
 export function getRedisConnection(): IORedis {
@@ -80,6 +81,15 @@ export function briefsQueue(): Queue {
     briefs = new Queue(BRIEFS_QUEUE, { connection: getRedisConnection() });
   }
   return briefs;
+}
+
+let visits: Queue | null = null;
+/** Visitor identification for public-page reads (playbook-v3 P8/b). */
+export function visitsQueue(): Queue {
+  if (!visits) {
+    visits = new Queue(VISITS_QUEUE, { connection: getRedisConnection() });
+  }
+  return visits;
 }
 
 let erasures: Queue | null = null;
