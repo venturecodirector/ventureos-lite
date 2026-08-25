@@ -75,6 +75,13 @@ export function buildReportPdfHtml(
   <h2>Audit → meeting</h2>
   <p>${pct(r.auditToMeeting.rate)} — ${r.auditToMeeting.meetings} of ${r.auditToMeeting.audited} audited leads booked a meeting.</p>
 
+  ${
+    r.auditFunnel
+      ? `<h2>Self-serve audit</h2>
+  <p>${r.auditFunnel.visits} visits → ${r.auditFunnel.auditsRun} audits run → ${r.auditFunnel.emailsCaptured} emails → ${r.auditFunnel.consented} with marketing consent (${pct(r.auditFunnel.consentRate)})${r.auditFunnel.blocked > 0 ? ` · ${r.auditFunnel.blocked} submissions refused` : ""}.</p>`
+      : ""
+  }
+
   <h2>Document chain</h2>
   <p>Quote acceptance ${pct(r.docChain.acceptanceRate)} (${r.docChain.accepted}/${r.docChain.quotes}) · avg days quote→signed ${r.docChain.avgDaysToSigned?.toFixed(1) ?? "—"}.</p>
 

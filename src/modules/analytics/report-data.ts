@@ -1,6 +1,7 @@
 import type { WorkspaceClient } from "../../lib/db";
 import { PIPELINE_STAGES } from "../pipeline/transitions";
 import { getFunnel } from "./data";
+import { collectAuditFunnel } from "../public-audit/funnel";
 import type { WeeklyReportInput, SourceFact, QuoteFact } from "./reports";
 
 /**
@@ -42,6 +43,9 @@ export async function collectReportInput(
       }),
       db.dealOutcome.findMany({ orderBy: { at: "desc" }, select: { leadId: true, result: true, value: true } }),
     ]);
+
+  // The inbound funnel for the same week (playbook-v4 P12/1d).
+  const auditFunnel = await collectAuditFunnel(db, since, until);
 
   // Latest outcome per lead.
   const latestOutcome = new Map<string, { result: string; value: number | null }>();
@@ -96,5 +100,6 @@ export async function collectReportInput(
     sources,
     audit: { auditedLeads: auditedLeadsArr.length, auditedLeadsWithMeeting },
     quotes: quoteFacts,
+    auditFunnel,
   };
 }

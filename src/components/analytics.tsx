@@ -177,6 +177,25 @@ export function Analytics({ view }: { view: AnalyticsView }) {
               {r.auditToMeeting.meetings} of {r.auditToMeeting.audited} audited leads booked a meeting.
             </p>
           </div>
+          {/*
+            The inbound funnel (P12/1d). Shown only in a week the landing saw
+            something — a permanent row of zeroes is a row people stop reading.
+          */}
+          {r.auditFunnel && (
+            <div className="rounded-card border border-line bg-panel p-[18px]">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+                Self-serve audit
+              </div>
+              <div className="text-[15px] font-extrabold">
+                {pct(r.auditFunnel.consentRate)}
+              </div>
+              <p className="text-[11.5px] text-muted">
+                {r.auditFunnel.visits} látogató → {r.auditFunnel.auditsRun} átvilágítás →{" "}
+                {r.auditFunnel.emailsCaptured} e-mail → {r.auditFunnel.consented} marketing-hozzájárulás
+                {r.auditFunnel.blocked > 0 && ` · ${r.auditFunnel.blocked} beküldés visszautasítva`}
+              </p>
+            </div>
+          )}
           <div className="rounded-card border border-line bg-panel p-[18px]">
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Document chain</div>
             <div className="text-[15px] font-extrabold">{pct(r.docChain.acceptanceRate)}</div>

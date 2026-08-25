@@ -7,6 +7,12 @@
 
 // ---- funnel ---------------------------------------------------------------
 
+import {
+  auditFunnelRates,
+  type AuditFunnel,
+  type AuditFunnelRates,
+} from "@/modules/public-audit/funnel";
+
 export interface FunnelStep {
   stage: string;
   count: number;
@@ -123,10 +129,20 @@ export interface WeeklyReportInput {
   sources: SourceFact[];
   audit: { auditedLeads: number; auditedLeadsWithMeeting: number };
   quotes: QuoteFact[];
+  /**
+   * The self-serve inbound funnel (playbook-v4 P12/1d).
+   *
+   * Optional because a workspace that never published the landing has no
+   * funnel to report, and a row of zeroes in a weekly report is a row people
+   * learn to skip.
+   */
+  auditFunnel?: AuditFunnel;
 }
 
 export interface WeeklyReport {
   weekLabel: string;
+  /** Present only when the self-serve landing saw anything this week. */
+  auditFunnel?: (AuditFunnel & AuditFunnelRates) | null;
   kpis: Array<{ metric: string; value: number; target: number | null; pct: number | null }>;
   funnel: FunnelStepConv[];
   sources: SourceRow[];
@@ -136,8 +152,18 @@ export interface WeeklyReport {
 
 /** Deterministic — every field derives from `input`. No manual step. */
 export function buildWeeklyReport(input: WeeklyReportInput): WeeklyReport {
+  const f = input.auditFunnel;
+  // Reported only when something happened on the landing — see the field's own
+  // comment. `blocked` counts on its own: a week where the guard refused more
+  // than it accepted is a week worth looking at.
+  const auditFunnel =
+    f && (f.visits > 0 || f.auditsRun > 0 || f.blocked > 0)
+      ? { ...f, ...auditFunnelRates(f) }
+      : null;
+
   return {
     weekLabel: input.weekLabel,
+    auditFunnel,
     kpis: input.kpis.map((k) => ({
       ...k,
       pct: k.target && k.target > 0 ? k.value / k.target : null,

@@ -67,3 +67,23 @@ test("the privacy page answers the questions the notice raises", async ({ page }
   await expect(page.getByText(/legfeljebb 24 óráig/)).toBeVisible();
   await expect(page.getByText(/Do Not Track/)).toBeVisible();
 });
+
+test("the self-serve landing is measured too — the first step of the funnel", async ({ page }) => {
+  await prisma.pageVisit.deleteMany({ where: { pageType: "audit_landing" } });
+
+  await page.goto("/public-audit/hu");
+  await expect(page.getByText(/látogatottsági adatokat gyűjt/)).toBeVisible();
+
+  await expect
+    .poll(() => prisma.pageVisit.count({ where: { pageType: "audit_landing" } }), {
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(0);
+
+  const visit = await prisma.pageVisit.findFirst({ where: { pageType: "audit_landing" } });
+  // The locale stands in for the slug: this page has no tenant to resolve.
+  expect(visit!.pageSlug).toBe("hu");
+  expect(visit!.workspaceId).toBeTruthy();
+
+  await prisma.pageVisit.deleteMany({ where: { pageType: "audit_landing" } });
+});

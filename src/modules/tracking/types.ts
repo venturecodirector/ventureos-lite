@@ -25,7 +25,22 @@
  * carry a notice line rather than a consent banner.
  */
 
-export const PAGE_TYPES = ["audit_share", "quote", "booking", "public_audit"] as const;
+export const PAGE_TYPES = [
+  "audit_share",
+  "quote",
+  "booking",
+  "public_audit",
+  /**
+   * The self-serve audit LANDING (playbook-v4 P12/1d).
+   *
+   * Its own type because it is the only public page with no slug to resolve a
+   * tenant from — the "slug" is the locale, and the workspace is whichever one
+   * is configured to receive the intake. Without it the funnel has no first
+   * step: everything downstream (audits run, emails captured, consented) was
+   * already in the database, and the number of people who arrived was not.
+   */
+  "audit_landing",
+] as const;
 export type PageType = (typeof PAGE_TYPES)[number];
 
 export const PAGE_TYPE_LABEL: Record<PageType, string> = {
@@ -33,6 +48,7 @@ export const PAGE_TYPE_LABEL: Record<PageType, string> = {
   quote: "Quote",
   booking: "Booking page",
   public_audit: "Self-serve audit",
+  audit_landing: "Self-serve landing",
 };
 
 export type Confidence = "high" | "medium" | "low" | "none";

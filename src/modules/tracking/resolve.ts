@@ -74,6 +74,26 @@ export async function resolvePageTarget(
         auditId: null,
       };
     }
+    case "audit_landing": {
+      // No slug to look anything up by: the landing belongs to the workspace
+      // configured to receive the intake, which is the one the lead will land
+      // in if the visitor goes on to submit.
+      const { getPublicIntakeWorkspaceId } = await import("@/modules/public-audit/intake");
+      try {
+        const workspaceId = await getPublicIntakeWorkspaceId();
+        return {
+          workspaceId,
+          leadId: null,
+          companyId: null,
+          documentId: null,
+          auditId: null,
+        };
+      } catch {
+        // Intake misconfigured — measuring is not worth an error on a public
+        // page, and the form reports the problem in its own words.
+        return null;
+      }
+    }
     case "public_audit": {
       const pa = await prismaUnsafe.publicAudit.findUnique({
         where: { id: slug },

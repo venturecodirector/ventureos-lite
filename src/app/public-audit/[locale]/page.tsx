@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { PageTracker } from "@/components/page-tracker";
 import { prismaUnsafe } from "@/lib/db";
 import { PublicAuditLanding } from "@/components/public-audit-landing";
 import { getPublicIntakeWorkspaceId } from "@/modules/public-audit/intake";
@@ -63,5 +64,16 @@ export default async function PublicAuditLocalePage({
     /* intake unavailable — handled where it matters, at submit time */
   }
 
-  return <PublicAuditLanding brand={brand} locale={locale} />;
+  return (
+    <>
+      <PublicAuditLanding brand={brand} locale={locale} />
+      {/*
+        The first step of the funnel (P12/1d). Everything after it — audits
+        run, emails captured, consented — was already recorded; how many people
+        arrived was not, which made every conversion rate unmeasurable.
+        The locale stands in for the slug: this page has no tenant to resolve.
+      */}
+      <PageTracker pageType="audit_landing" slug={locale} />
+    </>
+  );
 }
