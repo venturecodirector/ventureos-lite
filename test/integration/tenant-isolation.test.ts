@@ -143,10 +143,8 @@ describe.runIf(FLAVOR === "postgres")("Postgres RLS (DB-level, keyed to membersh
   let appUser: PrismaClient;
 
   beforeAll(async () => {
-    const { applyRls, appUserDatabaseUrl } = await import(
-      "../../src/lib/rls"
-    );
-    await applyRls(prismaUnsafe);
+    // Policies come from test/global-setup.ts, once per run.
+    const { appUserDatabaseUrl } = await import("../../src/lib/rls");
     appUser = new PrismaClient({
       datasources: { db: { url: appUserDatabaseUrl() } },
     });

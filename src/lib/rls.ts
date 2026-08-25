@@ -111,13 +111,31 @@ const PUBLIC_INTAKE_TABLES = [
 const CURRENT_WS = "current_setting('app.current_workspace', true)";
 const CURRENT_USER = "current_setting('app.current_user', true)";
 
+/**
+ * ── THE WORKSPACE ALWAYS, THE MEMBERSHIP WHEN THERE IS A USER ──────────────
+ *
+ * The workspace half is the one that matters and it is never optional: it is
+ * precisely the failure the tenant guard exists to prevent, now enforced by the
+ * database as well.
+ *
+ * The membership half stays, because a second belt must not assume the first
+ * one is correct — a connection that declares a workspace it has no membership
+ * for gets nothing. It is fed from async-local storage set at the session
+ * lookup (src/lib/request-user.ts), which means a BACKGROUND JOB has no user to
+ * offer: those run with the variable unset and are scoped by workspace alone.
+ * That is the deliberate degradation, and it is safe — a job that has already
+ * declared a workspace is in the same position as any guarded query.
+ */
 function businessTablePolicy(table: string): string[] {
   const predicate = `
     workspace_id = ${CURRENT_WS}
-    AND EXISTS (
-      SELECT 1 FROM memberships m
-      WHERE m.workspace_id = ${table}.workspace_id
-        AND m.user_id = ${CURRENT_USER}
+    AND (
+      ${CURRENT_USER} IS NULL OR ${CURRENT_USER} = ''
+      OR EXISTS (
+        SELECT 1 FROM memberships m
+        WHERE m.workspace_id = ${table}.workspace_id
+          AND m.user_id = ${CURRENT_USER}
+      )
     )`;
   return [
     `ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`,
@@ -155,16 +173,17 @@ function statements(): string[] {
 
   // 3b. Public-intake tables: anonymous writes allowed, tenant reads scoped.
   for (const table of PUBLIC_INTAKE_TABLES) {
+    /**
+     * Keyed on the WORKSPACE variable, not the user one.
+     *
+     * An anonymous visitor submitting an audit or reading a shared quote has no
+     * workspace context at all — that is the branch that lets the insert
+     * through. Once a workspace IS declared, the row must belong to it, which
+     * is the same rule every other business table now follows.
+     */
     const predicate = `
-      ${CURRENT_USER} IS NULL OR ${CURRENT_USER} = ''
-      OR (
-        workspace_id = ${CURRENT_WS}
-        AND EXISTS (
-          SELECT 1 FROM memberships m
-          WHERE m.workspace_id = ${table}.workspace_id
-            AND m.user_id = ${CURRENT_USER}
-        )
-      )`;
+      ${CURRENT_WS} IS NULL OR ${CURRENT_WS} = ''
+      OR workspace_id = ${CURRENT_WS}`;
     out.push(
       `ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`,
       `ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`,
@@ -207,8 +226,18 @@ function statements(): string[] {
      )`,
   );
 
-  // 5. Tenancy-mapping tables: a user sees only their own memberships and the
-  //    workspaces they belong to.
+  /**
+   * 5. Tenancy-mapping tables: a user sees only their own memberships and the
+   *    workspaces they belong to.
+   *
+   * DELIBERATELY STRICT — no empty-variable escape, unlike sessions above.
+   * These are reached only by `prismaUnsafe` (the owner connection), which is
+   * how sign-in works before any user context exists. If that connection is
+   * ever moved to `app_user`, these two policies will refuse everything and
+   * login will stop working: that is the intended failure. Loosening them so a
+   * future switch "just works" would mean any workspace-scoped connection could
+   * enumerate every membership in the installation.
+   */
   out.push(
     `ALTER TABLE memberships ENABLE ROW LEVEL SECURITY`,
     `ALTER TABLE memberships FORCE ROW LEVEL SECURITY`,

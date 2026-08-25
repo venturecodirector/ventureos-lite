@@ -2,6 +2,7 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { currentSessionToken } from "./auth";
 import { resolveSession, setSessionWorkspace } from "./auth/sessions";
 import { prismaUnsafe } from "./db";
+import { setRequestUser } from "./request-user";
 
 export interface ActiveContext {
   workspaceId: string;
@@ -36,6 +37,11 @@ export async function tryGetActiveContext(): Promise<ActiveContext | null> {
     select: { workspaceId: true },
   });
   if (memberships.length === 0) return null;
+
+  // Hand the acting user to the row-level-security policies (src/lib/rls.ts).
+  // Set here because this is the one place every authenticated path passes
+  // through, and because an unset value degrades safely to workspace-only.
+  setRequestUser(session.userId);
 
   const memberWsIds = new Set(memberships.map((m) => m.workspaceId));
   const stored = session.workspaceId;

@@ -1,4 +1,4 @@
-import { getWorkspaceClient } from "@/lib/db";
+import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
 import { takeRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMITS, tooManyRequests } from "@/lib/rate-limit-policy";
 import { resolveCaptureToken } from "@/modules/capture/tokens";
@@ -100,12 +100,19 @@ export async function GET(req: Request): Promise<Response> {
       : Promise.resolve(null),
   ]);
 
-  // Owner and senders are global rows, so they come from the guarded client's
-  // membership view rather than a cross-workspace user read.
+  /**
+   * Owner and senders are GLOBAL rows.
+   *
+   * Read through `prismaUnsafe` and filtered to this workspace explicitly: the
+   * tenant guard passes memberships through untouched, so the guarded client
+   * added nothing here — and under row-level security it would return nothing
+   * at all, because the membership policy is keyed on a user variable that the
+   * workspace-scoped connection deliberately does not set.
+   */
   const userIds = [...new Set([lead.ownerId].filter(Boolean))];
   const members = userIds.length
-    ? await db.membership.findMany({
-        where: { userId: { in: userIds as string[] } },
+    ? await prismaUnsafe.membership.findMany({
+        where: { workspaceId: identity.workspaceId, userId: { in: userIds as string[] } },
         select: { userId: true, user: { select: { name: true } } },
       })
     : [];

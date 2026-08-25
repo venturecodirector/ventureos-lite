@@ -5,7 +5,7 @@
       "error",
       {
         "selector": "MemberExpression[property.name=/^\\$(queryRaw|queryRawUnsafe|executeRaw|executeRawUnsafe)$/]",
-        "message": "Raw Prisma queries are forbidden in business code (CLAUDE.md hard rule #1) — they bypass the tenant guard. Use getWorkspaceClient(workspaceId). Raw SQL is allowed only in migrations/RLS setup."
+        "message": "Raw Prisma queries are forbidden in business code (CLAUDE.md hard rule #1) \u2014 they bypass the tenant guard. Use getWorkspaceClient(workspaceId). Raw SQL is allowed only in migrations/RLS setup."
       }
     ]
   },
@@ -13,12 +13,15 @@
     {
       "files": [
         "src/lib/rls.ts",
+        "src/lib/rls-client.ts",
         "prisma/**",
         "scripts/**",
         "test/**",
         "**/*.test.ts"
       ],
-      "rules": { "no-restricted-syntax": "off" }
+      "rules": {
+        "no-restricted-syntax": "off"
+      }
     }
   ]
 }

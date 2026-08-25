@@ -36,6 +36,9 @@ export default defineConfig({
     environment: "node",
     include: ["test/**/*.test.ts"],
     env: loadDotenv(),
+    // RLS policies are applied once here rather than in two competing
+    // beforeAll hooks — see test/global-setup.ts.
+    globalSetup: ["./test/global-setup.ts"],
     testTimeout: 30_000,
     hookTimeout: 30_000,
   },
