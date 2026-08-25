@@ -28,6 +28,8 @@ const BUSINESS_TABLES = [
   "milestones",
   // Quote-behaviour rule firings (P14/3).
   "quote_rule_runs",
+  // Open/click events on mail we sent (P9/1).
+  "email_track_events",
   "leads",
   "activities",
   "messages",

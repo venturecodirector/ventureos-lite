@@ -75,6 +75,12 @@ const PUBLIC_PREFIXES = [
    */
   "/t.js", // the measurement script
   "/api/t", // its beacon endpoint
+  /**
+   * Open pixel and click redirect (v3 P9/1). Requested BY the recipient's mail
+   * client, which has no session and never will — the same trap /t.js fell
+   * into, and the browser suite cannot see it because it runs signed in.
+   */
+  "/api/e",
   "/privacy", // the notice on every tracked page links here
 ];
 

@@ -51,6 +51,48 @@ function decodeBase64Url(data: string): string {
 }
 
 /** Addresses out of a header value, which may be "Name <a@b.hu>, c@d.hu". */
+export interface ReplyMimeInput {
+  to: string[];
+  cc?: string[];
+  subject: string;
+  bodyText: string;
+  bodyHtml?: string;
+  inReplyToMessageId?: string;
+}
+
+/**
+ * The message as it goes on the wire.
+ *
+ * Pulled out of the send call so it can be asserted on directly — the playbook
+ * asks for exactly that ("toggle-off mail contains no pixel and no rewritten
+ * links (assert on raw MIME)"), and a promise about what leaves the building
+ * is worth checking where it leaves.
+ */
+export function buildReplyMime(input: ReplyMimeInput): string {
+  const lines = [
+    `To: ${input.to.join(", ")}`,
+    ...(input.cc?.length ? [`Cc: ${input.cc.join(", ")}`] : []),
+    `Subject: ${input.subject}`,
+    ...(input.inReplyToMessageId
+      ? [`In-Reply-To: ${input.inReplyToMessageId}`, `References: ${input.inReplyToMessageId}`]
+      : []),
+    "MIME-Version: 1.0",
+    `Content-Type: ${input.bodyHtml ? "text/html" : "text/plain"}; charset=UTF-8`,
+    "",
+    input.bodyHtml ?? input.bodyText,
+  ];
+  return lines.join("\r\n");
+}
+
+/** Gmail wants base64url with no padding. */
+export function encodeMime(mime: string): string {
+  return Buffer.from(mime, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
 export function parseAddressList(raw: string | null | undefined): string[] {
   if (!raw) return [];
   return raw
@@ -249,23 +291,7 @@ export class GmailProvider implements MailProvider {
   ): Promise<{ providerMessageId: string; refreshed?: RefreshedCredentials }> {
     const { accessToken, refreshed } = await this.ensureToken(creds);
 
-    const lines = [
-      `To: ${input.to.join(", ")}`,
-      ...(input.cc?.length ? [`Cc: ${input.cc.join(", ")}`] : []),
-      `Subject: ${input.subject}`,
-      ...(input.inReplyToMessageId
-        ? [`In-Reply-To: ${input.inReplyToMessageId}`, `References: ${input.inReplyToMessageId}`]
-        : []),
-      "MIME-Version: 1.0",
-      `Content-Type: ${input.bodyHtml ? "text/html" : "text/plain"}; charset=UTF-8`,
-      "",
-      input.bodyHtml ?? input.bodyText,
-    ];
-    const raw = Buffer.from(lines.join("\r\n"), "utf8")
-      .toString("base64")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
+    const raw = encodeMime(buildReplyMime(input));
 
     const res = await this.call(accessToken, "/messages/send", {
       method: "POST",

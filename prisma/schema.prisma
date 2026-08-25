@@ -1074,9 +1074,18 @@ model EmailMessage {
   sentAt            DateTime  @map("sent_at")
   /// When the Haiku reply analysis ran, if it ever did. Never set by backfill.
   analyzedAt        DateTime? @map("analyzed_at")
+  /// Open/click tracking for a message WE sent from the app (playbook-v3 P9/1).
+  /// Null when the sender turned tracking off — and then the message carries no
+  /// pixel, no rewritten links and no notice, which a test asserts on the MIME.
+  trackingId        String?   @unique @map("tracking_id")
+  /// The links as they were at send time, in order. The redirect endpoint takes
+  /// an INDEX into this array rather than a URL, so the endpoint cannot be
+  /// turned into an open redirect.
+  trackedLinks      Json?     @map("tracked_links")
   createdAt         DateTime  @default(now()) @map("created_at")
 
-  thread EmailThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  thread      EmailThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  trackEvents EmailTrackEvent[]
 
   @@unique([threadId, providerMessageId])
   @@index([workspaceId, sentAt])
@@ -2337,4 +2346,27 @@ model QuoteRuleRun {
   @@unique([documentId, ruleId])
   @@index([workspaceId, firedAt])
   @@map("quote_rule_runs")
+}
+
+/// One open or click on a message we sent (playbook-v3 P9/1).
+///
+/// An open is a SIGNAL, not proof: Apple Mail Privacy Protection pre-fetches
+/// images and many clients block them outright, so the count is indicative in
+/// both directions. Every surface that shows it says so.
+model EmailTrackEvent {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  messageId   String   @map("message_id")
+  leadId      String?  @map("lead_id")
+  /// open | click
+  kind        String
+  /// The link that was followed, for a click.
+  url         String?  @db.Text
+  at          DateTime @default(now())
+
+  message EmailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, messageId])
+  @@index([leadId])
+  @@map("email_track_events")
 }

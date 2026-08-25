@@ -50,6 +50,7 @@ import {
 } from "../modules/tracking/jobs";
 import { processAudienceVerification } from "../modules/verification/jobs";
 import { processQuoteRuleSweep } from "../modules/quote-rules/jobs";
+import { processEmailTrackRetention } from "../modules/email/track-jobs";
 
 /**
  * Background worker (BullMQ + Redis). Runs in its own Docker service.
@@ -264,6 +265,10 @@ async function main(): Promise<void> {
         const n = await processRawIpPurge();
         // eslint-disable-next-line no-console
         console.log(`[worker] purged raw IP from ${n} visit(s)`);
+      } else if (job.name === "mail-track-retention") {
+        const n = await processEmailTrackRetention();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] purged ${n} email tracking event(s)`);
       } else if (job.name === "visitor-retention") {
         const n = await processVisitRetention();
         // eslint-disable-next-line no-console
@@ -316,6 +321,12 @@ async function main(): Promise<void> {
     "visitor-ip-purge",
     {},
     { repeat: { pattern: "20 * * * *" }, jobId: "visitor-ip-purge" },
+  );
+  // Open/click feedback beyond 90 days at 03:55, beside the other purges.
+  await wakeupsQueue().add(
+    "mail-track-retention",
+    {},
+    { repeat: { pattern: "55 3 * * *" }, jobId: "mail-track-retention" },
   );
   // Visit detail beyond 90 days at 03:50 — the count survives, the session does not.
   await wakeupsQueue().add(

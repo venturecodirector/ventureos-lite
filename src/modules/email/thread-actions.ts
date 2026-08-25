@@ -35,6 +35,17 @@ export interface ThreadMessageView {
   hasAttachments: boolean;
   attachments: Array<{ filename: string; mimeType: string; sizeBytes: number }>;
   analyzed: boolean;
+  /**
+   * Open/click feedback on a message WE sent (playbook-v3 P9/1).
+   *
+   * Null when the message was sent without tracking, or came from the other
+   * side — which is most of them.
+   */
+  tracking: {
+    opens: number;
+    lastOpenAt: string | null;
+    clicks: Array<{ url: string; at: string }>;
+  } | null;
 }
 
 export interface EmailThreadView {
@@ -61,6 +72,8 @@ function toMessageView(m: {
   hasAttachments: boolean;
   attachments: unknown;
   analyzedAt: Date | null;
+  trackingId?: string | null;
+  trackEvents?: Array<{ kind: string; url: string | null; at: Date }>;
 }): ThreadMessageView {
   return {
     id: m.id,
@@ -77,6 +90,19 @@ function toMessageView(m: {
       ? (m.attachments as Array<{ filename: string; mimeType: string; sizeBytes: number }>)
       : [],
     analyzed: m.analyzedAt !== null,
+    tracking: m.trackingId
+      ? (() => {
+          const events = m.trackEvents ?? [];
+          const opens = events.filter((e) => e.kind === "open");
+          return {
+            opens: opens.length,
+            lastOpenAt: opens[opens.length - 1]?.at.toISOString() ?? null,
+            clicks: events
+              .filter((e) => e.kind === "click" && e.url)
+              .map((e) => ({ url: e.url!, at: e.at.toISOString() })),
+          };
+        })()
+      : null,
   };
 }
 
@@ -90,7 +116,12 @@ export async function listLeadThreads(leadId: string): Promise<EmailThreadView[]
     orderBy: { lastMessageAt: "desc" },
     include: {
       account: { select: { accountEmail: true } },
-      messages: { orderBy: { sentAt: "asc" } },
+      messages: {
+        orderBy: { sentAt: "asc" },
+        // Open/click feedback rides along with the thread (P9/1) rather than
+        // costing one query per message.
+        include: { trackEvents: { orderBy: { at: "asc" } } },
+      },
     },
   });
 

@@ -94,6 +94,31 @@ export function EmailThreads({ leadId }: { leadId: string }) {
   const thread = threads.find((t) => t.id === openId) ?? threads[0]!;
   const last = thread.messages[thread.messages.length - 1];
 
+  /**
+   * Tracking, remembered per browser (playbook-v3 P9/1 asks for "per user").
+   *
+   * localStorage rather than a column: it is a composer convenience, it is
+   * per-person on a personal machine, and a preference that costs a schema
+   * change and a round trip to remember a checkbox is a bad trade.
+   */
+  const [track, setTrack] = useState(true);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("vo_mail_track");
+      if (saved !== null) setTrack(saved === "1");
+    } catch {
+      /* private window — the default stands */
+    }
+  }, []);
+  function setTrackRemembered(next: boolean) {
+    setTrack(next);
+    try {
+      localStorage.setItem("vo_mail_track", next ? "1" : "0");
+    } catch {
+      /* nothing to remember it with */
+    }
+  }
+
   async function send(acknowledge: boolean) {
     if (!reply.trim() || !last) return;
     setBusy(true);
@@ -110,6 +135,7 @@ export function EmailThreads({ leadId }: { leadId: string }) {
           : `Re: ${thread.subject ?? ""}`.trim(),
         body: reply,
         acknowledgeEscalation: acknowledge,
+        track,
       });
       if (res.ok) {
         setReply("");
@@ -187,6 +213,29 @@ export function EmailThreads({ leadId }: { leadId: string }) {
                 </button>
               )}
             </div>
+
+            {/*
+              Open/click feedback (P9/1). An open is labelled a SIGNAL, never a
+              fact: Apple Mail pre-fetches images and other clients block them,
+              so the number is wrong in both directions. A click is evidence.
+            */}
+            {m.tracking && (m.tracking.opens > 0 || m.tracking.clicks.length > 0) && (
+              <div className="mb-1 text-[11px] text-muted" data-testid="mail-tracking">
+                {m.tracking.opens > 0 && (
+                  <span title="A képblokkolás és az Apple Mail előtöltése miatt ez jelzés, nem bizonyíték.">
+                    megnyitás jelzés: {m.tracking.opens}×
+                    {m.tracking.lastOpenAt &&
+                      ` · utoljára ${new Date(m.tracking.lastOpenAt).toLocaleString("hu-HU")}`}
+                  </span>
+                )}
+                {m.tracking.clicks.length > 0 && (
+                  <span className="ml-2 text-[#8CEFC0]">
+                    kattintás: {m.tracking.clicks.length}× ({m.tracking.clicks[0]!.url.slice(0, 40)}
+                    {m.tracking.clicks[0]!.url.length > 40 ? "…" : ""})
+                  </span>
+                )}
+              </div>
+            )}
             <MessageBody message={m} />
             {m.hasAttachments && (
               <div className="mt-1.5">
@@ -234,6 +283,23 @@ export function EmailThreads({ leadId }: { leadId: string }) {
           <span className="text-[11px] text-muted">
             Goes out through your Gmail — never a campaign.
           </span>
+          {/*
+            Tracking, off-able per message (P9/1). Off means the recipient gets
+            exactly what was typed: no pixel, no rewritten link, no notice.
+          */}
+          <label
+            className="flex items-center gap-1.5 text-[11px] text-muted"
+            title="Megnyitás- és kattintás-visszajelzés. Kikapcsolva a levél teljesen tiszta."
+          >
+            <input
+              type="checkbox"
+              checked={track}
+              data-testid="reply-track"
+              onChange={(e) => setTrackRemembered(e.target.checked)}
+              className="h-3.5 w-3.5 accent-[#7427C6]"
+            />
+            Követés
+          </label>
           {notice && <span className="ml-auto text-[11.5px] text-muted">{notice}</span>}
         </div>
       </div>

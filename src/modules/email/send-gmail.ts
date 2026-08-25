@@ -3,6 +3,8 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getWorkspaceClient, prismaUnsafe } from "@/lib/db";
+import { appLink } from "@/lib/public-links";
+import { instrumentEmail, newTrackingId } from "./tracking";
 import { getActiveContext } from "@/lib/session";
 import { GmailProvider } from "./gmail";
 import { MailAuthError, type MailCredentials } from "./provider";
@@ -31,6 +33,12 @@ const replySchema = z.object({
   body: z.string().trim().min(1).max(20_000),
   /** The operator has read the escalation warning and is sending anyway. */
   acknowledgeEscalation: z.boolean().optional(),
+  /**
+   * Open/click tracking (playbook-v3 P9/1). Default ON, and the composer
+   * remembers the last choice — but a message sent with it OFF carries no
+   * pixel, no rewritten link and no notice at all.
+   */
+  track: z.boolean().optional(),
 });
 
 export type SendReplyResult =
@@ -110,14 +118,37 @@ export async function sendThreadReply(raw: unknown): Promise<SendReplyResult> {
       .join(""),
   ).html;
 
+  /**
+   * Instrumentation, when the sender asked for it (playbook-v3 P9/1).
+   *
+   * Off means OFF: no pixel, no rewritten link, and no notice — the message
+   * that leaves is exactly what they typed, and a test asserts it on the MIME.
+   */
+  const trackingId = input.track === false ? null : newTrackingId();
+  let sendHtml = bodyHtml;
+  let sendText = input.body;
+  let trackedLinks: string[] = [];
+  if (trackingId) {
+    const instrumented = instrumentEmail({
+      html: bodyHtml,
+      text: input.body,
+      trackingId,
+      baseUrl: appLink("/").replace(/\/$/, ""),
+      privacyUrl: appLink("/privacy"),
+    });
+    sendHtml = instrumented.html;
+    sendText = instrumented.text;
+    trackedLinks = instrumented.links;
+  }
+
   try {
     const { providerMessageId, refreshed } = await new GmailProvider().sendReply(creds, {
       providerThreadId: thread.providerThreadId,
       to: input.to,
       cc: input.cc,
       subject: input.subject,
-      bodyText: input.body,
-      bodyHtml,
+      bodyText: sendText,
+      bodyHtml: sendHtml,
     });
 
     if (refreshed?.accessToken) {
@@ -144,9 +175,13 @@ export async function sendThreadReply(raw: unknown): Promise<SendReplyResult> {
         ccAddresses: input.cc ?? [],
         subject: input.subject,
         snippet: htmlToText(bodyHtml).slice(0, 200),
+        // The thread shows what was WRITTEN, not the instrumented copy: the
+        // notice and the pixel are for the recipient, not for our own timeline.
         bodyHtml,
         bodyText: input.body,
         sentAt: new Date(),
+        trackingId,
+        trackedLinks: trackingId ? trackedLinks : undefined,
       },
     });
     await db.emailThread.update({

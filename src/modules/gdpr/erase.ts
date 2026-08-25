@@ -97,6 +97,9 @@ export async function eraseLeadData(
    */
   deleted.visitorSignals = (await db.visitorSignal.deleteMany({ where: { leadId } })).count;
   deleted.pageVisits = (await db.pageVisit.deleteMany({ where: { leadId } })).count;
+  // Open/click events on mail we sent this person (v3 P9/1). "This address
+  // opened this message at this time" is personal data about them.
+  deleted.emailTrackEvents = (await db.emailTrackEvent.deleteMany({ where: { leadId } })).count;
   deleted.campaignRecipients = (await db.campaignRecipient.deleteMany({ where: { leadId } })).count;
 
   // Documents: per retention policy — purge (with PDFs) or retain detached.
