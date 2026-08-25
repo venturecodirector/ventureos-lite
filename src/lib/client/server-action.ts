@@ -61,6 +61,26 @@ export async function attempt<T extends { ok: boolean }>(
   }
 }
 
+/**
+ * For actions that return DATA rather than a result envelope.
+ *
+ * `attempt` needs the action to answer `{ ok }` itself, which most of this
+ * codebase does. A reader — a preview, a lookup — has nothing to say but its
+ * payload, and wrapping every one of those in an envelope purely to satisfy the
+ * helper is noise. This puts the envelope on the outside instead, so the caller
+ * still cannot forget the failure case.
+ */
+export async function attemptData<T>(
+  work: Promise<T>,
+): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+  try {
+    return { ok: true, data: await work };
+  } catch (e) {
+    if (isRedirect(e)) throw e;
+    return { ok: false, error: serverActionError(e) };
+  }
+}
+
 /** For actions that return nothing useful; gives back the error text or null. */
 export async function attemptVoid(work: Promise<unknown>): Promise<string | null> {
   try {

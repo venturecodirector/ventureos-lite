@@ -1,8 +1,10 @@
 import { AppShell } from "@/components/app-shell";
 import { Prospector } from "@/components/prospector";
+import { ProspectorBackfill } from "@/components/prospector-backfill";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 import type { SavedSearch } from "@/modules/prospector/types";
+import { getBackfillState, canRunBackfill } from "@/modules/prospector/backfill-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +26,15 @@ export default async function ProspectorPage() {
     saved.push({ id: r.id, keyword: r.keywords, location: r.location });
   }
 
+  // Owner/Admin only — the same rule the actions enforce server-side.
+  const [mayBackfill, backfill] = await Promise.all([canRunBackfill(), getBackfillState()]);
+
   return (
     <AppShell activePath="/prospector">
-      <Prospector saved={saved} />
+      <div className="flex flex-col gap-4">
+        <Prospector saved={saved} />
+        {mayBackfill && <ProspectorBackfill state={backfill} />}
+      </div>
     </AppShell>
   );
 }

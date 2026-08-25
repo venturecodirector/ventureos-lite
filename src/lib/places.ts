@@ -122,7 +122,9 @@ const STRUCTURAL = [
   "plus_code",
 ];
 
-function plausibleTown(text: string | undefined): boolean {
+/** Exported so the backfill's address parser applies the same floor-marker
+ * deny-list rather than growing a second copy of it. */
+export function plausibleTown(text: string | undefined): boolean {
   const t = (text ?? "").trim();
   return t.length > 1 && !NOT_A_TOWN.test(t);
 }
