@@ -5,7 +5,6 @@ import { SettingsGrants } from "@/components/settings-grants";
 import { SettingsUsers } from "@/components/settings-users";
 import { SettingsIntegrations } from "@/components/settings-integrations";
 import { ApiCosts } from "@/components/api-costs";
-import { SettingsEmail } from "@/components/settings-email";
 import { SettingsHealthRules } from "@/components/settings-health-rules";
 import { SettingsProjectTemplates } from "@/components/settings-project-templates";
 import { SettingsQuoteRules } from "@/components/settings-quote-rules";
@@ -137,7 +136,6 @@ export default async function AdminSettingsPage() {
         )}
         {integrations && <SettingsIntegrations data={integrations} />}
         {apiCosts && <ApiCosts report={apiCosts} />}
-        <SettingsEmail />
         <WorkspaceAdmin isOwner={owner} />
         <ColdSignoff status={coldStatus} isOwner={owner} />
         <SzamlazzKey hasKey={szamlazzKeySet} isOwner={owner} />

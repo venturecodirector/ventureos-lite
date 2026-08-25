@@ -1,5 +1,5 @@
 # Venture OS Lite — Software Specification
-### AI-assisted sales & delivery workspace · Venture CO Group · v1.1
+### AI-assisted sales & delivery workspace · Venture CO Group · v3.0
 
 ---
 
@@ -210,6 +210,50 @@ Prospector finds businesses whose owners answer phones, not LinkedIn.
 - Twenty rules per workspace, Owner-gated, each with a kill switch and a version stamped onto every run. **Cycle protection is two rules**: a rule cannot re-trigger itself, and no more than three chained rule executions run per originating event — the second is what stops a mutually-triggering pair.
 - The execution log records **every evaluation, including the no-matches**, because "why did my rule not fire?" is what a run log is for.
 
+
+### 4.30 Email sync — v2 (P2)
+Two-way per-user mailbox sync (Gmail first, behind a `MailProvider` interface). Backfill of the last 90 days limited to addresses that match a known lead or company; incremental sync every two minutes. Threads render on the lead's Inbox tab; replies are composed and sent through the user's own mailbox, never through a campaign. Reply analysis (Haiku) runs only when a person opens an unread inbound message — never during backfill.
+
+### 4.31 Global search, saved views, bulk actions — v2 (P3/1, P3/2)
+Postgres full-text + trigram search across leads, companies, deals, documents, threads and notes, typo-tolerant and ranked. Filter builder over the core fields, saved as named views (personal or shared). Bulk actions apply to everything matching the filter, not just the visible page — the score gate is still enforced per lead, and skipped ones are reported.
+
+### 4.32 Tasks — v2 (P3/3)
+A first-class task: type, title, note, due datetime, polymorphic link (lead / company / deal / document / project), assignee, done state. Created from anywhere; merged into the Today Queue at its due time; overdue tasks reach the Monday digest. **Project milestones are tasks** (§4.38), which is why they appear in every task surface without any of them knowing what a milestone is.
+
+### 4.33 Notifications — v2 (P6/1)
+In-app notification centre with unread count, per-type preferences per user, PWA web push (VAPID) and an email-digest fallback that batches rather than sending per event. Types cover replies, escalation, callbacks, due tasks, quote accepted/declined, meetings, campaign circuit-breaker, sync failures, pending proposals, new sign-in, and visitor signals (§4.35). 90-day retention.
+
+### 4.34 Undo, inline edit, command palette, onboarding — v2 (P7)
+Six-second undo on stage moves, task completion, bulk actions and archive-deletes, implemented as server-side inverse operations rather than a client illusion. Inline editing in the tables and on deal cards. ⌘K palette built on the same search API as the top bar, with a `g`-prefixed navigation map and a shortcut overlay. A first-login tour and a "getting started" checklist.
+
+### 4.35 Signal layer — v3 (P8)
+A first-party measurement script (~1.5 KB over the wire) on the audit report, quote and booking pages and on the self-serve landing: opens, referrer, viewport class, reading time by heartbeat, scroll depth and time per section. **No cookies** — session continuity is a random token in sessionStorage, so the pages carry a notice line and a `/privacy` page rather than a consent banner. Do-Not-Track and Global-Privacy-Control are honoured at the source: those visitors leave a bare view and nothing else.
+
+Company-level identification by reverse DNS, a minute after a session opens so the reading time it reports is real. A PTR whose domain **is** a company's domain is `high`; one that merely resembles a company's name is `medium` and renders as "valószínűleg". Consumer ISPs are refused outright. Most visitors are never identified and the UI says so. For a page addressed to a company, "did the recipient open it" needs no guessing at all.
+
+Raw IP addresses are held at most 24 hours, purged hourly, kept only so the reverse lookup can run; what survives is a salted hash and the company guess. Session detail dies at 90 days. Erasing a lead takes their visits and signals with them.
+
+### 4.36 Email verification — v3 (P9/2)
+Layered and cheapest-first: syntax, a throwaway-domain list kept in the repo, role-address detection (flagged, never blocked — for a small business `info@` **is** the owner's inbox); then MX or implicit-MX; then an optional paid verifier behind an adapter, null by default so nothing leaves the server unless a key is configured. Statuses are stored on the contact with a date and go stale after 90 days. A cold campaign cannot be armed until its audience is verified: invalid addresses are excluded automatically, risky ones need a decision per address.
+
+### 4.37 1:1 email tracking — v3 (P9/1)
+For personal mail sent from the app through the user's own mailbox; cold campaign mail keeps its Mailgun webhooks and is not double-instrumented. A per-message toggle (default on) injects a first-party pixel and rewrites links through a redirect that takes an **index into links stored at send time** — never a URL, because an endpoint that accepts one is an open redirect. The visible text of a link never changes. Every tracked message carries a one-line notice; with the toggle off the message carries no pixel, no rewritten link and no notice at all. An open is labelled a signal, not proof. 90-day retention, then deletion.
+
+### 4.38 Revenue layer — v3 (P11/1)
+Client and Subscription entities with an append-only event log, so the MRR movement chart is exact rather than reconstructed. Revenue tab: MRR, movement, ARR, client count, average revenue per client. Traffic-light client health from deterministic rules (payment lateness, months since contact, support flag, subscription age) with the thresholds visible and editable — no AI. Monthly BDR commission computed from payments actually received, exportable as a branded PDF, Owner-only and audit-logged.
+
+### 4.39 Delivery projects — v3 (P11/2)
+A won deal offers a project built from a versioned milestone template. **A milestone is a task**: the table holds a position, a kind and a foreign key, while the title, due date, owner, note and done state live on the Task — so a milestone reaches Today Queue, My Tasks, the overdue sweep and the Monday digest without any of them being taught what a milestone is, and there is exactly one done flag. Every template ends in a `teljesítésigazolás` milestone, and a project cannot be closed while it is open: a delivered project whose certificate was never issued is an invoice that cannot be sent.
+
+### 4.40 Self-serve audit — v4 (P12/1)
+A public landing on the audit domain: one URL field, a queued audit with live progress, and a deliberately incomplete teaser (score, three findings, both screenshots). The full report unlocks through a form with **two separate checkboxes** — a required one to deliver the report, and an optional, unchecked marketing consent stored with its text version, timestamp and IP. Leads arriving without marketing consent are visibly restricted and excluded from campaign audiences. Anti-abuse: per-network daily cap, honeypot and timing check, blocklists for our own and client domains, a concurrency ceiling, and a check on what the submitted hostname actually resolves to. Funnel counts (visits → audits run → emails captured → consented) reach the Friday report.
+
+### 4.41 Quote follow-up rules — v4 (P14/3)
+A small rule engine over §4.35's quote measurements. Three seeded rules with editable thresholds: read repeatedly and still unsigned; long on the price and never reached the scope; opened once and then silence. Each fires once per quote, never on an accepted one, and produces a task plus an optional draft a person sends. Firings are logged with whether the quote was accepted afterwards, so the review can say which rules were followed by a signature rather than which fire most.
+
+### 4.42 Post-meeting follow-up kit — v4 (P13/2)
+Logging an outcome assembles a kit: a thank-you draft (one Sonnet call, human-edited before sending), the audit PDF worth attaching, quote lines drawn deterministically from the workspace's own service catalogue for whatever was ticked as discussed, and a follow-up task at +3 days. It is a checklist, not an outbox — each line's done-state is read from the draft, the quote and the task themselves.
+
 ### 4.24 Settings / Admin
 ICP & score weights, gate threshold, targets, frame library, template management, **workspace management (§7), user & grant management,** Mailgun config (transactional + cold domains), **cold-email compliance gate & counsel sign-off record,** booking-page config, Számlázz.hu Agent keys, registry API keys, API keys, **Claude budget caps,** data retention, audit log, feature flags.
 
@@ -246,7 +290,7 @@ All calls server-side; prompt registry versioned in repo; JSON-schema-validated 
 
 ## 7. Multi-workspace architecture ("SaaS-shaped, not SaaS")
 
-- **Workspace** = one operating company (Venture CO Group first; e.g. a Turkish entity or engH later). All business data rows carry `workspace_id`; isolation enforced with Postgres **Row-Level Security**, not just app code.
+- **Workspace** = one operating company (Venture CO Group first; e.g. a Turkish entity or engH later). All business data rows carry `workspace_id`, and isolation is enforced twice: the mandatory Prisma tenant guard rewrites every query, and Postgres **Row-Level Security** refuses cross-workspace rows at the database. The second belt was written early and was inert for months — the application connected as the database owner, and a superuser bypasses RLS whatever `FORCE` says. Workspace-scoped queries now run on a separate pool as a `NOSUPERUSER NOBYPASSRLS` role that declares the workspace on every query; `DB_RLS` switches it, and an isolation test proves it holds **with the tenant guard removed**. `prismaUnsafe` keeps the owner connection deliberately: sign-in reads global tables before any workspace exists, and public pages resolve unlisted slugs across tenants.
 - **Users are global; memberships are per-workspace** with a role + grant set (Fanni can be BDR in Workspace A only; Tamas is Owner everywhere). Workspace switcher in the UI shell.
 - Per workspace: branding (logo, colors, letterhead), template sets, Mailgun domain, ICP config, targets, Claude budget, data-retention policy, feature flags.
 - No public signup, no billing engine. New workspaces are provisioned by the Owner from Settings. If this ever becomes sellable SaaS, the tenancy model already supports it — that is deliberate but out of scope.

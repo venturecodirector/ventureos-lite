@@ -4,6 +4,7 @@ import { SettingsProfile } from "@/components/settings-profile";
 import { SecurityPanel } from "@/components/security-panel";
 import { SettingsNotifications } from "@/components/settings-notifications";
 import { SettingsExtension } from "@/components/settings-extension";
+import { SettingsEmail } from "@/components/settings-email";
 import { getSecurityStatus } from "@/modules/auth/actions";
 import { getNotificationPreferences } from "@/modules/notifications/preference-actions";
 import { listCaptureTokens } from "@/modules/capture/actions";
@@ -72,6 +73,14 @@ export default async function SettingsPage({
 
         <SettingsProfile profile={profile} />
         <SecurityPanel status={securityStatus} focusPassword={security === "password"} />
+        {/*
+          The mailbox is YOURS (playbook-v2 P2b: "OAuth connect/disconnect in
+          Settings → Email per user"). It sat on /settings/admin after the
+          settings split, which on a one-person installation looked fine and
+          would have meant a second user could never connect their own mail at
+          all — the page 404s for anyone but the super admin.
+        */}
+        <SettingsEmail />
         <SettingsNotifications initial={notificationPrefs} />
         <SettingsExtension tokens={captureTokens} version={extensionVersion} />
       </div>

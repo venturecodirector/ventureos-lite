@@ -698,3 +698,43 @@ To revoke: **chrome://extensions** → the extension → Site access.
 3. **No LinkedIn access** — connect it, then remove LinkedIn from Site access in
    chrome://extensions.
 4. **Ready** — allow LinkedIn access, paste a profile URL.
+
+---
+
+# Ami a v3 óta a tiéd
+
+Ez a szakasz csak azt sorolja, ami **neked, tulajdonosként** ad új gombot vagy új döntést. A többi a `docs/spec.md`-ben van.
+
+## Bevétel és ügyfelek
+
+**Analytics → Revenue.** MRR és mozgása (új / bővülés / szűkülés / lemorzsolódás), ARR, ügyfélszám, egy ügyfélre jutó átlagos bevétel, és az előfizetések táblája. A mozgás-diagram nem visszaszámolt: minden változás eseményként rögzül, tehát pontos.
+
+**Ügyfél-egészség.** Piros / sárga / zöld ügyfelenként, tisztán szabályokból: számla-késés, hány hónapja nincs érintkezés, támogatás-jelző, előfizetés kora. **Nincs benne AI**, és a küszöbök szerkeszthetők: *Beállítások → Admin → client health*. A pirosak a hétfői összefoglalóba is bekerülnek.
+
+**Jutalék-riport.** Havi elszámolás abból, ami **ténylegesen befolyt** (nem abból, amit kiszámláztunk), ügyfelenként, a 12 hónapos ablakon belül. Márkás PDF, bérszámfejtésre. Csak tulajdonos látja, és a generálás naplózódik.
+
+## Szállítás
+
+**Projects.** Megnyert dealből egy kattintással indul a projekt, sablon szerinti mérföldkövekkel. A mérföldkő **egy teendő** — ott van a Today Queue-ban és a saját listádban is. **A projekt nem zárható le, amíg a teljesítésigazolás nincs kiállítva**: pontosan az a lépés marad el, amire a számla vár.
+
+**Sablonok:** *Beállítások → Admin → milestone templates*. A szerkesztés új verziót hoz létre; a futó projektek a sajátjukat őrzik, tehát egy sablon-módosítás nem írja át, mire szerződtél.
+
+## Ki olvassa, amit kiküldünk
+
+**Public Pages → „Ki nézte?"** Az átvilágítási riportokon, ajánlatokon és a foglalóoldalon látszik, hányan és mennyi ideig olvasták, és — ahol megállapítható — melyik cég. A találat sosem tény: ahol nem biztos, ott „valószínűleg" szerepel, és a látogatók többsége azonosítatlan marad. A leghasznosabb sor az, hogy **a címzett cég megnézte-e** — ott nem kell találgatni.
+
+**Ajánlat-követő szabályok:** *Beállítások → Admin → quote follow-up rules*. Három szabály (többször megnyitva; sokáig az áron; elcsendesedett), mindegyik **ajánlatonként egyszer** indul, és **teendőt plusz piszkozatot** hoz létre — küldeni innen semmit nem lehet. A panel megmutatja, melyik szabály után fogadtak el ajánlatot.
+
+**Levél-visszajelzés.** A saját postafiókodból küldött válaszoknál bekapcsolható a megnyitás- és kattintás-visszajelzés (a szerkesztő „Követés" jelölője). A megnyitás **jelzés, nem bizonyíték** — a képblokkolás és az Apple Mail előtöltése mindkét irányban torzít. Kikapcsolva a levél teljesen tiszta: se pixel, se átírt link, se lábjegyzet.
+
+## Hideg e-mail
+
+**Címellenőrzés élesítés előtt.** A kampány addig nem indítható, amíg a közönség nincs ellenőrizve. Az érvénytelen címek automatikusan kimaradnak; a kockázatosakról (jellemzően `info@`-típusú közös postafiókok) **címenként te döntesz**. Fizetős ellenőrző szolgáltató opcionális: *Beállítások → Admin → Integrációk*. Nélküle is fut minden beépített ellenőrzés.
+
+## Találkozó után
+
+**Follow-up csomag.** A kimenet rögzítésekor a rendszer összerakja: köszönő levél piszkozata, a csatolható átvilágítási riport, az ajánlat váza a megbeszélt szolgáltatásokból (a te árkatalógusodból), és egy emlékeztető 3 nap múlva. **Ellenőrzőlista, nem postafiók** — minden sor egy gomb, amit valakinek meg kell nyomnia.
+
+## Beállítások, ahol most vannak
+
+A Beállítások ketté van osztva. **A tiéd** (`/settings`): profilkép, jelszó, 2FA, aktív munkamenetek, mi értesítsen, a bővítmény-tokenjeid és **a saját postafiókod csatlakoztatása**. **A szoftveré** (`/settings/admin`, csak super admin): fejléc és arculat, egyedi mezők, jogosultságok, integrációk, Claude-keret, adatminőség, automatizálás, ügyfél-egészség szabályai, mérföldkő-sablonok, ajánlat-követő szabályok.

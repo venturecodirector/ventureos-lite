@@ -24,7 +24,17 @@ export type PaletteActionId =
   | "go-analytics"
   | "go-forecast"
   | "go-content"
+  | "go-projects"
+  | "go-prospector"
+  | "go-audit"
+  | "go-outreach"
+  | "go-campaigns"
+  | "go-referrers"
+  | "go-templates"
+  | "go-public-pages"
+  | "go-revenue"
   | "go-settings"
+  | "go-admin-settings"
   | "run-audit"
   | "shortcuts";
 
@@ -86,7 +96,41 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "go-analytics", label: "Go to Analytics", keywords: ["report", "numbers", "revenue"], href: "/analytics", hint: "g a", group: "navigate" },
   { id: "go-forecast", label: "Go to Forecast", keywords: ["weighted", "pipeline value", "commit"], href: "/analytics?tab=forecast", group: "navigate" },
   { id: "go-content", label: "Go to Content Hub", keywords: ["posts", "linkedin", "blog"], href: "/content", group: "navigate" },
-  { id: "go-settings", label: "Go to Settings", keywords: ["config", "fields", "users", "security"], href: "/settings", hint: "g s", group: "navigate" },
+  /**
+   * Destinations added as the product grew. A palette that cannot reach half
+   * the nav is a palette people stop opening.
+   *
+   * Only Projects earns a `g` binding: the two-key map is for the handful of
+   * boards somebody opens every day, and inventing a mnemonic for every page
+   * fills it with bindings nobody can recall. The rest are found by typing
+   * their name, which is what a palette is for.
+   */
+  { id: "go-projects", label: "Go to Projects", keywords: ["delivery", "milestone", "checklist", "teljesites"], href: "/projects", hint: "g r", group: "navigate" },
+  { id: "go-prospector", label: "Go to Prospector", keywords: ["google", "places", "find businesses", "search area"], href: "/prospector", group: "navigate" },
+  { id: "go-audit", label: "Go to Site Audit", keywords: ["website", "score", "report"], href: "/audit", group: "navigate" },
+  { id: "go-outreach", label: "Go to Outreach", keywords: ["message", "draft", "sequence"], href: "/outreach", group: "navigate" },
+  { id: "go-campaigns", label: "Go to Campaigns", keywords: ["cold", "email", "sequence"], href: "/campaigns", group: "navigate" },
+  { id: "go-referrers", label: "Go to Referrers", keywords: ["referral", "partner", "ledger"], href: "/referrers", group: "navigate" },
+  { id: "go-templates", label: "Go to Templates", keywords: ["quote", "contract", "letter", "email body"], href: "/templates", group: "navigate" },
+  { id: "go-public-pages", label: "Go to Public Pages", keywords: ["share", "links", "who viewed"], href: "/public-pages", group: "navigate" },
+  { id: "go-revenue", label: "Go to Revenue", keywords: ["mrr", "subscription", "commission", "health"], href: "/analytics?tab=revenue", group: "navigate" },
+  {
+    id: "go-settings",
+    label: "Go to Settings",
+    // What is actually on /settings after the split: the person, not the
+    // software. Fields, users and grants moved to Admin settings below.
+    keywords: ["profile", "password", "2fa", "notifications", "mailbox", "security"],
+    href: "/settings",
+    hint: "g s",
+    group: "navigate",
+  },
+  {
+    id: "go-admin-settings",
+    label: "Go to Admin settings",
+    keywords: ["fields", "users", "grants", "integrations", "budget", "branding", "rules", "templates"],
+    href: "/settings/admin",
+    group: "navigate",
+  },
 ];
 
 /**

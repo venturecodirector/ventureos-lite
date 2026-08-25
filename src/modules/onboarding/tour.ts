@@ -52,7 +52,7 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: "settings",
     title: "make it yours",
-    body: "Settings holds your letterhead, your own fields, who can do what, the Claude budget and the mailbox connection.",
+    body: "Your own settings hold your photo, your password and 2FA, what reaches you, and your mailbox connection. The software's settings — letterhead, custom fields, who can do what, the Claude budget — live under Settings → Admin.",
     href: "/settings",
   },
 ];
