@@ -55,6 +55,7 @@ import {
   processSectorBatch,
   processSectorAggregation,
 } from "../modules/sector-reports/jobs";
+import { processReferralSweep } from "../modules/referrals/jobs";
 
 /**
  * Background worker (BullMQ + Redis). Runs in its own Docker service.
@@ -270,6 +271,10 @@ async function main(): Promise<void> {
         const n = await processNotificationRetention();
         // eslint-disable-next-line no-console
         console.log(`[worker] purged ${n} expired notification(s)`);
+      } else if (job.name === "referral-sweep") {
+        const n = await processReferralSweep();
+        // eslint-disable-next-line no-console
+        console.log(`[worker] drafted ${n} referral request(s)`);
       } else if (job.name === "sector-aggregate") {
         const n = await processSectorAggregation();
         // eslint-disable-next-line no-console
@@ -332,6 +337,12 @@ async function main(): Promise<void> {
     "sector-aggregate",
     {},
     { repeat: { pattern: "*/10 * * * *" }, jobId: "sector-aggregate" },
+  );
+  // Referral asks at 09:00 — a morning task, on a day somebody is working.
+  await wakeupsQueue().add(
+    "referral-sweep",
+    {},
+    { repeat: { pattern: "0 9 * * *" }, jobId: "referral-sweep" },
   );
   // Quote-behaviour rules at 08:30 — before the working day, so a "call them"
   // task is on the list when the list is first read (v4 P14/3).

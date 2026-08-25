@@ -1,7 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { attempt } from "@/lib/client/server-action";
+import {
+  setReferralRequestStatus,
+  type ReferralRequestView,
+} from "@/modules/referrals/request-actions";
 import {
   createReferrer,
   setLeadReferrer,
@@ -25,14 +30,83 @@ const OUTCOME_CHIP: Record<string, string> = {
   postponed: "bg-panel text-muted",
 };
 
+/**
+ * Referral asks and what came of them (playbook-v4 P13/3).
+ *
+ * The rate is the point. An engine that counts its own drafts tells you it is
+ * busy; this says whether asking works — and stays silent below five asks,
+ * because a percentage from three is noise wearing a percentage sign.
+ */
+function ReferralRequests({ view }: { view: ReferralRequestView }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const c = view.conversion;
+
+  if (view.rows.length === 0) return null;
+
+  const set = (id: string, status: string) => {
+    startTransition(async () => {
+      await attempt(setReferralRequestStatus({ id, status }));
+      router.refresh();
+    });
+  };
+
+  const LABEL: Record<string, string> = {
+    drafted: "piszkozat",
+    sent: "elküldve",
+    responded: "válaszolt",
+    produced: "ajánlást hozott",
+  };
+
+  return (
+    <section className="mb-4 rounded-card border border-line bg-panel p-[18px]" data-testid="referral-requests">
+      <h2 className="mb-1 font-display text-lg font-bold lowercase">ajánlatkérések</h2>
+      <p className="mb-3 text-[12.5px] text-muted">
+        Két héttel a teljesítés visszaigazolása után — a piszkozat elkészül, elküldeni
+        te küldöd el. {c.requested} kérés · {c.responded} válasz · {c.produced} ajánlás
+        {c.rate != null
+          ? ` · ${Math.round(c.rate * 100)}% hozott ajánlást`
+          : " · a konverzióhoz még kevés adat"}
+      </p>
+      <div className="grid gap-1.5">
+        {view.rows.map((r) => (
+          <div key={r.id} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line px-3 py-2 text-[12px]">
+            <span className="min-w-0 flex-1 truncate text-ink">{r.leadName}</span>
+            <span className="text-[11px] text-muted">{r.createdAt.slice(0, 10)}</span>
+            <select
+              value={r.status}
+              disabled={pending}
+              onChange={(e) => set(r.id, e.target.value)}
+              className="rounded-[7px] border border-line bg-[rgba(0,5,29,0.5)] px-2 py-1 text-[11.5px] text-ink outline-none focus:border-accent"
+            >
+              {Object.entries(LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            {r.leadId && (
+              <a href={`/outreach?lead=${r.leadId}`} className="text-[11.5px] text-muted underline hover:text-ink">
+                piszkozat
+              </a>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function Referrers({
   ledger,
   referrers,
   leads,
   companies,
+  referralRequests,
 }: {
   ledger: LedgerRow[];
   referrers: ReferrerOption[];
+  referralRequests: ReferralRequestView;
   leads: Array<{ id: string; name: string; source: string; referrerId: string | null }>;
   companies: Array<{ id: string; name: string }>;
 }) {
@@ -88,6 +162,8 @@ export function Referrers({
           {error}
         </div>
       )}
+
+      <ReferralRequests view={referralRequests} />
 
       {/*
         `items-start`, as every other two-column screen in the app has (and as the

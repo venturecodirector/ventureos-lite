@@ -435,7 +435,18 @@ export async function advanceStatus(
     return { ok: false, error: `Cannot move ${doc.type} from ${doc.status} to ${to}.` };
   }
   await requireGrant(GRANT_FOR_TYPE[doc.type]);
-  await db.document.update({ where: { id: documentId }, data: { status: to } });
+  await db.document.update({
+    where: { id: documentId },
+    data: {
+      status: to,
+      // The referral sweep counts fourteen days from HERE (v4 P13/3), so the
+      // moment is stamped rather than inferred from `updatedAt` — which moves
+      // whenever anything touches the row.
+      ...(doc.type === "CERTIFICATE" && to === "ACKNOWLEDGED"
+        ? { acknowledgedAt: new Date() }
+        : {}),
+    },
+  });
 
   // P6/1. Acceptance has its own public path (acceptance.ts); this is the only
   // route by which a quote is DECLINED, so the notification belongs here.

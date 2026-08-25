@@ -33,6 +33,8 @@ const BUSINESS_TABLES = [
   // Sector reports (P12/2). The report itself is tenant data;
   // its downloads are written by anonymous visitors, hence the intake list.
   "sector_reports",
+  // Referral requests (P13/3).
+  "referral_requests",
   "leads",
   "activities",
   "messages",

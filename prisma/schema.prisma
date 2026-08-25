@@ -1318,6 +1318,11 @@ model Document {
   brandSnapshot     Json?          @map("brand_snapshot")
   brandVersion      Int?           @map("brand_version")
   finalizedAt       DateTime?      @map("finalized_at")
+  /// When a completion certificate was acknowledged (playbook-v4 P13/3).
+  /// Its own column rather than `updatedAt`: the referral job needs "fourteen
+  /// days since the client confirmed", and `updatedAt` moves whenever anything
+  /// on the row is touched — including by the job itself.
+  acknowledgedAt    DateTime?      @map("acknowledged_at")
   finalizedBy       String?        @map("finalized_by")
   createdAt         DateTime       @default(now()) @map("created_at")
   updatedAt         DateTime       @updatedAt @map("updated_at")
@@ -2450,4 +2455,32 @@ model SectorReportDownload {
 
   @@index([workspaceId, reportId])
   @@map("sector_report_downloads")
+}
+
+/// A referral asked for after a job was delivered (playbook-v4 P13/3).
+///
+/// Timing is the whole feature: fourteen days after a client confirms the work
+/// is done is the satisfaction peak, and a month later it is an awkward
+/// request. The job drafts and reminds; a person reads and sends.
+model ReferralRequest {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  /// The certificate whose acknowledgement started the clock.
+  documentId  String    @unique @map("document_id")
+  leadId      String?   @map("lead_id")
+  companyId   String?   @map("company_id")
+  /// The prepared draft. A person sends it, or does not.
+  messageId   String?   @map("message_id")
+  taskId      String?   @map("task_id")
+  /// drafted | sent | responded | produced
+  status      String    @default("drafted")
+  /// Set when this request led to a referral we can point at.
+  referrerId  String?   @map("referrer_id")
+  respondedAt DateTime? @map("responded_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([workspaceId, status])
+  @@index([workspaceId, companyId, createdAt])
+  @@map("referral_requests")
 }

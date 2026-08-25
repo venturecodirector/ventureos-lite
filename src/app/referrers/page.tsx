@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { Referrers } from "@/components/referrers";
 import { getLedger, listReferrers } from "@/modules/referrals/actions";
+import { listReferralRequests } from "@/modules/referrals/request-actions";
 import { getWorkspaceClient } from "@/lib/db";
 import { getActiveContext } from "@/lib/session";
 
@@ -10,9 +11,10 @@ export default async function ReferrersPage() {
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
 
-  const [ledger, referrers, leadRows, companies] = await Promise.all([
+  const [ledger, referrers, referralRequests, leadRows, companies] = await Promise.all([
     getLedger(),
     listReferrers(),
+    listReferralRequests(),
     db.lead.findMany({
       orderBy: { createdAt: "desc" },
       take: 300,
@@ -30,7 +32,13 @@ export default async function ReferrersPage() {
 
   return (
     <AppShell activePath="/referrers">
-      <Referrers ledger={ledger} referrers={referrers} leads={leads} companies={companies} />
+      <Referrers
+        ledger={ledger}
+        referrers={referrers}
+        referralRequests={referralRequests}
+        leads={leads}
+        companies={companies}
+      />
     </AppShell>
   );
 }
