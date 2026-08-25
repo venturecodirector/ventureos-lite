@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { attempt, attemptVoid, serverActionError } from "../../src/lib/client/server-action";
 import { stripComments } from "../helpers/strip-comments";
 
+const ROOT = join(__dirname, "..", "..");
+
 /**
  * The silence that looked like a broken button.
  *
@@ -158,6 +160,50 @@ describe("the reported call sites no longer swallow a throw", () => {
       });
     }
     expect(offenders, `silent action calls: ${offenders.join(", ")}`).toEqual([]);
+  });
+
+  /**
+   * The same silence, spelled `return` instead of `await`.
+   *
+   * `saveCell` in the leads table was `return editLeadField({...})` — a bare
+   * action promise handed to `InlineCell`, which does `await onSave(next)` and
+   * then `setSaving(false)`. A throw skipped that line entirely: the cell sat in
+   * its saving state for ever, showed nothing, and kept the edit. The refusals
+   * had always been handled; the unexpected failures had nowhere to land.
+   *
+   * The action names come from the files that actually carry the directive, so
+   * a pure helper imported from a module cannot be mistaken for one.
+   */
+  it("no component returns a bare server-action promise", () => {
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    const serverFiles = execSync('grep -rl \'"use server"\' src --include="*.ts"', {
+      encoding: "utf8",
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .filter((rel) => readFileSync(join(ROOT, rel), "utf8").split("\n")[0]!.includes('"use server"'));
+
+    const actionNames = new Set<string>();
+    for (const rel of serverFiles) {
+      const text = readFileSync(join(ROOT, rel), "utf8");
+      for (const m of text.matchAll(/^export async function (\w+)/gm)) actionNames.add(m[1]!);
+    }
+    expect(actionNames.size).toBeGreaterThan(50);
+
+    const files = execSync("ls src/components/*.tsx", { encoding: "utf8" })
+      .split("\n")
+      .filter(Boolean);
+    const offenders: string[] = [];
+    for (const file of files) {
+      readFileSync(file, "utf8")
+        .split("\n")
+        .forEach((line, i) => {
+          const m = /^\s*return ([A-Za-z_$][\w$]*)\(/.exec(line);
+          if (m && actionNames.has(m[1]!)) offenders.push(`${file}:${i + 1} (${m[1]})`);
+        });
+    }
+    expect(offenders, `unwrapped action promises: ${offenders.join(", ")}`).toEqual([]);
   });
 
   /**

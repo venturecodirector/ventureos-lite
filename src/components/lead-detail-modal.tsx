@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { attempt } from "@/lib/client/server-action";
+import { attempt, attemptData } from "@/lib/client/server-action";
 import { lookupTaxpayer } from "@/modules/registry/actions";
 import { lookupCompanySite } from "@/modules/leads/site-lookup";
 import { verifyLeadEmail } from "@/modules/verification/actions";
@@ -21,6 +21,15 @@ import {
   type LeadDealLink,
 } from "@/modules/deals/actions";
 import { PIPELINE_STAGES, SIDE_STAGES, STAGE_LABELS } from "@/modules/pipeline/transitions";
+import { DEAL_OWNED_LEAD_STAGES } from "@/modules/deals/pipelines";
+import { setQualification } from "@/modules/inbox/actions";
+import {
+  QUAL_ITEMS,
+  QUAL_LABEL,
+  QUALIFY_THRESHOLD,
+  answeredCount,
+  type QualItem,
+} from "@/modules/inbox/qualification";
 import { LeadAvatar } from "./lead-avatar";
 import { CustomFieldsEditor } from "./custom-fields-editor";
 import { CaptureDiagnosticsPanel } from "./capture-diagnostics";
@@ -246,6 +255,41 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
    * site worth auditing, so it is deliberately not a fallback.
    */
   const auditTarget = (form?.companyDomain ?? "").trim();
+
+  /**
+   * A deal starts where the lead's journey ends (P4/a), so the conversion is
+   * refused below Qualified — correctly, and it said so. It said so AFTER the
+   * click, though, which is the one thing the button beside it does not do: the
+   * audit is disabled with the reason on it when there is no domain. Offering a
+   * control that answers "no" is how a working refusal reads as a broken button.
+   */
+  const canConvertToDeal = !!detail && DEAL_OWNED_LEAD_STAGES.includes(detail.stage as Stage);
+
+  /**
+   * Saved on the spot rather than on Save changes, deliberately: this is the
+   * one control here whose only purpose is to unlock the button underneath it,
+   * and a checkbox that needs a second press elsewhere to count would be the
+   * same dead end in a new place.
+   */
+  function toggleQual(item: QualItem, value: boolean) {
+    if (!form || !detail) return;
+    setMsg(null);
+    // The tick moves NOW. Waiting for the round trip meant a click that changed
+    // nothing on screen for as long as the server took — the exact appearance of
+    // a dead control. The server's answer replaces this, and a failure puts it
+    // back where it was and says so.
+    const before = detail.qualification;
+    setDetail((d) => (d ? { ...d, qualification: { ...d.qualification, [item]: value } } : d));
+    startTransition(async () => {
+      const res = await attemptData(setQualification({ leadId: form.id, item, value }));
+      if (!res.ok) {
+        setDetail((d) => (d ? { ...d, qualification: before } : d));
+        setMsg({ kind: "err", text: res.error });
+        return;
+      }
+      setDetail((d) => (d ? { ...d, qualification: res.data.qualification } : d));
+    });
+  }
 
   /** Research from the modal — the table only offers it before a score exists. */
   function runResearchHere() {
@@ -823,6 +867,42 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
             )}
           </section>
 
+          {/*
+            THE GATE THAT COULD NOT BE OPENED.
+
+            "Qualified" needs 3 of the 4 answers, enforced server-side — and the
+            only place to give them was the Inbox, inside a thread. A lead
+            qualified on the telephone, or one straight out of the Prospector,
+            has no thread at all, so the stage button refused it forever and
+            named a checklist the operator could not reach. The answers were
+            always stored on the LEAD; only the UI was in the wrong room.
+          */}
+          <section className="grid gap-2 rounded-[11px] border border-line p-3">
+            <p className={LABEL}>Qualification</p>
+            <div className="grid gap-1.5">
+              {QUAL_ITEMS.map((item) => (
+                <label
+                  key={item}
+                  className="flex cursor-pointer items-center gap-2 text-[12px] text-ink"
+                >
+                  <input
+                    type="checkbox"
+                    data-testid={`lead-qual-${item}`}
+                    className="h-3.5 w-3.5 accent-accent"
+                    disabled={pending}
+                    checked={!!detail.qualification[item]}
+                    onChange={(e) => toggleQual(item, e.target.checked)}
+                  />
+                  {QUAL_LABEL[item]}
+                </label>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted">
+              {answeredCount(detail.qualification)} of {QUAL_ITEMS.length} answered ·{" "}
+              {QUALIFY_THRESHOLD} needed to move to Qualified.
+            </p>
+          </section>
+
           <section className="grid gap-2 rounded-[11px] border border-line p-3">
             <p className={LABEL}>Stage</p>
             <div className="flex flex-wrap gap-1.5">
@@ -884,7 +964,12 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
                   type="button"
                   className={BTN}
                   data-testid="convert-to-deal"
-                  disabled={pending}
+                  disabled={pending || !canConvertToDeal}
+                  title={
+                    canConvertToDeal
+                      ? "Create a deal from this lead"
+                      : "Only a qualified lead becomes a deal"
+                  }
                   onClick={() =>
                     startTransition(async () => {
                       const res = await attempt(convertLeadToDeal({ leadId: form.id }));
@@ -900,6 +985,11 @@ export function LeadDetailModal({ leadId, onClose }: { leadId: string; onClose: 
                 >
                   Convert to deal
                 </button>
+                {!canConvertToDeal && (
+                  <p className="text-[11px] text-muted">
+                    Move it to Qualified, Meeting booked or Handed off first.
+                  </p>
+                )}
               </>
             ) : (
               <ul className="grid gap-1.5" data-testid="lead-deals">

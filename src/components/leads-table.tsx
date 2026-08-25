@@ -215,7 +215,17 @@ export function LeadsTable(props: LeadsTableProps) {
     field: string,
     value: string | string[] | boolean | null,
   ) {
-    return editLeadField({ leadId, field, value });
+    /**
+     * `attempt`, because the cell awaits this bare.
+     *
+     * A Server Action that THROWS rather than returns arrives at the client as
+     * a message-less Error. Here that rejection propagated into `InlineCell`'s
+     * `await onSave(next)`, which meant `setSaving(false)` never ran: the cell
+     * sat in its saving state for ever, showed no error, and kept the edit. The
+     * refusals were always handled — it was the unexpected failures that had
+     * nowhere to land.
+     */
+    return attempt(editLeadField({ leadId, field, value }));
   }
 
   const navigate = useCallback(

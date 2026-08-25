@@ -10,6 +10,7 @@ import { MAX_ICP_SCORE } from "@/modules/leads/scoring";
 import { listFieldDefsWith } from "@/modules/fields/store";
 import { resolveSurvivor } from "@/modules/merge/store";
 import { readValues, type FieldDef, type FieldValues } from "@/modules/fields/types";
+import { EMPTY_QUALIFICATION, type Qualification } from "@/modules/inbox/qualification";
 
 /**
  * Lead detail for the pipeline card modal (spec §4.5).
@@ -47,6 +48,15 @@ export interface LeadDetail {
   language: Lang;
   notes: string;
   signals: string[];
+  /**
+   * The four qualification answers (spec §4.7).
+   *
+   * On the lead, not on a conversation — which is what the Inbox always wrote,
+   * even though its checkboxes were the only way to set them. A lead qualified
+   * over the phone, or one straight out of the Prospector, had no thread and so
+   * could never reach 3 of 4 and never enter Qualified.
+   */
+  qualification: Qualification;
   icpScore: number | null;
   maxScore: number;
   stage: string;
@@ -137,6 +147,10 @@ export async function getLeadDetail(leadId: string): Promise<LeadDetail | null> 
     language: lead.language,
     notes: lead.notes ?? "",
     signals: Array.isArray(lead.signals) ? (lead.signals as string[]) : [],
+    qualification: {
+      ...EMPTY_QUALIFICATION,
+      ...((lead.qualification ?? {}) as Partial<Qualification>),
+    },
     icpScore: lead.icpScore,
     maxScore: MAX_ICP_SCORE,
     stage: lead.stage,
