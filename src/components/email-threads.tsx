@@ -90,16 +90,16 @@ export function EmailThreads({ leadId }: { leadId: string }) {
     };
   }, [leadId]);
 
-  if (!threads || threads.length === 0) return null;
-  const thread = threads.find((t) => t.id === openId) ?? threads[0]!;
-  const last = thread.messages[thread.messages.length - 1];
-
   /**
    * Tracking, remembered per browser (playbook-v3 P9/1 asks for "per user").
    *
    * localStorage rather than a column: it is a composer convenience, it is
    * per-person on a personal machine, and a preference that costs a schema
    * change and a round trip to remember a checkbox is a bad trade.
+   *
+   * ABOVE the early return, and it has to be: hooks after a conditional exit
+   * run in a different order once the thread list stops being empty, which is
+   * exactly the transition this component makes on every lead that has mail.
    */
   const [track, setTrack] = useState(true);
   useEffect(() => {
@@ -118,6 +118,10 @@ export function EmailThreads({ leadId }: { leadId: string }) {
       /* nothing to remember it with */
     }
   }
+
+  if (!threads || threads.length === 0) return null;
+  const thread = threads.find((t) => t.id === openId) ?? threads[0]!;
+  const last = thread.messages[thread.messages.length - 1];
 
   async function send(acknowledge: boolean) {
     if (!reply.trim() || !last) return;
