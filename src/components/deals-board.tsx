@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { moveDealStage, updateDeal } from "@/modules/deals/actions";
+import { startProjectForDeal } from "@/modules/projects/actions";
+import { attempt } from "@/lib/client/server-action";
 import { useUndo } from "./undo-toast";
 import type { DealCardView, PipelineView } from "@/modules/deals/store";
 import { EmptyState } from "./empty-state";
@@ -156,6 +158,19 @@ export function DealsBoard({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
+
+  /** Start the delivery checklist from the workspace's default template. */
+  function startProject(dealId: string) {
+    setError(null);
+    startTransition(async () => {
+      const res = await attempt(startProjectForDeal({ dealId }));
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      router.push(`/projects?project=${res.projectId}`);
+    });
+  }
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [moveFor, setMoveFor] = useState<DealCardView | null>(null);
   const [lostFor, setLostFor] = useState<{ card: DealCardView; stageId: string } | null>(null);
@@ -365,6 +380,35 @@ export function DealsBoard({
                     >
                       invoice · {c.invoiceStatus.toLowerCase()}
                     </span>
+                  )}
+
+                  {/*
+                    The handover (P11/2a). A won deal with no project is the one
+                    moment worth interrupting: after this the signed contract
+                    drifts, the work gets done, and the certificate — the
+                    document the invoice waits on — is the thing nobody issues.
+                  */}
+                  {c.status === "WON" && (
+                    <div className="mt-2">
+                      {c.projectId ? (
+                        <Link
+                          href={`/projects?project=${c.projectId}`}
+                          data-testid="deal-open-project"
+                          className="block rounded-[8px] border border-line bg-panel px-2 py-1 text-center text-[11px] text-muted hover:bg-panel-2 hover:text-ink"
+                        >
+                          Projekt megnyitása
+                        </Link>
+                      ) : (
+                        <button
+                          onClick={() => startProject(c.id)}
+                          disabled={pending}
+                          data-testid="deal-start-project"
+                          className="block w-full rounded-[8px] border border-accent bg-accent-soft px-2 py-1 text-center text-[11px] font-semibold text-[#E4D3FF] disabled:opacity-50"
+                        >
+                          Projekt indítása
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   <div className="mt-2 flex gap-1.5">

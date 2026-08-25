@@ -95,6 +95,18 @@ export const DocumentsIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+/** A checklist: what a project is, drawn (P11/2). */
+export const ProjectsIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="m3 6 2 2 3-3" />
+    <path d="m3 13 2 2 3-3" />
+    <path d="m3 20 2 2 3-3" />
+    <path d="M12 6h9" />
+    <path d="M12 13h9" />
+    <path d="M12 20h9" />
+  </svg>
+);
+
 export const TemplatesIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <rect x="3" y="3" width="18" height="18" rx="2" />

@@ -22,6 +22,10 @@ const BUSINESS_TABLES = [
   "companies",
   // Written by the enrichment worker with a workspace in hand (P8/b).
   "visitor_signals",
+  // Delivery after the deal is won (P11/2).
+  "project_templates",
+  "projects",
+  "milestones",
   "leads",
   "activities",
   "messages",

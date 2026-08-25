@@ -28,6 +28,7 @@ import {
   ReferrersIcon,
   CampaignsIcon,
   DocumentsIcon,
+  ProjectsIcon,
   TemplatesIcon,
   PublicIcon,
   ContentIcon,
@@ -62,6 +63,9 @@ const NAV: NavItem[] = [
   { label: "Referrers", icon: <ReferrersIcon />, href: "/referrers" },
   { label: "Campaigns", icon: <CampaignsIcon />, href: "/campaigns", locked: true },
   { label: "Documents", icon: <DocumentsIcon />, href: "/documents", locked: true },
+  // Between Documents and Templates on purpose: a project is the thing that
+  // carries a signed contract to its certificate (P11/2).
+  { label: "Projects", icon: <ProjectsIcon />, href: "/projects" },
   // Quote/contract/certificate bodies AND the transactional email bodies —
   // one editor, switched by type. It had no nav entry, so neither was
   // reachable even though both were built and seeded.

@@ -134,6 +134,14 @@ export interface DealCardView {
   /** Document types present on this deal, for the chain dots. */
   chainTypes: string[];
   invoiceStatus: string | null;
+  /**
+   * The delivery checklist, once there is one (P11/2).
+   *
+   * Null on a won deal is the interesting state: it is the moment the board
+   * offers to start one, and the reason a signed contract stops drifting
+   * towards a certificate nobody issues.
+   */
+  projectId: string | null;
 }
 
 /**
@@ -188,6 +196,13 @@ export async function loadPipelineBoard(
         select: { documentId: true, status: true },
       })
     : [];
+  // One query for the whole board rather than one per card.
+  const projects = await db.project.findMany({
+    where: { dealId: { in: deals.map((d) => d.id) } },
+    select: { id: true, dealId: true },
+  });
+  const projectByDeal = new Map(projects.map((p) => [p.dealId, p.id]));
+
   const invoiceByDoc = new Map<string, string>();
   for (const inv of invoices) {
     if (inv.documentId && !invoiceByDoc.has(inv.documentId)) {
@@ -229,6 +244,7 @@ export async function loadPipelineBoard(
       ownerName: d.ownerId ? (opts?.ownerNames?.get(d.ownerId) ?? null) : null,
       chainTypes,
       invoiceStatus,
+      projectId: projectByDeal.get(d.id) ?? null,
     };
   });
 }

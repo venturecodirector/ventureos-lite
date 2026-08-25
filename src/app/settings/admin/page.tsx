@@ -7,6 +7,7 @@ import { SettingsIntegrations } from "@/components/settings-integrations";
 import { ApiCosts } from "@/components/api-costs";
 import { SettingsEmail } from "@/components/settings-email";
 import { SettingsHealthRules } from "@/components/settings-health-rules";
+import { SettingsProjectTemplates } from "@/components/settings-project-templates";
 import { SettingsBranding } from "@/components/settings-branding";
 import { SettingsFields } from "@/components/settings-fields";
 import { SettingsDataQuality } from "@/components/settings-data-quality";
@@ -19,6 +20,7 @@ import { SzamlazzKey } from "@/components/szamlazz-key";
 import { getColdStatus } from "@/modules/campaigns/actions";
 import { hasSzamlazzKey } from "@/modules/invoicing/actions";
 import { listMembers } from "@/modules/settings/actions";
+import { listProjectTemplates } from "@/modules/projects/actions";
 import { getSecurityStatus } from "@/modules/auth/actions";
 import { listWorkspaceUsers } from "@/modules/users/actions";
 import { getIntegrations } from "@/modules/integrations/actions";
@@ -88,6 +90,7 @@ export default async function AdminSettingsPage() {
   // Workspace-wide, Owner-edited: the thresholds decide who lands on a list the
   // whole team works from (P11/1c).
   const healthRules = await getHealthRules();
+  const projectTemplates = await listProjectTemplates();
   // Workspace-wide letterhead (audit-v2 item 6).
   const brand = await getWorkspaceBrand();
   // Owner-defined fields (P5/1).
@@ -121,6 +124,7 @@ export default async function AdminSettingsPage() {
         <SettingsDataQuality view={dataQuality} />
         <SettingsWorkflows view={workflows} />
         <SettingsHealthRules initial={healthRules} isOwner={owner} />
+        <SettingsProjectTemplates templates={projectTemplates} />
         {owner && (
           <SettingsUsers
             users={managedUsers}

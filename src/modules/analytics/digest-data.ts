@@ -39,12 +39,35 @@ export async function collectDigestData(
     ? await countDigestableUnread(db, opts.userId, opts.role ?? "BDR")
     : 0;
 
+  /**
+   * P11/2c — milestones past their date on projects still running.
+   *
+   * Counted through the TASKS, because a milestone is a task: one source of
+   * truth for "done", so this figure cannot disagree with the checklist.
+   */
+  const openProjects = await db.project.findMany({
+    where: { closedAt: null },
+    select: { id: true },
+  });
+  const overdueMilestones = openProjects.length
+    ? await db.task.count({
+        where: {
+          source: "project_milestone",
+          doneAt: null,
+          dueAt: { not: null, lt: now },
+          entityType: "project",
+          entityId: { in: openProjects.map((p) => p.id) },
+        },
+      })
+    : 0;
+
   // P11/1c — how many clients the health rules put in the red this week.
   const redClients = opts.workspaceId
     ? (await loadClientHealth(opts.workspaceId, now)).filter((c) => c.level === "red").length
     : 0;
 
   return {
+    overdueMilestones,
     redClients,
     unreadNotifications,
     todayQueueCount: dueCallbacks + overdueFollowups + researchedLeads,

@@ -2226,3 +2226,87 @@ model VisitorSignal {
   @@index([leadId])
   @@map("visitor_signals")
 }
+
+/// A milestone checklist template (playbook-v3 P11/2a, 2d).
+///
+/// Versioned like a document template: a project records the version it was
+/// created from, so editing the template never rewrites history on projects
+/// already running.
+model ProjectTemplate {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  name        String
+  version     Int       @default(1)
+  /// draft | active | archived — same vocabulary as document templates.
+  status      String    @default("active")
+  /// [{ title, dayOffset, kind }] — kind is "generic" or "certificate".
+  milestones  Json      @default("[]")
+  archivedAt  DateTime? @map("archived_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  projects Project[]
+
+  @@index([workspaceId, status])
+  @@map("project_templates")
+}
+
+/// Delivery after the deal is won (playbook-v3 P11/2).
+///
+/// DELIBERATELY SMALL: a checklist with dates, owners and the document chain.
+/// No Gantt, no dependencies, no time tracking — the playbook says so and it is
+/// right, because the thing that actually goes wrong in a small agency is not
+/// scheduling, it is a certificate nobody issued.
+model Project {
+  id              String    @id @default(cuid())
+  workspaceId     String    @map("workspace_id")
+  dealId          String    @unique @map("deal_id")
+  companyId       String?   @map("company_id")
+  leadId          String?   @map("lead_id")
+  name            String
+  templateId      String?   @map("template_id")
+  /// The template VERSION this was built from, so an edited template does not
+  /// silently rewrite what a running project agreed to deliver.
+  templateVersion Int?      @map("template_version")
+  startedAt       DateTime  @default(now()) @map("started_at")
+  closedAt        DateTime? @map("closed_at")
+  createdBy       String?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  template   ProjectTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  milestones Milestone[]
+
+  @@index([workspaceId, closedAt])
+  @@map("projects")
+}
+
+/// One line of the checklist.
+///
+/// ── IT HOLDS ALMOST NOTHING ────────────────────────────────────────────────
+///
+/// The title, the due date, the owner, the note and the done state all live on
+/// a Task — "a milestone IS a task under the hood: reuse, don't duplicate".
+/// That is not tidiness, it is the feature: a milestone appears in Today Queue,
+/// in My Tasks, in the overdue sweep and in the Monday digest without a single
+/// line of code teaching those places what a milestone is, and there is exactly
+/// ONE done flag, so the two can never disagree.
+///
+/// What is left here is what a task has no opinion about: where the line sits
+/// in the list, and whether it is the certificate one.
+model Milestone {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  projectId   String   @map("project_id")
+  /// The task that carries everything else. Deleted with the milestone.
+  taskId      String   @unique @map("task_id")
+  position    Int      @default(0)
+  /// generic | certificate
+  kind        String   @default("generic")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, projectId])
+  @@map("milestones")
+}

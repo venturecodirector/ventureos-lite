@@ -162,6 +162,14 @@ export interface DigestInput {
   /** Clients scored red by the health rules (playbook-v3 P11/1c). */
   redClients?: number;
   /**
+   * Delivery milestones past their date (playbook-v3 P11/2c).
+   *
+   * The one that matters most is the certificate: a project whose work is
+   * finished but whose teljesítésigazolás was never issued is an invoice that
+   * cannot go out, and it is invisible because everything else looks done.
+   */
+  overdueMilestones?: number;
+  /**
    * Unread notifications whose type this user has left on for the email digest
    * (playbook-v2 P6/1). The digest is the EMAIL channel: the playbook is
    * explicit that a notification must never become a message per event, so it
@@ -195,6 +203,13 @@ export function buildDigestModel(input: DigestInput): DigestModel {
       key: "redClients",
       label: "Clients needing attention",
       value: `${input.redClients}`,
+    });
+  }
+  if (input.overdueMilestones && input.overdueMilestones > 0) {
+    sections.push({
+      key: "overdueMilestones",
+      label: "Overdue project milestones",
+      value: `${input.overdueMilestones}`,
     });
   }
   // Only when there is something: a permanent "Unread notifications: 0" line
