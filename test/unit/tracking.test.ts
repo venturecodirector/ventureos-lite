@@ -187,3 +187,49 @@ describe("isPageType", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Reachable without a session — the failure the e2e suite cannot see.
+// ---------------------------------------------------------------------------
+
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+
+describe("the measurement surface is public", () => {
+  /**
+   * Caught in production, not in the browser suite, and it could not have been
+   * caught there: every e2e spec runs with a signed-in storage state, so the
+   * auth middleware waves the beacon through. A real prospect reading a quote
+   * has no session at all — and /t.js was answering with a redirect to /login.
+   */
+  const middleware = readFileSync(
+    join(__dirname, "..", "..", "src", "middleware.ts"),
+    "utf8",
+  );
+
+  for (const path of ["/t.js", "/api/t", "/privacy"]) {
+    it(`${path} is a public prefix`, () => {
+      expect(middleware.includes(`"${path}"`), `${path} would redirect to /login`).toBe(true);
+    });
+  }
+
+  it("ships the script it points at", () => {
+    expect(existsSync(join(__dirname, "..", "..", "public", "t.js"))).toBe(true);
+  });
+
+  /**
+   * A tracked page on audit./quote. links to /privacy on THAT host, where the
+   * bare-slug fallback would otherwise turn it into /r/privacy.
+   */
+  it("lets /privacy through on the public subdomains too", () => {
+    expect(middleware.includes('pathname === "/privacy"')).toBe(true);
+  });
+
+  it("keeps the script under 2 KB over the wire", () => {
+    const raw = readFileSync(join(__dirname, "..", "..", "public", "t.js"));
+    // Caddy serves it compressed (Caddyfile.prod: `encode zstd gzip`), which is
+    // the size the playbook's "<2 KB" is about.
+    const gzipped = require("node:zlib").gzipSync(raw, { level: 9 }).length;
+    expect(gzipped).toBeLessThan(2048);
+  });
+});

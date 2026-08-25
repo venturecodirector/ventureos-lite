@@ -68,6 +68,14 @@ const PUBLIC_PREFIXES = [
   // Fetched by whatever is unfurling a link — a chat client, never a session.
   "/og-image.png",
   "/sw.js",
+  /**
+   * The signal layer (v3 P8/a). Both of these are requested BY a prospect
+   * reading a quote or an audit report, who by definition has no session — and
+   * the e2e suite could not have caught it, because it runs signed in.
+   */
+  "/t.js", // the measurement script
+  "/api/t", // its beacon endpoint
+  "/privacy", // the notice on every tracked page links here
 ];
 
 function detectSurface(req: NextRequest): Surface | null {
@@ -122,6 +130,10 @@ export function middleware(req: NextRequest) {
       pathname.startsWith(target) ||
       pathname.startsWith("/public-audit") ||
       pathname.startsWith("/r/") ||
+      // The measurement notice on a report or a quote links here, and the
+      // reader is on the public host — without this the bare-slug fallback
+      // below would redirect /privacy to /r/privacy and 404 the disclosure.
+      pathname === "/privacy" ||
       pathname.startsWith("/api") ||
       pathname.startsWith("/_next") ||
       pathname.includes(".")
