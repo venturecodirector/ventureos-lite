@@ -99,18 +99,50 @@ const BRIEF_BADGE: Record<string, { label: string; cls: string }> = {
   error: { label: "brief failed", cls: "bg-[rgba(255,92,122,0.12)] text-[#FFB3C2]" },
 };
 
-function fmtWhen(iso: string): string {
-  return iso.slice(0, 16).replace("T", " ") + " UTC";
+/**
+ * When the meeting is, in the host's own zone.
+ *
+ * ── WHAT THIS REPLACED ─────────────────────────────────────────────────────
+ *
+ * `iso.slice(0, 16).replace("T", " ") + " UTC"` — truthful and useless. A call
+ * at 10:00 Budapest read "2026-08-28 08:00 UTC", so the operator had to do
+ * summer-time arithmetic every time they compared the list with their own
+ * calendar, while the booking page, the confirmation email and the calendar
+ * event all spoke Budapest time.
+ *
+ * The zone comes from the booking page's config, not from the browser: a server
+ * render and a client render must produce the same characters or React
+ * complains about the mismatch — and the string is now short enough not to wrap
+ * the card, which was half of what made the list look broken.
+ */
+function fmtWhen(iso: string, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat("hu-HU", {
+      timeZone: timezone,
+      month: "short",
+      day: "numeric",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date(iso));
+  } catch {
+    // An unknown zone must not blank the card.
+    return iso.slice(0, 16).replace("T", " ");
+  }
 }
 
 export function Meetings({
   meetings,
   leads,
   calendars,
+  timezone,
   googleNotice,
 }: {
   meetings: MeetingRow[];
   leads: Array<{ id: string; name: string }>;
+  /** The booking page's zone — what the times are shown in. */
+  timezone: string;
   calendars: Array<{
     id: string;
     accountEmail: string | null;
@@ -415,19 +447,39 @@ export function Meetings({
             {meetings.map((m) => (
               <button
                 key={m.id}
+                data-testid="meeting-card"
                 onClick={() => setSelected(m.id)}
                 className={`block w-full rounded-[10px] p-3 text-left ${
                   selected === m.id ? "bg-panel-2" : "hover:bg-panel-2"
                 }`}
               >
-                <b className="text-[13px]">{m.leadName}</b>
-                <span className="mt-0.5 flex items-center gap-2 text-[12px] text-muted">
-                  {fmtWhen(m.scheduledAt)}
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${BRIEF_BADGE[m.briefStatus].cls}`}>
+                {/*
+                  THE CARDS THAT WERE SLIDING APART.
+
+                  This was one flex row holding the date, the brief badge and
+                  the whole outcome sentence, inside a 320px column. Every part
+                  of it shrank: the date broke after the day, the badge broke
+                  into "no" / "brief", and a two-line outcome made one card
+                  twice the height of its neighbours. Each line now owns its
+                  row, the pills refuse to break, and an outcome of any length
+                  is one truncated line with the full text in the title.
+                */}
+                <b className="block truncate text-[13px]">{m.leadName}</b>
+                <span className="mt-0.5 block text-[12px] tabular-nums text-muted">
+                  {fmtWhen(m.scheduledAt, timezone)} · {m.durationMin}m
+                </span>
+                <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <span
+                    data-testid="meeting-brief-badge"
+                    className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${BRIEF_BADGE[m.briefStatus].cls}`}
+                  >
                     {BRIEF_BADGE[m.briefStatus].label}
                   </span>
                   {m.outcome && (
-                    <span className="rounded-full bg-panel px-2 py-0.5 text-[10px] font-semibold text-ink">
+                    <span
+                      title={m.outcome}
+                      className="min-w-0 flex-1 truncate rounded-full bg-panel px-2 py-0.5 text-[10px] font-semibold text-ink"
+                    >
                       {m.outcome}
                     </span>
                   )}
@@ -446,7 +498,9 @@ export function Meetings({
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <b className="text-[15px]">{detail.leadName}</b>
                 <span className="text-[12px] text-muted">{detail.company}</span>
-                <span className="text-[12px] text-muted">· {fmtWhen(detail.scheduledAt)} · {detail.durationMin}m</span>
+                <span className="text-[12px] tabular-nums text-muted">
+                  · {fmtWhen(detail.scheduledAt, timezone)} · {detail.durationMin}m
+                </span>
                 <span className={`ml-auto rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${BRIEF_BADGE[detail.briefStatus].cls}`}>
                   {BRIEF_BADGE[detail.briefStatus].label}
                 </span>

@@ -130,22 +130,37 @@ export function BookingWidget({
         </div>
       )}
 
-      {/* day strip */}
-      <div className="flex gap-[7px] overflow-x-auto pb-1">
+      {/*
+        THE DAY STRIP, WHICH WAS RAGGED.
+
+        `flex-1` with `min-w-[52px]` inside an `overflow-x-auto` row is three
+        rules pulling against each other: a flex basis of 0 wants every card the
+        same width, the minimum stops the ones that cannot shrink, and the
+        overflow lets the rest size to their own content. The result was cards
+        of visibly different widths with the last one sliced in half at the
+        edge — the same fourteen days, laid out differently every time the
+        container changed.
+
+        Grid auto-columns cannot do that: EVERY column is `minmax(56px, 1fr)`,
+        so they share the width equally when they fit and become an honest,
+        snapping scroller when they do not.
+      */}
+      <div className="grid snap-x snap-mandatory grid-flow-col auto-cols-[minmax(56px,1fr)] gap-[7px] overflow-x-auto pb-1">
         {avail.days.map((d) => (
           <button
             key={d.dateISO}
+            data-testid="day"
             onClick={() => {
               setDayISO(d.dateISO);
               setSlot(null);
             }}
             disabled={d.slots.length === 0}
-            className={`min-w-[52px] flex-1 rounded-[10px] border px-0 py-2 text-center text-[11px] ${
+            className={`snap-start rounded-[10px] border px-0 py-2 text-center text-[11px] ${
               d.dateISO === dayISO ? "border-accent bg-accent-soft" : "border-line"
             } ${d.slots.length === 0 ? "opacity-40" : ""}`}
           >
             <b className="block font-display text-[14px] text-ink">{d.dayNum}</b>
-            <span className="text-muted">{d.weekday}</span>
+            <span className="block truncate text-muted">{d.weekday}</span>
           </button>
         ))}
       </div>
