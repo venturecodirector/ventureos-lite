@@ -85,7 +85,13 @@
 	@locale path /hu /en
 	rewrite @locale /public-audit{uri}
 
-	@slug path_regexp slug ^/([^/.]+)$
+	# /privacy is a real page on every public host — the measurement notice
+	# on a report or a quote links to it. Without this exclusion the slug
+	# rule below rewrites it to /share/privacy and 404s the disclosure.
+	@slug {
+		path_regexp slug ^/([^/.]+)$
+		not path /privacy
+	}
 	rewrite @slug /share/{http.regexp.slug.1}
 	import app_upstream
 }
@@ -94,7 +100,13 @@
 {$PUBLIC_QUOTE_HOST} {
 	import common
 	request_header X-Public-Surface "quote"
-	@slug path_regexp slug ^/([^/.]+)$
+	# /privacy is a real page on every public host — the measurement notice
+	# on a report or a quote links to it. Without this exclusion the slug
+	# rule below rewrites it to /share/privacy and 404s the disclosure.
+	@slug {
+		path_regexp slug ^/([^/.]+)$
+		not path /privacy
+	}
 	rewrite @slug /accept/{http.regexp.slug.1}
 	import app_upstream
 }
@@ -103,7 +115,13 @@
 {$PUBLIC_MEET_HOST} {
 	import common
 	request_header X-Public-Surface "meet"
-	@slug path_regexp slug ^/([^/.]+)$
+	# /privacy is a real page on every public host — the measurement notice
+	# on a report or a quote links to it. Without this exclusion the slug
+	# rule below rewrites it to /share/privacy and 404s the disclosure.
+	@slug {
+		path_regexp slug ^/([^/.]+)$
+		not path /privacy
+	}
 	rewrite @slug /book/{http.regexp.slug.1}
 	import app_upstream
 }

@@ -233,3 +233,22 @@ describe("the measurement surface is public", () => {
     expect(gzipped).toBeLessThan(2048);
   });
 });
+
+describe("the disclosure survives the proxy too", () => {
+  /**
+   * The middleware never saw /privacy on audit.<domain>: Caddy's bare-slug rule
+   * had already rewritten it to /share/privacy, which 404s. Two layers rewrite
+   * these hosts and both had to be told.
+   */
+  const caddy = readFileSync(join(__dirname, "..", "..", "Caddyfile.prod"), "utf8");
+
+  it("excludes /privacy from the slug rewrite on all three public hosts", () => {
+    expect((caddy.match(/not path \/privacy/g) ?? []).length).toBe(3);
+  });
+
+  it("still rewrites bare slugs, which is what the rule is for", () => {
+    expect(caddy).toContain("rewrite @slug /share/{http.regexp.slug.1}");
+    expect(caddy).toContain("rewrite @slug /accept/{http.regexp.slug.1}");
+    expect(caddy).toContain("rewrite @slug /book/{http.regexp.slug.1}");
+  });
+});
