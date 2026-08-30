@@ -35,6 +35,15 @@ export interface PageProbe {
   hasCookieBanner: boolean;
   pageWeightBytes: number;
   psi: PsiScores | null;
+  /**
+   * Why `psi` is null, when it is null for a reason other than "not asked".
+   *
+   * Carried so the report can SAY that performance was not measured. Silence
+   * used to be indistinguishable from a clean bill of health: an audit run on
+   * a deployment with no PageSpeed API key simply had no performance rows in
+   * it, and nothing anywhere explained the absence.
+   */
+  psiUnavailable?: string;
   screenshots: { desktop?: string; mobile?: string };
 
   // ---- P1/3c: expanded deterministic signals -----------------------------
@@ -172,6 +181,10 @@ export interface AuditView {
   id: string;
   url: string;
   status: string; // queued | running | done | error
+  /** Which step the worker is on; see ./stages. Null before it writes one. */
+  stage: string | null;
+  /** Why it failed, when it failed. Null otherwise. */
+  errorMessage: string | null;
   score: number;
   verdict: AuditVerdict;
   checks: AuditCheck[];

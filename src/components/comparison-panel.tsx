@@ -9,7 +9,7 @@ import {
   runComparison,
   getComparison,
   clearComparison,
-  pendingComparisonCount,
+  comparisonProgress,
   type CompetitorCandidate,
 } from "@/modules/audit/comparison-actions";
 
@@ -38,6 +38,12 @@ export function ComparisonPanel({ auditId }: { auditId: string }) {
   const [cost, setCost] = useState<number | null>(null);
   const [busy, setBusy] = useState<"idle" | "suggesting" | "running">("idle");
   const [pending, setPending] = useState(0);
+  /**
+   * Competitor audits that failed. They used to disappear without trace: the
+   * table keeps only finished audits and the poll counted only unfinished
+   * ones, so a failure left both sets at once.
+   */
+  const [failed, setFailed] = useState<Array<{ url: string; message: string | null }>>([]);
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,9 +61,11 @@ export function ComparisonPanel({ auditId }: { auditId: string }) {
   useEffect(() => {
     if (pending === 0) return;
     const timer = setTimeout(async () => {
-      const left = await pendingComparisonCount(auditId);
-      setPending(left);
-      if (left === 0) setTable(await getComparison(auditId));
+      const p = await comparisonProgress(auditId).catch(() => null);
+      if (!p) return;
+      setPending(p.pending);
+      setFailed(p.failed);
+      if (p.pending === 0) setTable(await getComparison(auditId));
     }, 2000);
     return () => clearTimeout(timer);
   }, [pending, auditId]);
@@ -92,6 +100,7 @@ export function ComparisonPanel({ auditId }: { auditId: string }) {
     setNote(null);
     try {
       const { auditIds } = await runComparison({ auditId, urls });
+      setFailed([]);
       setPending(auditIds.length);
       setTable(await getComparison(auditId));
     } catch (e) {
@@ -211,6 +220,24 @@ export function ComparisonPanel({ auditId }: { auditId: string }) {
         <p className="mt-2 text-[11.5px] text-muted">
           {pending} competitor audit{pending > 1 ? "s" : ""} still running…
         </p>
+      )}
+
+      {/*
+        Say which competitors could not be audited, and why. Without this the
+        operator picks two, gets one column, and has to guess.
+      */}
+      {failed.length > 0 && (
+        <div
+          data-testid="comparison-failed"
+          className="mt-2 rounded-[10px] border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.1)] px-3 py-2"
+        >
+          {failed.map((f) => (
+            <p key={f.url} className="text-[11.5px] leading-relaxed text-[#FFB3C2]">
+              <b>{label(f.url, null)}</b> could not be audited
+              {f.message ? ` — ${f.message}` : "."}
+            </p>
+          ))}
+        </div>
       )}
 
       {table && (

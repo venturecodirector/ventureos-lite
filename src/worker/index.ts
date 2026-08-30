@@ -19,6 +19,7 @@ import {
   processAudit,
   processPdfRender,
   processAuditWatchSweep,
+  AUDIT_DEADLINE_MS,
 } from "../modules/audit/jobs";
 import { processCallbackDue } from "../modules/calls/jobs";
 import { processDocumentPdf } from "../modules/documents/jobs";
@@ -98,7 +99,35 @@ async function main(): Promise<void> {
         console.log(`[worker] sector batch queued ${n} audit(s)`);
         return;
       }
-      await processAudit(job.data);
+      /**
+       * A hard ceiling on the job, not only on its steps.
+       *
+       * BullMQ has no per-job timeout: a processor that never settles holds
+       * its concurrency slot for the life of the worker. At a concurrency of
+       * two that means two hung audits wedge every audit in every workspace,
+       * indefinitely, and the only symptom is rows sitting at "queued". The
+       * processor already bounds each step and marks the row on failure; this
+       * is the backstop for the step nobody thought to bound.
+       */
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          processAudit(job.data),
+          new Promise((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `audit ${job.data.auditId} exceeded ${AUDIT_DEADLINE_MS / 1000}s`,
+                  ),
+                ),
+              AUDIT_DEADLINE_MS + 30_000,
+            );
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
     },
     { connection, concurrency: 2 },
   );

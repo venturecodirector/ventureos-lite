@@ -10,6 +10,7 @@ import { unlockFullReport } from "@/modules/public-audit/unlock";
 import { copyFor, withBrand } from "@/modules/public-audit/copy";
 import type { Locale } from "@/lib/locale";
 import { JobProgress } from "./job-progress";
+import { auditStagesFor, currentAuditStage } from "@/modules/audit/stages";
 
 /**
  * The one interactive region of the landing page (P12/1a, 1b).
@@ -23,7 +24,16 @@ import { JobProgress } from "./job-progress";
  * worth the minute; not so much that the report has nothing left to give.
  */
 const POLL_MS = 1500;
-const POLL_TIMEOUT_MS = 120_000;
+/**
+ * Outlast the worker's own five-minute ceiling.
+ *
+ * At two minutes this gave up on runs that were still perfectly healthy, and
+ * gave up SILENTLY: the spinner kept turning and the visitor — an anonymous
+ * prospect with no reason to be patient — watched a page that was never going
+ * to change. The visitor-facing timeout now ends in a sentence, not in
+ * nothing (see `timedOut` below).
+ */
+const POLL_TIMEOUT_MS = 360_000;
 
 type Phase =
   | { kind: "idle" }
@@ -45,6 +55,8 @@ export function AuditRunnerIsland({
   const [honeypot, setHoneypot] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [status, setStatus] = useState<PublicAuditStatus | null>(null);
+  /** The page stopped asking; the audit may well still be running. */
+  const [timedOut, setTimedOut] = useState(false);
   const shownAt = useRef<number>(Date.now());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -61,7 +73,9 @@ export function AuditRunnerIsland({
     const started = Date.now();
 
     const tick = async () => {
-      const s = await getPublicAuditStatus(phase.id);
+      // A dropped request used to end the poll for good: the rejection escaped
+      // the loop, so no further tick was scheduled and the page hung.
+      const s = await getPublicAuditStatus(phase.id).catch(() => null);
       if (!active) return;
       if (s) {
         setStatus(s);
@@ -70,7 +84,10 @@ export function AuditRunnerIsland({
           return;
         }
       }
-      if (Date.now() - started > POLL_TIMEOUT_MS) return;
+      if (Date.now() - started > POLL_TIMEOUT_MS) {
+        setTimedOut(true);
+        return;
+      }
       timer.current = setTimeout(tick, POLL_MS);
     };
     timer.current = setTimeout(tick, 600);
@@ -93,16 +110,15 @@ export function AuditRunnerIsland({
       setPhase({ kind: "refused", message: res.message, friendly: res.friendly });
       return;
     }
+    setTimedOut(false);
     setPhase({ kind: "running", id: res.publicAuditId, startedAt: Date.now() });
   }
 
   const busy = phase.kind === "submitting" || phase.kind === "running";
 
-  const STAGES = [
-    { key: "queued", label: copy.progress.queued },
-    { key: "running", label: copy.progress.running },
-    { key: "scoring", label: copy.progress.scoring },
-  ];
+  // Self-serve audits are always single-page and never buy a Claude call
+  // (P12/1), so the crawl and pitch steps are correctly absent here.
+  const STAGES = auditStagesFor({}, copy.progress.stages);
 
   return (
     <div>
@@ -165,11 +181,25 @@ export function AuditRunnerIsland({
           )}
           <JobProgress
             stages={STAGES}
-            current={status?.status === "running" ? "running" : "queued"}
+            current={timedOut ? null : status ? currentAuditStage(status) : "queued"}
             startedAt={phase.startedAt}
+            slowAfterMs={60_000}
             note={copy.progress.note}
             slowNote={copy.progress.slowNote}
           />
+          {/*
+            Say that we stopped waiting. The old code just stopped polling,
+            leaving an anonymous visitor watching a spinner that would never
+            resolve.
+          */}
+          {timedOut && (
+            <div
+              data-testid="public-audit-timeout"
+              className="rounded-card border border-[rgba(245,184,65,0.35)] bg-[rgba(245,184,65,0.1)] px-4 py-3 text-[13.5px] text-[#F5D9A0]"
+            >
+              {copy.progress.timedOut}
+            </div>
+          )}
         </div>
       )}
 

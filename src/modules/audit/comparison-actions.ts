@@ -283,8 +283,24 @@ export async function getComparison(auditId: string): Promise<ComparisonTable | 
   return buildComparison([toSubject(primary), ...ordered.map(toSubject)]);
 }
 
-/** How many competitor audits are still running, for the polling UI. */
-export async function pendingComparisonCount(auditId: string): Promise<number> {
+export interface ComparisonProgress {
+  /** Competitor audits still queued or running. */
+  pending: number;
+  /**
+   * Competitor audits that failed, with the reason.
+   *
+   * These used to vanish. `getComparison` keeps only `status === "done"` rows,
+   * and this function counted only queued/running ones — so a competitor whose
+   * audit failed left the polling loop immediately AND was dropped from the
+   * table, and the operator who picked two competitors got one column back
+   * with nothing anywhere saying what happened to the other. If all of them
+   * failed, the panel rendered nothing at all.
+   */
+  failed: Array<{ url: string; message: string | null }>;
+}
+
+/** How the competitor audits are getting on, for the polling UI. */
+export async function comparisonProgress(auditId: string): Promise<ComparisonProgress> {
   const { workspaceId } = await getActiveContext();
   const db = getWorkspaceClient(workspaceId);
   const row = await db.auditResult.findUnique({
@@ -292,8 +308,16 @@ export async function pendingComparisonCount(auditId: string): Promise<number> {
     select: { comparison: true },
   });
   const ids = comparisonAuditIds(row?.comparison);
-  if (ids.length === 0) return 0;
-  return db.auditResult.count({
-    where: { id: { in: ids }, status: { in: ["queued", "running"] } },
+  if (ids.length === 0) return { pending: 0, failed: [] };
+
+  const rows = await db.auditResult.findMany({
+    where: { id: { in: ids } },
+    select: { url: true, status: true, errorMessage: true },
   });
+  return {
+    pending: rows.filter((r) => r.status === "queued" || r.status === "running").length,
+    failed: rows
+      .filter((r) => r.status === "error")
+      .map((r) => ({ url: r.url, message: r.errorMessage })),
+  };
 }

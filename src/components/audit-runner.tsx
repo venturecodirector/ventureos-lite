@@ -4,6 +4,7 @@ import { attemptVoid } from "@/lib/client/server-action";
 import { serverActionError } from "@/lib/client/server-action";
 import { useEffect, useRef, useState } from "react";
 import type { AuditView } from "@/modules/audit/types";
+import { auditStagesFor, currentAuditStage } from "@/modules/audit/stages";
 import { JobProgress } from "./job-progress";
 import { SiteStructure } from "./site-structure";
 import { FieldData } from "./field-data";
@@ -19,12 +20,23 @@ import {
 } from "@/modules/audit/actions";
 
 const POLL_MS = 1500;
-const POLL_TIMEOUT_MS = 45_000;
+/**
+ * How long the page will keep asking.
+ *
+ * This was 45 seconds, and it was the second half of the "audit dies" report.
+ * A single-page audit routinely runs longer than that — PageSpeed alone is a
+ * real Lighthouse run on Google's hardware, and two screenshots are two more
+ * page loads — so the poller regularly gave up on a HEALTHY run, stopped
+ * silently, and left a spinner turning over an audit that finished fine thirty
+ * seconds later. The worker's own ceiling is five minutes; the page now
+ * outlasts it, and says so when it does not.
+ */
+const POLL_TIMEOUT_MS = 360_000;
 /**
  * A static crawl adds ~75s of paced fetching; a JS-heavy site switches to
  * rendered mode, which the worker caps at three minutes (P2/9).
  */
-const CRAWL_POLL_TIMEOUT_MS = 240_000;
+const CRAWL_POLL_TIMEOUT_MS = 420_000;
 
 function VerdictChip({ verdict }: { verdict: string }) {
   const map: Record<string, string> = {
@@ -67,6 +79,9 @@ export function AuditRunner({
   const [pdf, setPdf] = useState<"idle" | "generating" | string>("idle");
   const [share, setShare] = useState<{ url: string; expiresAt: string } | null>(null);
   const [sharing, setSharing] = useState(false);
+  // Set when the poller gave up rather than the audit finishing. Without it,
+  // "we stopped asking" and "it is still working" looked identical on screen.
+  const [gaveUp, setGaveUp] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // When the current run began, for the elapsed counter in JobProgress.
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -77,11 +92,17 @@ export function AuditRunner({
     let active = true;
     const started = Date.now();
     const tick = async () => {
-      const v = await getAudit(auditId);
+      // A transient failure (a redeploy, a dropped connection) used to end the
+      // poll permanently, because the rejection escaped the loop and no
+      // further tick was ever scheduled.
+      const v = await getAudit(auditId).catch(() => null);
       if (!active) return;
       if (v) setView(v);
       if (v && (v.status === "done" || v.status === "error")) return;
-      if (Date.now() - started > (withCrawl ? CRAWL_POLL_TIMEOUT_MS : POLL_TIMEOUT_MS)) return;
+      if (Date.now() - started > (withCrawl ? CRAWL_POLL_TIMEOUT_MS : POLL_TIMEOUT_MS)) {
+        setGaveUp(true);
+        return;
+      }
       timer.current = setTimeout(tick, POLL_MS);
     };
     timer.current = setTimeout(tick, 300);
@@ -103,6 +124,7 @@ export function AuditRunner({
     setAdded(null);
     setPdf("idle");
     setShare(null);
+    setGaveUp(false);
     setBusy(true);
     setStartedAt(Date.now());
     try {
@@ -166,16 +188,16 @@ export function AuditRunner({
     }
   }
 
-  const running = auditId && (!view || view.status === "queued" || view.status === "running");
+  const running =
+    !!auditId &&
+    !gaveUp &&
+    (!view || view.status === "queued" || view.status === "running");
 
-  // Stage keys mirror audit_results.status, so the label tracks what the
-  // worker actually reports rather than a timer pretending to know.
-  const AUDIT_STAGES = [
-    { key: "queued", label: "Queued" },
-    { key: "running", label: "Loading the site in a browser" },
-    { key: "scoring", label: "Scoring and screenshots" },
-  ];
-  const stage = !view ? "queued" : view.status === "done" ? null : view.status;
+  // The steps THIS run will take, and the one it is actually on — both from
+  // the audit module, so the panel cannot advertise a step the worker never
+  // reports. It used to list three and could only reach two.
+  const AUDIT_STAGES = auditStagesFor({ crawl: withCrawl, withPitch });
+  const stage = view ? currentAuditStage(view) : "queued";
 
   return (
     <div className="max-w-[1400px]">
@@ -234,8 +256,70 @@ export function AuditRunner({
         stages={AUDIT_STAGES}
         current={running ? stage : null}
         startedAt={running ? startedAt : null}
-        note="PageSpeed and the two screenshots are the slow part — usually 15-40 seconds."
+        slowAfterMs={60_000}
+        note="PageSpeed is a real Lighthouse run on Google's hardware, and the two screenshots are two more page loads — a minute is normal."
       />
+
+      {/*
+        A failed audit now says what happened. It used to render the word
+        "failed" in the header line and nothing else, which told the operator
+        neither whether to retry nor whether the prospect's site is the
+        problem.
+      */}
+      {view?.status === "error" && (
+        <div
+          data-testid="audit-error"
+          className="mb-4 rounded-card border border-[rgba(255,92,122,0.35)] bg-[rgba(255,92,122,0.1)] px-4 py-3"
+        >
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#FFB3C2]">
+            Audit failed
+          </div>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-[#FFD7DF]">
+            {view.errorMessage ??
+              "The audit stopped before it finished, and did not record a reason."}
+          </p>
+          <button
+            onClick={run}
+            className="mt-2.5 rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] font-semibold text-ink hover:bg-panel-2"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {/*
+        We stopped asking; the worker may well still be going. Say exactly
+        that — the old code just stopped polling, leaving a spinner that would
+        turn until the tab was closed.
+      */}
+      {gaveUp && view?.status !== "done" && view?.status !== "error" && (
+        <div
+          data-testid="audit-gave-up"
+          className="mb-4 rounded-card border border-[rgba(245,184,65,0.35)] bg-[rgba(245,184,65,0.1)] px-4 py-3"
+        >
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-warn">
+            Still running
+          </div>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-[#F5D9A0]">
+            This audit has been going for several minutes, so the page has
+            stopped checking. It runs in the background — reload in a minute, or
+            keep watching.
+          </p>
+          <button
+            onClick={() => {
+              setGaveUp(false);
+              setStartedAt(Date.now());
+              // Re-mount the poll effect by re-setting the same id.
+              const id = auditId;
+              setAuditId(null);
+              setTimeout(() => setAuditId(id), 0);
+            }}
+            className="mt-2.5 rounded-[10px] border border-line bg-panel px-3 py-1.5 text-[12px] font-semibold text-ink hover:bg-panel-2"
+          >
+            Keep checking
+          </button>
+        </div>
+      )}
 
       {share && (
         <div className="mb-4 rounded-card border border-accent-soft bg-accent-soft px-4 py-3">
@@ -263,7 +347,12 @@ export function AuditRunner({
         </div>
       )}
 
-      {view && (
+      {/*
+        A failed run has no report. It used to render the whole panel — a big
+        gradient score, a verdict chip, a check list — over a probe that never
+        completed, which reads as a finding rather than as a failure.
+      */}
+      {view && view.status !== "error" && (
         <div className="grid grid-cols-1 items-start gap-[18px] lg:grid-cols-[220px_1fr]">
           {/* score panel */}
           <div className="rounded-card border border-line bg-panel p-[18px] text-center">
@@ -336,7 +425,7 @@ export function AuditRunner({
             <div className="rounded-card border border-line bg-panel p-[18px]">
               <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
                 {view.url} ·{" "}
-                {running ? "auditing…" : view.status === "error" ? "failed" : "cached 30 days"}
+                {running ? "auditing…" : "cached 30 days"}
               </div>
               {view.checks.length === 0 ? (
                 <p className="text-[12.5px] text-muted">Running deterministic checks…</p>

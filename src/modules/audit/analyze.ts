@@ -148,6 +148,14 @@ export function analyzeAudit(
     );
   }
 
+  // Not measured is not "passed". The row fails so it renders in red beside
+  // the others, but its default weight is 0: PageSpeed being unreachable is
+  // our problem, not evidence against the prospect's site, and it must never
+  // move the opportunity score.
+  if (!probe.psi && probe.psiUnavailable) {
+    add("psiAvailable", "PageSpeed measured", false, probe.psiUnavailable);
+  }
+
   if (probe.psi) {
     checks.push(
       {

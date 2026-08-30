@@ -17,6 +17,7 @@ import {
   probePagesDeep,
   createRenderedFetcher,
 } from "./probe";
+import { AuditUnreachableError, failureMessage } from "./failure";
 import { crawlSite } from "./crawl";
 import { analyzeStructure } from "./structure";
 import {
@@ -41,6 +42,7 @@ import { analyzeAudit } from "./analyze";
 import { auditThresholdsFromConfig } from "./config";
 import { enqueueAudit, type AuditJobData, type PdfJobData } from "./enqueue";
 import type { AuditCheck } from "./types";
+import type { AuditStage } from "./stages";
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
 
@@ -181,15 +183,70 @@ async function recordDelta(
 }
 
 /**
+ * The whole-run ceiling.
+ *
+ * Every individual step is bounded now, but "bounded" multiplied by enough
+ * steps is still unbounded, and a job that never returns is worse than one
+ * that fails: BullMQ has no default timeout, the audit queue runs at a
+ * concurrency of two, and two stuck jobs mean every subsequent audit in the
+ * workspace sits at `queued` forever with nothing anywhere saying why. Five
+ * minutes is comfortably above a rendered crawl's own three-minute cap and
+ * far below "the operator has given up and reloaded".
+ */
+export const AUDIT_DEADLINE_MS = 5 * 60_000;
+
+/**
+ * Resolve with the work, or with `fallback` when the budget runs out.
+ *
+ * The losing promise is abandoned, not cancelled — Playwright will close its
+ * browser when the context is disposed. The point is that the JOB returns:
+ * a step that hangs must cost the audit that step, not the queue.
+ */
+async function withBudget<T>(
+  work: Promise<T>,
+  budgetMs: number,
+  fallback: T,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), Math.max(1, budgetMs));
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * Worker processor: probe → analyze → persist in stages (progressive results),
  * PSI, screenshots, optional Haiku pitch, then attach flags to the lead.
+ *
+ * ── PROGRESS ────────────────────────────────────────────────────────────────
+ *
+ * Each step writes `stage` before it starts. The runner used to infer the step
+ * from `status`, which only ever held `running` — so its three-step bar could
+ * physically never reach step three, and every audit looked stuck at 2 of 3
+ * before going silent. See ./stages.
  */
 export async function processAudit(data: AuditJobData): Promise<void> {
   const db = getWorkspaceClient(data.workspaceId);
+  const deadline = Date.now() + AUDIT_DEADLINE_MS;
+  const timeLeft = () => Math.max(0, deadline - Date.now());
+
+  /** Record the step we are about to take. Never worth failing a run over. */
+  const setStage = async (stage: AuditStage): Promise<void> => {
+    await db.auditResult
+      .update({ where: { id: data.auditId }, data: { stage } })
+      .catch(() => {});
+  };
+
   try {
     await db.auditResult.update({
       where: { id: data.auditId },
-      data: { status: "running" },
+      data: { status: "running", stage: "loading", errorMessage: null },
     });
 
     const ws = await prismaUnsafe.workspace.findUnique({
@@ -248,6 +305,7 @@ export async function processAudit(data: AuditJobData): Promise<void> {
     }
 
     if (data.crawl) {
+      await setStage("crawling");
       let renderer: Awaited<ReturnType<typeof createRenderedFetcher>> | null = null;
       try {
         // Rendered crawling is roughly ten times the cost, so it is capped
@@ -300,6 +358,7 @@ export async function processAudit(data: AuditJobData): Promise<void> {
     // PSI is one synthetic load, CrUX is what real Chrome users lived through.
     // They run together because neither depends on the other, and CrUX is
     // stored separately because it does not feed the score (see crux.ts).
+    await setStage("pagespeed");
     try {
       const psiKey = await resolveIntegration(data.workspaceId, "google.pagespeedApiKey");
       // The CrUX key is optional: the same project usually serves both, so an
@@ -315,7 +374,11 @@ export async function processAudit(data: AuditJobData): Promise<void> {
           probe.finalUrl,
           psiKey,
           usageRecorderFor(data.workspaceId, "pagespeed", "audit"),
-        ).catch(() => null),
+        ).catch((e: unknown) => ({
+          scores: null,
+          reason: "network" as const,
+          detail: failureMessage(e),
+        })),
         fetchCrux(
           probe.finalUrl,
           cruxKey,
@@ -323,7 +386,11 @@ export async function processAudit(data: AuditJobData): Promise<void> {
           usageRecorderFor(data.workspaceId, "crux", "audit"),
         ).catch(() => null),
       ]);
-      probe.psi = psi;
+      probe.psi = psi.scores;
+      // Carried into the analysis so a missing measurement appears in the
+      // report as a stated absence rather than as three rows that quietly
+      // are not there.
+      if (!psi.scores && psi.detail) probe.psiUnavailable = psi.detail;
       if (crux) {
         await db.auditResult.update({
           where: { id: data.auditId },
@@ -349,18 +416,31 @@ export async function processAudit(data: AuditJobData): Promise<void> {
     }
 
     // Stage 3 — screenshots to the files volume.
+    //
+    // Bounded by what is left of the run's budget rather than by its own
+    // timeouts alone: two captures of a slow site are the likeliest place for
+    // an audit to spend minutes it does not have, and a report without
+    // pictures beats a report that never arrives.
+    await setStage("screenshots");
     try {
-      const screenshots = await captureScreenshots(data.url, data.auditId);
-      await db.auditResult.update({
-        where: { id: data.auditId },
-        data: { screenshots },
-      });
+      const screenshots = await withBudget(
+        captureScreenshots(data.url, data.auditId),
+        Math.min(timeLeft(), 90_000),
+        {} as { desktop?: string; mobile?: string },
+      );
+      if (screenshots.desktop || screenshots.mobile) {
+        await db.auditResult.update({
+          where: { id: data.auditId },
+          data: { screenshots },
+        });
+      }
     } catch {
       /* screenshots best-effort */
     }
 
     // Stage 4 — optional Haiku pitch (behind the toggle).
     if (data.withPitch) {
+      await setStage("pitch");
       try {
         const { data: pitch } = await callClaude({
           useCase: "audit_summary",
@@ -379,6 +459,8 @@ export async function processAudit(data: AuditJobData): Promise<void> {
       }
     }
 
+    await setStage("finishing");
+
     // Stage 5 — flags → lead trigger signals.
     if (data.leadId) {
       await attachFlagsToLead(db, data.leadId, [
@@ -390,7 +472,12 @@ export async function processAudit(data: AuditJobData): Promise<void> {
       where: { id: data.auditId },
       // Stamp the check set this run was scored under, so the report can
       // render an older cached audit the way it was actually scored (P1/3d).
-      data: { status: "done", schemaVersion: AUDIT_SCHEMA_VERSION },
+      data: {
+        status: "done",
+        stage: null,
+        errorMessage: null,
+        schemaVersion: AUDIT_SCHEMA_VERSION,
+      },
     });
 
     // Stage 6 — what changed since last time (P2/5).
@@ -399,9 +486,20 @@ export async function processAudit(data: AuditJobData): Promise<void> {
       checks: [...analysis.checks, ...extraChecks],
     });
   } catch (e) {
+    // The reason goes on the row, not only into the worker log. A failed audit
+    // used to render as the single word "failed", which is exactly as useful
+    // as a spinner that never stops — and told the operator nothing about
+    // whether to retry, fix the URL, or give up on the prospect.
     await db.auditResult
-      .update({ where: { id: data.auditId }, data: { status: "error" } })
+      .update({
+        where: { id: data.auditId },
+        data: { status: "error", stage: null, errorMessage: failureMessage(e) },
+      })
       .catch(() => {});
+    // An unreachable site is a fact about the site, not a bug in the worker.
+    // Rethrowing it only fills the log with stack traces and makes BullMQ
+    // retry something that will fail identically.
+    if (e instanceof AuditUnreachableError) return;
     throw e;
   }
 }

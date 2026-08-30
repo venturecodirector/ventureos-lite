@@ -238,6 +238,12 @@ export async function submitPublicAudit(
 export interface PublicAuditStatus {
   id: string;
   status: string;
+  /**
+   * Which step the worker is on, so the landing page's progress bar tracks
+   * the run instead of guessing from `status` — which only ever says
+   * "running" and left the last step permanently unreachable.
+   */
+  stage: string | null;
   queuePosition: number;
   /** Populated once the run finishes. */
   score: number | null;
@@ -265,6 +271,7 @@ export async function getPublicAuditStatus(
 
   const pending = {
     id: pa.id,
+    stage: null,
     queuePosition: 0,
     score: null,
     verdict: null,
@@ -304,6 +311,7 @@ export async function getPublicAuditStatus(
   return {
     id: pa.id,
     status: audit.status,
+    stage: audit.stage ?? null,
     queuePosition: ahead,
     score: done ? view.score : null,
     verdict: done ? view.verdict : null,

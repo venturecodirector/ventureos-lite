@@ -11,6 +11,9 @@ interface AuditRowLike {
   id: string;
   url: string;
   status: string;
+  /** Optional so a caller that selected a narrow column set still type-checks. */
+  stage?: string | null;
+  errorMessage?: string | null;
   score: number;
   verdict: AuditVerdict;
   checks: unknown;
@@ -29,6 +32,8 @@ export function auditRowToView(a: AuditRowLike): AuditView {
     id: a.id,
     url: a.url,
     status: a.status,
+    stage: a.stage ?? null,
+    errorMessage: a.errorMessage ?? null,
     score: a.score,
     verdict: a.verdict,
     checks: Array.isArray(a.checks) ? (a.checks as unknown as AuditCheck[]) : [],

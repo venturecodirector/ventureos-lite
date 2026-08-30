@@ -13,6 +13,8 @@ const view: AuditView = {
   id: "aud1",
   url: "https://budaivizszereles.hu",
   status: "done",
+  stage: null,
+  errorMessage: null,
   score: 86,
   verdict: "STRONG",
   checks: [

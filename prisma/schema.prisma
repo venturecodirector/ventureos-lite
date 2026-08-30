@@ -863,6 +863,19 @@ model AuditResult {
   /// zero.
   delta        Json?        @map("delta_json")
   pdfPath      String?      @map("pdf_path")
+  /// Which step of the pipeline the run is on, for the progress panel.
+  ///
+  /// Separate from `status` on purpose. `status` is the record's lifecycle —
+  /// queued / running / done / error — and half a dozen queries key off its
+  /// exact values; overloading it with progress labels would have made a
+  /// mid-flight audit invisible to the public-audit reuse lookup. The UI used
+  /// to guess the step from `status`, which is why it advertised three steps
+  /// and could only ever show two.
+  stage        String?
+  /// Why a run ended in `status = "error"`, in the operator's words.
+  /// Without it a failed audit rendered as the word "failed" and nothing
+  /// else, which is indistinguishable from a hung one.
+  errorMessage String?      @map("error_message") @db.Text
   createdAt    DateTime     @default(now()) @map("created_at")
   expiresAt    DateTime     @map("expires_at")
 

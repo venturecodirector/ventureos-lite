@@ -18,6 +18,11 @@
  *     worth?" — that reads as an appraisal service.
  */
 import type { Locale } from "@/lib/locale";
+import {
+  AUDIT_STAGE_LABELS_EN,
+  AUDIT_STAGE_LABELS_HU,
+  type AuditStageLabels,
+} from "@/modules/audit/stages";
 
 export interface FaqItem {
   q: string;
@@ -45,10 +50,19 @@ export interface LandingCopy {
   };
 
   progress: {
-    queued: string;
-    running: string;
-    scoring: string;
+    /**
+     * The step labels, keyed exactly as the worker reports them.
+     *
+     * This used to be three hand-written strings (`queued`, `running`,
+     * `scoring`) that the runner mapped onto `AuditResult.status` — which
+     * never holds "scoring", so the third label was unreachable and the bar
+     * stalled at 2 of 3 on every single audit. The labels now come from the
+     * audit module's own stage list.
+     */
+    stages: AuditStageLabels;
     note: string;
+    /** Shown when the page stops polling but the audit is still going. */
+    timedOut: string;
     slowNote: string;
     queuePosition: (n: number) => string;
   };
@@ -129,10 +143,10 @@ const hu: LandingCopy = {
   },
 
   progress: {
-    queued: "Sorban áll",
-    running: "Betöltjük az oldalt egy böngészőben",
-    scoring: "Pontozás és képernyőképek",
+    stages: AUDIT_STAGE_LABELS_HU,
     note: "Az oldalt egy valódi böngészőben töltjük be, és mobilon is megnézzük.",
+    timedOut:
+      "Ez az átvilágítás a szokásosnál tovább tart — ez általában azt jelenti, hogy az oldal lassan válaszol. A háttérben tovább fut: frissítsen rá egy perc múlva.",
     slowNote:
       "Még dolgozunk rajta — a lassú oldalak átvilágítása tart tovább, ez önmagában is információ.",
     queuePosition: (n) => `${n}. a sorban — mindjárt sorra kerül.`,
@@ -260,10 +274,10 @@ const en: LandingCopy = {
   },
 
   progress: {
-    queued: "Queued",
-    running: "Loading your site in a browser",
-    scoring: "Scoring and screenshots",
+    stages: AUDIT_STAGE_LABELS_EN,
     note: "We load the page in a real browser and look at it on a phone too.",
+    timedOut:
+      "This audit is taking longer than usual, which normally means the site is slow to answer. It keeps running in the background — reload the page in a minute.",
     slowNote:
       "Still working — slow sites take longer to audit, which is itself a finding.",
     queuePosition: (n) => `Position ${n} in the queue — nearly there.`,

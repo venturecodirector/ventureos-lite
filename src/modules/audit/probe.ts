@@ -6,17 +6,111 @@ import { join } from "node:path";
 import { VENTURE_USER_AGENT } from "@/lib/robots";
 import type { PageProbe } from "./types";
 import { guardPublicNavigation } from "./navigation-guard";
+import { AuditUnreachableError, firstLine } from "./failure";
+
+/**
+ * Re-exported so the worker's `import { … } from "./probe"` keeps working and
+ * so the reason a probe throws lives beside the probe that throws it.
+ *
+ * `probeSite` used to return a probe full of `false`s for a page that never
+ * loaded, and `analyzeAudit` — which cannot tell "we looked and it was
+ * missing" from "we never looked" — turned that into a confident report. A
+ * homepage answering 404 scored 59/100 with twenty-three findings, every one
+ * of them invented. An operator would have quoted from it.
+ */
+export { AuditUnreachableError };
 
 const FILES_DIR = process.env.FILES_DIR ?? "/data/files";
+/** How long we will wait for the document itself. */
 const NAV_TIMEOUT = 20_000;
+/**
+ * How long we will then wait for the page to go quiet — best effort, on top.
+ *
+ * See `gotoSettled`: this budget expiring is a normal outcome, not a failure.
+ */
+const SETTLE_TIMEOUT = 8_000;
 
 function normalizeUrl(url: string): string {
   return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
 
+/**
+ * Navigate, then let the page settle — without letting the settling fail us.
+ *
+ * ── WHY NOT `waitUntil: "networkidle"` ──────────────────────────────────────
+ *
+ * That was the original, and it is why audits died. `networkidle` resolves
+ * only after 500ms with no more than two open connections, and an ordinary
+ * modern site never reaches that inside twenty seconds: a chat widget holding
+ * a socket open, an analytics beacon on a timer, a video player polling. When
+ * it does not, `page.goto` THROWS, `probeSite` throws with it, and the whole
+ * audit is marked `error` — for a site that had in fact loaded fine seconds
+ * earlier. telex.hu, to pick one live example, fails this way every time.
+ *
+ * So the document load is the requirement and quietness is a bonus: wait for
+ * `domcontentloaded`, then give the network a bounded chance to go idle and
+ * carry on regardless. Page weight and the rendered-text measurements are
+ * slightly under-counted on a page that never settles, which is the right
+ * trade against not auditing it at all.
+ */
+async function gotoSettled(
+  page: Page,
+  url: string,
+): Promise<import("playwright").Response | null> {
+  let resp: import("playwright").Response | null;
+  try {
+    resp = await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: NAV_TIMEOUT,
+    });
+  } catch (e) {
+    // A navigation that cannot happen is a fact about the site, not a crash in
+    // the worker. Rethrowing Playwright's raw error put a stack trace in the
+    // log for every mistyped domain and told the operator nothing.
+    const detail = firstLine(e);
+    if (/ERR_NAME_NOT_RESOLVED|ERR_BLOCKED_BY_CLIENT|ENOTFOUND|getaddrinfo/i.test(detail)) {
+      throw new AuditUnreachableError(
+        `${url} could not be reached — the domain does not resolve to a public address. ` +
+          `Check the spelling, and that the site is online.`,
+      );
+    }
+    if (/Timeout .*exceeded/i.test(detail)) {
+      throw new AuditUnreachableError(
+        `${url} did not send a page within ${NAV_TIMEOUT / 1000} seconds. ` +
+          `It may be very slow, or refusing automated visitors.`,
+      );
+    }
+    if (/ERR_CERT|ERR_SSL/i.test(detail)) {
+      throw new AuditUnreachableError(
+        `${url} has an HTTPS certificate the browser refused, so the page could not be opened. ` +
+          `That is itself a finding worth raising with them.`,
+      );
+    }
+    throw new AuditUnreachableError(`${url} could not be opened: ${detail}`);
+  }
+  await page
+    .waitForLoadState("networkidle", { timeout: SETTLE_TIMEOUT })
+    .catch(() => {
+      // Never settled. Fine — we have the document, which is what we came for.
+    });
+  return resp;
+}
+
+/**
+ * A HEAD request that cannot hang.
+ *
+ * Node's fetch has no default timeout, so a server that accepts the connection
+ * and then says nothing holds this open forever. Both of these run inside the
+ * audit's `Promise.all`, which means one silent host used to hang the job —
+ * and with an audit-queue concurrency of two, two such hosts stopped every
+ * audit in the workspace until someone restarted the worker.
+ */
 async function headOk(url: string): Promise<boolean> {
   try {
-    const res = await fetch(url, { method: "HEAD" });
+    const res = await fetch(url, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(6000),
+    });
     return res.ok;
   } catch {
     return false;
@@ -40,8 +134,22 @@ export async function probeSite(url: string): Promise<PageProbe> {
       }
     });
 
-    const resp = await page.goto(target, { waitUntil: "networkidle", timeout: NAV_TIMEOUT });
+    const resp = await gotoSettled(page, target);
     const finalUrl = page.url();
+
+    // Nothing answered, or what answered was an error page. Either way there
+    // is no site here to judge, and saying so is the only honest report.
+    if (!resp) {
+      throw new AuditUnreachableError(
+        `The browser could not load ${target} — no response from the server.`,
+      );
+    }
+    if (resp.status() >= 400) {
+      throw new AuditUnreachableError(
+        `${target} answered HTTP ${resp.status()}, so there was no page to audit. ` +
+          `Check the address, or whether the site blocks automated visitors.`,
+      );
+    }
 
     const dom = await page.evaluate(() => {
       const title = document.title || null;
@@ -266,10 +374,17 @@ export async function createRenderedFetcher(perPageTimeoutMs = 15_000): Promise<
     async render(url) {
       const page = await context.newPage();
       try {
+        // Same reason as `gotoSettled`: waiting for idle as a REQUIREMENT
+        // turns "this site keeps a socket open" into "this page does not
+        // exist", and a JS-heavy site — the only kind that reaches this code —
+        // is precisely the kind that keeps sockets open.
         const resp = await page.goto(url, {
-          waitUntil: "networkidle",
+          waitUntil: "domcontentloaded",
           timeout: perPageTimeoutMs,
         });
+        await page
+          .waitForLoadState("networkidle", { timeout: perPageTimeoutMs })
+          .catch(() => {});
         await waitForContentStability(page, perPageTimeoutMs);
 
         const html = await page.content();
@@ -323,24 +438,38 @@ export async function captureScreenshots(
     const desktopRel = `audits/${auditId}-desktop.png`;
     const mobileRel = `audits/${auditId}-mobile.png`;
 
-    const dctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-    await guardPublicNavigation(dctx);
-    const dp = await dctx.newPage();
-    await dp.goto(target, { waitUntil: "networkidle", timeout: NAV_TIMEOUT });
-    await dp.screenshot({ path: join(FILES_DIR, desktopRel) });
-    await dctx.close();
+    const out: { desktop?: string; mobile?: string } = {};
 
-    const mctx = await browser.newContext({
-      viewport: { width: 390, height: 844 },
-      isMobile: true,
-    });
-    await guardPublicNavigation(mctx);
-    const mp = await mctx.newPage();
-    await mp.goto(target, { waitUntil: "networkidle", timeout: NAV_TIMEOUT });
-    await mp.screenshot({ path: join(FILES_DIR, mobileRel) });
-    await mctx.close();
+    /**
+     * Each capture is guarded on its own.
+     *
+     * Both used to sit in one try block, so a mobile capture that failed threw
+     * away the desktop one that had already succeeded — and the caller's
+     * best-effort catch then reported "no captures" for a site we had a
+     * perfectly good picture of.
+     */
+    const shoot = async (
+      rel: string,
+      viewport: { width: number; height: number },
+      isMobile: boolean,
+    ): Promise<string | undefined> => {
+      const ctx = await browser.newContext({ viewport, isMobile });
+      try {
+        await guardPublicNavigation(ctx);
+        const page = await ctx.newPage();
+        await gotoSettled(page, target);
+        await page.screenshot({ path: join(FILES_DIR, rel) });
+        return rel;
+      } catch {
+        return undefined;
+      } finally {
+        await ctx.close().catch(() => {});
+      }
+    };
 
-    return { desktop: desktopRel, mobile: mobileRel };
+    out.desktop = await shoot(desktopRel, { width: 1280, height: 800 }, false);
+    out.mobile = await shoot(mobileRel, { width: 390, height: 844 }, true);
+    return out;
   } finally {
     await browser.close();
   }
